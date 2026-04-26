@@ -1,0 +1,24 @@
+version: '3'
+
+vars:
+  GOOS: '{{.GOOS | default "windows"}}'
+  GOARCH: '{{.GOARCH | default "amd64"}}'
+  OUTPUT_DIR: dist
+  BINARY_NAME: 'lab_devices_client{{if eq .GOOS "windows"}}.exe{{end}}'
+
+tasks:
+  build:
+    desc: Build the binary (override target via `task build GOOS=... GOARCH=...`)
+    cmds:
+      - mkdir -p {{.OUTPUT_DIR}}
+      - GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build -ldflags="-s -w" -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/lab_devices_client
+
+  test:
+    desc: Run all unit tests
+    cmds:
+      - go test ./...
+
+  tidy:
+    desc: Tidy go.mod / go.sum
+    cmds:
+      - go mod tidy
