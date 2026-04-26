@@ -50,6 +50,8 @@ func (r *Registry) LockDiscovery() bool {
 func (r *Registry) UnlockDiscovery() { r.discoverGate.Store(false) }
 
 // Replace closes every device currently in the registry and installs the new set.
+// If devs is nil (e.g. shutdown path), the existing devices are closed but
+// discoveredAt is NOT updated so a racing GET /devices sees the original timestamp.
 func (r *Registry) Replace(devs []*Device) {
 	r.mu.Lock()
 	old := r.devices
@@ -57,12 +59,16 @@ func (r *Registry) Replace(devs []*Device) {
 	for _, d := range devs {
 		r.devices[d.ID] = d
 	}
-	now := time.Now().UTC()
-	r.discoveredAt = &now
+	if devs != nil {
+		now := time.Now().UTC()
+		r.discoveredAt = &now
+	}
 	r.mu.Unlock()
 
 	for _, d := range old {
-		_ = d.Conn.Close()
+		if d.Conn != nil {
+			_ = d.Conn.Close()
+		}
 	}
 }
 
@@ -82,7 +88,7 @@ func (r *Registry) Remove(id string) {
 		delete(r.devices, id)
 	}
 	r.mu.Unlock()
-	if ok {
+	if ok && d.Conn != nil {
 		_ = d.Conn.Close()
 	}
 }

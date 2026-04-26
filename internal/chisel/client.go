@@ -43,7 +43,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("new chisel client: %w", err)
 	}
-	c.Logger.Info = false   // we route logs through slog
+	c.Logger.Info = true    // surface chisel state changes via its own logger (writes to stderr)
 	c.Logger.Debug = false
 	slog.Info("chisel: starting",
 		"server", cfg.Server,

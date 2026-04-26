@@ -175,8 +175,21 @@ func (s *Server) handlePostCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
+	logOutcome := func(outcome string, resp []byte) {
+		slog.Info("command",
+			"device", dev.ID,
+			"cmd_bytes", len(cmd),
+			"resp_bytes", len(resp),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"outcome", outcome,
+		)
+		slog.Debug("command bytes", "device", dev.ID, "cmd", cmd, "resp", resp)
+	}
+
 	resp, err := s.executeCommand(dev, cmd, params)
 	if err == nil {
+		logOutcome("ok", resp)
 		writeJSON(w, http.StatusOK, CommandResponse{Response: bytesToInts(resp)})
 		return
 	}
@@ -187,8 +200,10 @@ func (s *Server) handlePostCommand(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(recErr, errIdentityChanged):
 			s.reg.Remove(dev.ID)
+			logOutcome("identity_changed", nil)
 			writeError(w, http.StatusServiceUnavailable, "device identity changed", recErr.Error())
 		default:
+			logOutcome("unreachable", nil)
 			writeError(w, http.StatusServiceUnavailable, "device unreachable", recErr.Error())
 		}
 		return
@@ -196,9 +211,11 @@ func (s *Server) handlePostCommand(w http.ResponseWriter, r *http.Request) {
 
 	resp, err = s.executeCommand(dev, cmd, params)
 	if err != nil {
+		logOutcome("io_failed", nil)
 		writeError(w, http.StatusServiceUnavailable, "device i/o failed", err.Error())
 		return
 	}
+	logOutcome("ok_after_reconnect", resp)
 	writeJSON(w, http.StatusOK, CommandResponse{Response: bytesToInts(resp)})
 }
 
@@ -228,6 +245,7 @@ var errIdentityChanged = errors.New("device identity changed")
 // Conn field is replaced with the new connection.
 func (s *Server) tryReconnect(dev *registry.Device) error {
 	_ = dev.Conn.Close()
+	dev.Conn = nil
 	conn, err := dev.Opener.Open(dev.Port)
 	if err != nil {
 		return fmt.Errorf("reopen %s: %w", dev.Port, err)
