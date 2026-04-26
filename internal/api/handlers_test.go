@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/khamitovdr/lab_devices_client/internal/registry"
 	"github.com/khamitovdr/lab_devices_client/internal/serial"
@@ -286,5 +287,98 @@ func TestPostCommand_BadQueryParam(t *testing.T) {
 	rec := postCmd(t, srv, "/devices/pump_1/command?timeout_ms=99999999", `{"command":[1]}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestPostCommand_ReconnectThenSuccess(t *testing.T) {
+	// First Write fails (port closed). Reconnect-reprobe: re-open succeeds,
+	// probe returns same type, retry write+read succeeds.
+	reg := registry.New()
+	fp := serial.NewFakePort("COM3")
+	fp.Close() // simulate port already closed → next Write returns ErrClosed
+	opener := serial.NewFakeOpener()
+	opener.Add(fp)
+	dev := &registry.Device{
+		ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3",
+		Conn: fp, Opener: opener,
+	}
+	reg.Replace([]*registry.Device{dev})
+
+	// Pre-feed: Probe.Drain takes 200ms and clears the buffer repeatedly.
+	// Feed the probe reply AFTER the drain completes, then feed the command reply.
+	go func() {
+		// Wait for Probe's Drain (200ms) + some buffer
+		time.Sleep(220 * time.Millisecond)
+		fp.Feed([]byte{10, 1, 2, 3})       // probe reply
+		time.Sleep(100 * time.Millisecond)
+		fp.Feed([]byte{42, 43})            // actual command reply
+	}()
+
+	srv := newTestServer(t, reg, nil)
+	rec := postCmd(t, srv, "/devices/pump_1/command?timeout_ms=500", `{"command":[7,8]}`)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp CommandResponse
+	decode(t, rec.Body, &resp)
+	if len(resp.Response) != 2 || resp.Response[0] != 42 || resp.Response[1] != 43 {
+		t.Errorf("response: got %v, want [42 43]", resp.Response)
+	}
+}
+
+func TestPostCommand_ReconnectIdentityChanged(t *testing.T) {
+	reg := registry.New()
+	fp := serial.NewFakePort("COM3")
+	fp.Close()
+	opener := serial.NewFakeOpener()
+	opener.Add(fp)
+	dev := &registry.Device{
+		ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3",
+		Conn: fp, Opener: opener,
+	}
+	reg.Replace([]*registry.Device{dev})
+
+	go func() {
+		// Wait for Probe's Drain (200ms) + some buffer
+		time.Sleep(220 * time.Millisecond)
+		fp.Feed([]byte{30, 1, 1, 6}) // valve, not pump
+	}()
+
+	srv := newTestServer(t, reg, nil)
+	rec := postCmd(t, srv, "/devices/pump_1/command?timeout_ms=500", `{"command":[1]}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "device identity changed") {
+		t.Errorf("body: %s", rec.Body.String())
+	}
+	if _, ok := reg.Get("pump_1"); ok {
+		t.Errorf("device should have been removed from registry")
+	}
+}
+
+func TestPostCommand_ReconnectFailsToOpen(t *testing.T) {
+	reg := registry.New()
+	fp := serial.NewFakePort("COM3")
+	fp.Close()
+	opener := serial.NewFakeOpener()
+	// Do NOT register fp with opener — Open will fail.
+	dev := &registry.Device{
+		ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3",
+		Conn: fp, Opener: opener,
+	}
+	reg.Replace([]*registry.Device{dev})
+
+	srv := newTestServer(t, reg, nil)
+	rec := postCmd(t, srv, "/devices/pump_1/command", `{"command":[1]}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "device unreachable") {
+		t.Errorf("body: %s", rec.Body.String())
+	}
+	// Device stays in the registry per spec (next call will retry).
+	if _, ok := reg.Get("pump_1"); !ok {
+		t.Errorf("device should NOT have been removed (only identity-change does that)")
 	}
 }

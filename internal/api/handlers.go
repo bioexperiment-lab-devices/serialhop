@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/khamitovdr/lab_devices_client/internal/discovery"
 	"github.com/khamitovdr/lab_devices_client/internal/registry"
 	labserial "github.com/khamitovdr/lab_devices_client/internal/serial"
 )
@@ -175,9 +176,26 @@ func (s *Server) handlePostCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := s.executeCommand(dev, cmd, params)
+	if err == nil {
+		writeJSON(w, http.StatusOK, CommandResponse{Response: bytesToInts(resp)})
+		return
+	}
+	slog.Warn("command i/o failed; attempting reconnect", "device", dev.ID, "err", err)
+
+	if recErr := s.tryReconnect(dev); recErr != nil {
+		// reconnect itself failed
+		switch {
+		case errors.Is(recErr, errIdentityChanged):
+			s.reg.Remove(dev.ID)
+			writeError(w, http.StatusServiceUnavailable, "device identity changed", recErr.Error())
+		default:
+			writeError(w, http.StatusServiceUnavailable, "device unreachable", recErr.Error())
+		}
+		return
+	}
+
+	resp, err = s.executeCommand(dev, cmd, params)
 	if err != nil {
-		// Reconnect-and-reprobe is added in Task 11. For now, surface a 503.
-		slog.Warn("command i/o failed", "device", dev.ID, "err", err)
 		writeError(w, http.StatusServiceUnavailable, "device i/o failed", err.Error())
 		return
 	}
@@ -199,6 +217,41 @@ func (s *Server) executeCommand(dev *registry.Device, cmd []byte, p cmdParams) (
 		return nil, fmt.Errorf("read: %w", err)
 	}
 	return resp, nil
+}
+
+// errIdentityChanged is returned by tryReconnect when the re-probed device
+// no longer matches the stored type code.
+var errIdentityChanged = errors.New("device identity changed")
+
+// tryReconnect closes the device's current connection, re-opens the port,
+// re-probes it, and verifies the type code matches. On success the device's
+// Conn field is replaced with the new connection.
+func (s *Server) tryReconnect(dev *registry.Device) error {
+	_ = dev.Conn.Close()
+	conn, err := dev.Opener.Open(dev.Port)
+	if err != nil {
+		return fmt.Errorf("reopen %s: %w", dev.Port, err)
+	}
+	res, err := probeAdapter(conn)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("reprobe %s: %w", dev.Port, err)
+	}
+	if res == nil {
+		_ = conn.Close()
+		return fmt.Errorf("%w: no reply on reprobe", errIdentityChanged)
+	}
+	if res.TypeCode != dev.TypeCode {
+		_ = conn.Close()
+		return fmt.Errorf("%w: expected type=%d, got type=%d", errIdentityChanged, dev.TypeCode, res.TypeCode)
+	}
+	dev.Conn = conn
+	return nil
+}
+
+// probeAdapter is a swappable function for tests. Defaults to the real probe.
+var probeAdapter = func(p labserial.Port) (*discovery.ProbeResult, error) {
+	return discovery.Probe(p)
 }
 
 func toDTOs(devs []*registry.Device) []DeviceDTO {
