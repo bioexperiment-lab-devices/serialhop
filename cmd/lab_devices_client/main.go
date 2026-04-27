@@ -1,8 +1,11 @@
+//go:build windows
+
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,18 +15,52 @@ import (
 
 	"github.com/khamitovdr/lab_devices_client/internal/app"
 	"github.com/khamitovdr/lab_devices_client/internal/config"
+	"github.com/khamitovdr/lab_devices_client/internal/panel"
+	"github.com/khamitovdr/lab_devices_client/internal/winsvc"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/svc"
 )
 
 const configFileName = "lab_devices_client_config.yaml"
 
+var (
+	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart (used by the GUI)")
+	flagErrorFile   = flag.String("error-file", "", "internal: path the elevated child writes its error message to")
+	flagForeground  = flag.Bool("foreground", false, "run the device-client logic in the console (developer mode)")
+)
+
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "fatal:", err)
+	flag.Parse()
+
+	isService, err := svc.IsWindowsService()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fatal: detect SCM context:", err)
 		os.Exit(1)
+	}
+
+	switch {
+	case isService:
+		if err := winsvc.RunWorker(); err != nil {
+			os.Exit(1)
+		}
+	case *flagAdminAction != "":
+		os.Exit(winsvc.RunAdminAction(*flagAdminAction, *flagErrorFile))
+	case *flagForeground:
+		attachParentConsole()
+		if err := runForeground(); err != nil {
+			fmt.Fprintln(os.Stderr, "fatal:", err)
+			os.Exit(1)
+		}
+	default:
+		if err := panel.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "fatal:", err)
+			os.Exit(1)
+		}
 	}
 }
 
-func run() error {
+func runForeground() error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
@@ -48,16 +85,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	configureLogger(cfg.Log.Level)
+	configureStdoutLogger(cfg.Log.Level)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
 	return app.Run(ctx, cfg)
 }
 
-func configureLogger(level string) {
+func attachParentConsole() {
+	modKernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	procAttachConsole := modKernel32.NewProc("AttachConsole")
+	procAttachConsole.Call(uintptr(^uint32(0)))
+}
+
+func configureStdoutLogger(level string) {
 	var l slog.Level
 	switch level {
 	case "debug":
