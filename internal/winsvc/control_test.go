@@ -11,7 +11,6 @@ import (
 // --- Fake SCMConn --------------------------------------------------------
 
 type fakeService struct {
-	name      string
 	state     ServiceState
 	started   bool
 	deleted   bool
@@ -105,7 +104,7 @@ func (f *fakeSCM) CreateService(name string, cfg ServiceConfig) (SCMService, err
 	if _, ok := f.services[name]; ok {
 		return nil, ErrServiceExists
 	}
-	s := &fakeService{name: name, state: StateStopped}
+	s := &fakeService{state: StateStopped}
 	f.services[name] = s
 	return s, nil
 }

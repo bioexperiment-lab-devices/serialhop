@@ -17,16 +17,16 @@ const (
 	productionPollInterval = 250 * time.Millisecond
 )
 
+// errWaitTimeout is returned by waitForState when the deadline elapses before
+// the service reaches the target state.
+var errWaitTimeout = errors.New("wait deadline exceeded")
+
 // RunAdminAction is the entry point used by the main dispatcher when the
 // binary is launched with --admin-action=<name>. It connects to SCM, runs
 // the requested action, writes any error to errorFile (UTF-8), and returns
 // 0 on success or 1 on failure.
 func RunAdminAction(action, errorFile string) int {
 	err := func() error {
-		exePath, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("locate executable: %w", err)
-		}
 		scm, err := DialSCM()
 		if err != nil {
 			return fmt.Errorf("connect SCM: %w", err)
@@ -35,6 +35,10 @@ func RunAdminAction(action, errorFile string) int {
 
 		switch action {
 		case "install":
+			exePath, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("locate executable: %w", err)
+			}
 			return install(scm, exePath)
 		case "uninstall":
 			return uninstall(scm, productionStopTimeout, productionPollInterval)
@@ -90,7 +94,10 @@ func uninstall(scm SCMConn, stopTimeout, pollInterval time.Duration) error {
 			return fmt.Errorf("stop: %w", err)
 		}
 		if err := waitForState(s, StateStopped, stopTimeout, pollInterval); err != nil {
-			return fmt.Errorf("Service did not stop within %s; check the log file or kill the process manually.", stopTimeout)
+			if errors.Is(err, errWaitTimeout) {
+				return fmt.Errorf("Service did not stop within %s; check the log file or kill the process manually.", stopTimeout)
+			}
+			return fmt.Errorf("query while stopping: %w", err)
 		}
 	}
 	if err := s.Delete(); err != nil {
@@ -115,14 +122,20 @@ func restart(scm SCMConn, timeout, pollInterval time.Duration) error {
 			return fmt.Errorf("stop: %w", err)
 		}
 		if err := waitForState(s, StateStopped, timeout, pollInterval); err != nil {
-			return fmt.Errorf("Service did not stop within %s; check the log file.", timeout)
+			if errors.Is(err, errWaitTimeout) {
+				return fmt.Errorf("Service did not stop within %s; check the log file.", timeout)
+			}
+			return fmt.Errorf("query while stopping: %w", err)
 		}
 	}
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
-	if err := waitForRunning(s, timeout, pollInterval); err != nil {
-		return errors.New("Service failed to start; check log file.")
+	if err := waitForState(s, StateRunning, timeout, pollInterval); err != nil {
+		if errors.Is(err, errWaitTimeout) {
+			return errors.New("Service failed to start; check log file.")
+		}
+		return fmt.Errorf("query while starting: %w", err)
 	}
 	return nil
 }
@@ -139,21 +152,5 @@ func waitForState(s SCMService, target ServiceState, timeout, poll time.Duration
 		}
 		time.Sleep(poll)
 	}
-	return errors.New("timeout")
-}
-
-func waitForRunning(s SCMService, timeout, poll time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		st, err := s.Query()
-		if err != nil {
-			return err
-		}
-		if st == StateRunning {
-			return nil
-		}
-		// StartPending is fine; we keep polling until Running or timeout.
-		time.Sleep(poll)
-	}
-	return errors.New("timeout")
+	return errWaitTimeout
 }
