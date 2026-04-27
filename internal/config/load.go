@@ -26,6 +26,22 @@ func Load(path string) (Config, error) {
 	return c, nil
 }
 
+// LoadPartial parses path and returns whatever fields were populated, plus
+// the first validation error (or nil if valid). Distinct from Load, which
+// returns a zero Config on validation failure. Used by the GUI panel to
+// display current config values alongside any validation warning.
+func LoadPartial(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Default(), err
+	}
+	c := Default()
+	if err := yaml.Unmarshal(data, &c); err != nil {
+		return Default(), fmt.Errorf("parse %s: %w", path, err)
+	}
+	return c, Validate(&c)
+}
+
 // Validate checks the config for invariants documented in the spec.
 func Validate(c *Config) error {
 	if c.Chisel.Server == "" {

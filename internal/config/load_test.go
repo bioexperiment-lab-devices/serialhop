@@ -91,3 +91,84 @@ func TestValidate_DefaultIsValid(t *testing.T) {
 		t.Errorf("default config should validate, got %v", err)
 	}
 }
+
+func TestLoadPartial_Valid(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+chisel:
+  server: "10.0.0.1:7000"
+  remote_port: 9001
+  user: "u"
+  pass: "p"
+rest:
+  port: 8080
+discovery:
+  include: ["COM3"]
+log:
+  level: "debug"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	cfg, err := LoadPartial(p)
+	if err != nil {
+		t.Fatalf("LoadPartial err: %v", err)
+	}
+	if cfg.Chisel.Server != "10.0.0.1:7000" {
+		t.Errorf("server: got %q", cfg.Chisel.Server)
+	}
+	if cfg.Chisel.RemotePort != 9001 {
+		t.Errorf("remote_port: got %d", cfg.Chisel.RemotePort)
+	}
+	if cfg.Log.Level != "debug" {
+		t.Errorf("level: got %q", cfg.Log.Level)
+	}
+}
+
+func TestLoadPartial_InvalidValidationReturnsParsedFields(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+chisel:
+  server: ""
+  remote_port: 9001
+log:
+  level: "info"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	cfg, err := LoadPartial(p)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "chisel.server must be non-empty") {
+		t.Errorf("unexpected err: %v", err)
+	}
+	if cfg.Chisel.RemotePort != 9001 {
+		t.Errorf("remote_port should still be parsed: got %d", cfg.Chisel.RemotePort)
+	}
+	if cfg.Log.Level != "info" {
+		t.Errorf("log level should still be parsed: got %q", cfg.Log.Level)
+	}
+}
+
+func TestLoadPartial_MalformedYAMLReturnsDefault(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "cfg.yaml", "::: not yaml :::")
+	cfg, err := LoadPartial(p)
+	if err == nil {
+		t.Fatal("expected parse error, got nil")
+	}
+	def := Default()
+	if cfg.Chisel.Server != def.Chisel.Server {
+		t.Errorf("on parse failure, expected Default()-server %q, got %q", def.Chisel.Server, cfg.Chisel.Server)
+	}
+}
+
+func TestLoadPartial_MissingFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "nope.yaml")
+	cfg, err := LoadPartial(p)
+	if !os.IsNotExist(err) {
+		t.Errorf("expected os.IsNotExist, got %v", err)
+	}
+	def := Default()
+	if cfg.Chisel.Server != def.Chisel.Server {
+		t.Errorf("on missing file, expected Default()-server %q, got %q", def.Chisel.Server, cfg.Chisel.Server)
+	}
+}
