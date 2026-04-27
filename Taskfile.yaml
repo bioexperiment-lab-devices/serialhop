@@ -5,13 +5,27 @@ vars:
   GOARCH: '{{.GOARCH | default "amd64"}}'
   OUTPUT_DIR: dist
   BINARY_NAME: 'lab_devices_client{{if eq .GOOS "windows"}}.exe{{end}}'
+  RESOURCE_FILE: cmd/lab_devices_client/resource_windows.syso
 
 tasks:
+  resource:
+    desc: Compile the .syso resource (icon + UAC manifest + version metadata)
+    cmds:
+      - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+          -64
+          -o {{.RESOURCE_FILE}}
+          -icon=assets/icon.ico
+          -manifest=assets/manifest.xml
+          assets/version.json
+
   build:
     desc: Build the binary (override target via `task build GOOS=... GOARCH=...`)
+    deps: [resource]
     cmds:
       - mkdir -p {{.OUTPUT_DIR}}
-      - GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build -ldflags="-s -w" -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/lab_devices_client
+      - GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build
+          -ldflags="-s -w -H windowsgui"
+          -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/lab_devices_client
 
   test:
     desc: Run all unit tests
@@ -22,3 +36,8 @@ tasks:
     desc: Tidy go.mod / go.sum
     cmds:
       - go mod tidy
+
+  clean:
+    desc: Remove build outputs and generated resources
+    cmds:
+      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}}
