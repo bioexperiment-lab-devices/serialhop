@@ -89,9 +89,10 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 		case err := <-appDone:
 			if err != nil {
 				slog.Error("app exited unexpectedly", "err", err)
-			} else {
-				slog.Info("app exited cleanly")
+				changes <- svc.Status{State: svc.Stopped, Win32ExitCode: 1}
+				return false, 1
 			}
+			slog.Info("app exited cleanly")
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		}

@@ -64,14 +64,21 @@ func Run(ctx context.Context, cfg config.Config) error {
 		apiDone <- api.Serve(ctx, listener, srv.Handler())
 	}()
 
+	var runErr error
 	select {
 	case <-ctx.Done():
 		slog.Info("shutdown signal received")
 	case err := <-chiselDone:
 		slog.Error("chisel exited", "err", err)
+		if err != nil {
+			runErr = fmt.Errorf("chisel: %w", err)
+		}
 		cancel()
 	case err := <-apiDone:
 		slog.Error("rest server exited", "err", err)
+		if err != nil {
+			runErr = fmt.Errorf("rest: %w", err)
+		}
 		cancel()
 	}
 
@@ -80,5 +87,5 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 	reg.Replace(nil)
 	slog.Info("shutdown complete")
-	return nil
+	return runErr
 }

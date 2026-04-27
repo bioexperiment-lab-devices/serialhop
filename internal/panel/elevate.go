@@ -53,7 +53,10 @@ func RunElevatedAdminAction(action string) (errMsg string, err error) {
 
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, _ := windows.UTF16PtrFromString(exePath)
-	params, _ := windows.UTF16PtrFromString(fmt.Sprintf("--admin-action=%s --error-file=%q", action, errFile))
+	// We compose the args directly. The error-file path is built from
+	// os.TempDir() + a numeric PID, neither of which contain spaces or
+	// quotes, so plain string concatenation is safe here.
+	params, _ := windows.UTF16PtrFromString(fmt.Sprintf("--admin-action=%s --error-file=%s", action, errFile))
 
 	info := shellExecuteInfoW{
 		cbSize:       uint32(unsafe.Sizeof(shellExecuteInfoW{})),

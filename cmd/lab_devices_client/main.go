@@ -33,6 +33,11 @@ var (
 func main() {
 	flag.Parse()
 
+	if flag.NArg() > 0 {
+		fmt.Fprintln(os.Stderr, "fatal: unexpected positional arguments:", flag.Args())
+		os.Exit(2)
+	}
+
 	isService, err := svc.IsWindowsService()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fatal: detect SCM context:", err)
@@ -42,6 +47,7 @@ func main() {
 	switch {
 	case isService:
 		if err := winsvc.RunWorker(); err != nil {
+			slog.Error("RunWorker failed", "err", err)
 			os.Exit(1)
 		}
 	case *flagAdminAction != "":

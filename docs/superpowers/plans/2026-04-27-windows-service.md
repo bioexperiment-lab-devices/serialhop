@@ -96,14 +96,21 @@ func Run(ctx context.Context, cfg config.Config) error {
 		apiDone <- api.Serve(ctx, listener, srv.Handler())
 	}()
 
+	var runErr error
 	select {
 	case <-ctx.Done():
 		slog.Info("shutdown signal received")
 	case err := <-chiselDone:
 		slog.Error("chisel exited", "err", err)
+		if err != nil {
+			runErr = fmt.Errorf("chisel: %w", err)
+		}
 		cancel()
 	case err := <-apiDone:
 		slog.Error("rest server exited", "err", err)
+		if err != nil {
+			runErr = fmt.Errorf("rest: %w", err)
+		}
 		cancel()
 	}
 
@@ -112,7 +119,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 	reg.Replace(nil)
 	slog.Info("shutdown complete")
-	return nil
+	return runErr
 }
 ```
 
@@ -1154,9 +1161,10 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 		case err := <-appDone:
 			if err != nil {
 				slog.Error("app exited unexpectedly", "err", err)
-			} else {
-				slog.Info("app exited cleanly")
+				changes <- svc.Status{State: svc.Stopped, Win32ExitCode: 1}
+				return false, 1
 			}
+			slog.Info("app exited cleanly")
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		}
@@ -1480,7 +1488,10 @@ func RunElevatedAdminAction(action string) (errMsg string, err error) {
 
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, _ := windows.UTF16PtrFromString(exePath)
-	params, _ := windows.UTF16PtrFromString(fmt.Sprintf("--admin-action=%s --error-file=%q", action, errFile))
+	// We compose the args directly. The error-file path is built from
+	// os.TempDir() + a numeric PID, neither of which contain spaces or
+	// quotes, so plain string concatenation is safe here.
+	params, _ := windows.UTF16PtrFromString(fmt.Sprintf("--admin-action=%s --error-file=%s", action, errFile))
 
 	info := shellExecuteInfoW{
 		cbSize:       uint32(unsafe.Sizeof(shellExecuteInfoW{})),
@@ -1934,6 +1945,11 @@ var (
 func main() {
 	flag.Parse()
 
+	if flag.NArg() > 0 {
+		fmt.Fprintln(os.Stderr, "fatal: unexpected positional arguments:", flag.Args())
+		os.Exit(2)
+	}
+
 	isService, err := svc.IsWindowsService()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fatal: detect SCM context:", err)
@@ -1943,6 +1959,7 @@ func main() {
 	switch {
 	case isService:
 		if err := winsvc.RunWorker(); err != nil {
+			slog.Error("RunWorker failed", "err", err)
 			os.Exit(1)
 		}
 	case *flagAdminAction != "":
