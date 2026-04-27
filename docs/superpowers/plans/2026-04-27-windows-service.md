@@ -363,29 +363,11 @@ render current values alongside an inline warning."
 
 ---
 
-## Task 3: Add `lumberjack` dependency
+## Task 3: (Deferred to Task 7) Add `lumberjack` dependency
 
-**Why:** The service mode logs to a rotated file; lumberjack handles size-based rotation cleanly.
+**Why:** Lumberjack is needed only when the service worker (Task 7) imports it. Adding it earlier and running `task tidy` would just have `tidy` remove the unused dep. So this task is a no-op here; Task 7's implementation runs `go get gopkg.in/natefinch/lumberjack.v2@latest` together with the file that imports it, and stages `go.mod`/`go.sum` in the same commit.
 
-**Files:**
-- Modify: `go.mod`, `go.sum`
-
-- [ ] **Step 3.1: Add the dependency**
-
-Run: `go get gopkg.in/natefinch/lumberjack.v2@latest`
-Expected: PASS — `go.mod` and `go.sum` updated.
-
-- [ ] **Step 3.2: Run `go mod tidy` and confirm tests still pass**
-
-Run: `task tidy && task test`
-Expected: PASS.
-
-- [ ] **Step 3.3: Commit**
-
-```bash
-git add go.mod go.sum
-git commit -m "chore: add lumberjack for service log rotation"
-```
+No commits are produced for Task 3. Skip directly to Task 4.
 
 ---
 
