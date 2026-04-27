@@ -72,6 +72,23 @@ func (r *Registry) Replace(devs []*Device) {
 	}
 }
 
+// CloseAll closes every device port currently in the registry and empties the
+// device map. discoveredAt is preserved so a racing GET /devices during
+// re-discovery still sees the original timestamp until Replace installs the
+// new set.
+func (r *Registry) CloseAll() {
+	r.mu.Lock()
+	old := r.devices
+	r.devices = map[string]*Device{}
+	r.mu.Unlock()
+
+	for _, d := range old {
+		if d.Conn != nil {
+			_ = d.Conn.Close()
+		}
+	}
+}
+
 // Get looks up a device by ID.
 func (r *Registry) Get(id string) (*Device, bool) {
 	r.mu.RLock()

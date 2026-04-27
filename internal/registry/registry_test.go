@@ -31,6 +31,35 @@ func typeName(code byte) string {
 	return "unknown"
 }
 
+func TestRegistry_CloseAll(t *testing.T) {
+	r := New()
+	d1 := newDevice(t, "pump_1", "COM3", 10)
+	d2 := newDevice(t, "valve_1", "COM4", 30)
+	r.Replace([]*Device{d1, d2})
+	originalDiscoveredAt := r.DiscoveredAt()
+	if originalDiscoveredAt == nil {
+		t.Fatal("setup: discoveredAt should be set after Replace")
+	}
+
+	r.CloseAll()
+
+	if len(r.List()) != 0 {
+		t.Errorf("List after CloseAll: got %d, want 0", len(r.List()))
+	}
+	if _, ok := r.Get("pump_1"); ok {
+		t.Errorf("pump_1 should be removed by CloseAll")
+	}
+	if _, err := d1.Conn.Write([]byte{1}); err == nil {
+		t.Errorf("d1.Conn should be closed after CloseAll")
+	}
+	if _, err := d2.Conn.Write([]byte{1}); err == nil {
+		t.Errorf("d2.Conn should be closed after CloseAll")
+	}
+	if got := r.DiscoveredAt(); got == nil || !got.Equal(*originalDiscoveredAt) {
+		t.Errorf("CloseAll must preserve discoveredAt; got %v, want %v", got, originalDiscoveredAt)
+	}
+}
+
 func TestRegistry_ReplaceAndLookup(t *testing.T) {
 	r := New()
 	d := newDevice(t, "pump_1", "COM3", 10)

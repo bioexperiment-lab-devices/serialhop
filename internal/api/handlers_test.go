@@ -108,6 +108,40 @@ func TestPostDiscover_Success(t *testing.T) {
 	}
 }
 
+func TestPostDiscover_ClosesOldPortsBeforeProbing(t *testing.T) {
+	// Regression: the second /discover call returned an empty list because
+	// the old device handles were still held during probing — Open() found
+	// the COM ports locked and silently skipped them.
+	reg := registry.New()
+	oldPort := serial.NewFakePort("COM3")
+	oldDev := &registry.Device{
+		ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3",
+		Conn: oldPort, Opener: serial.NewFakeOpener(),
+	}
+	reg.Replace([]*registry.Device{oldDev})
+
+	var oldPortClosedAtProbeTime bool
+	discoverFn := func(ctx context.Context) ([]*registry.Device, error) {
+		// At the moment discovery probes ports, the old port must already be
+		// closed. Writing to it should fail with ErrClosed.
+		_, err := oldPort.Write([]byte{1})
+		oldPortClosedAtProbeTime = err != nil
+		return []*registry.Device{}, nil
+	}
+
+	srv := New(reg, discoverFn).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/discover", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d", rec.Code)
+	}
+	if !oldPortClosedAtProbeTime {
+		t.Errorf("old device port was still open when discoverFn was called — Open() would lock against it")
+	}
+}
+
 func TestPostDiscover_AlreadyRunning(t *testing.T) {
 	reg := registry.New()
 	if !reg.LockDiscovery() {

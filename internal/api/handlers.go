@@ -41,12 +41,22 @@ func (s *Server) handleGetDevices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// portSettleDelay gives the OS / USB-serial driver a moment to fully release
+// COM port handles after Close before discovery tries to re-open them.
+const portSettleDelay = 100 * time.Millisecond
+
 func (s *Server) handlePostDiscover(w http.ResponseWriter, r *http.Request) {
 	if !s.reg.LockDiscovery() {
 		writeError(w, http.StatusConflict, "discovery in progress", "")
 		return
 	}
 	defer s.reg.UnlockDiscovery()
+
+	// Close all currently-open device ports before probing. Without this, the
+	// next probe's Open() finds the same COM ports locked by our own old
+	// handles and silently skips them, returning an empty result.
+	s.reg.CloseAll()
+	time.Sleep(portSettleDelay)
 
 	devs, err := s.discover(r.Context())
 	if err != nil {
