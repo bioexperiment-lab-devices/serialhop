@@ -1223,29 +1223,11 @@ executable. Honors a 30s grace before SCM forces termination."
 
 ---
 
-## Task 8: Add `lxn/walk` dependency
+## Task 8: (Deferred to Task 10) Add `lxn/walk` dependency
 
-**Why:** GUI library for the panel. Pure-Go Win32 bindings; no CGO. Cross-compiles cleanly from macOS.
+**Why:** Walk has nothing importing it until Task 10 (`panel/elevate.go`) or Task 11 (`panel/panel.go`). `go mod tidy` would strip an early add. Roll the `go get` into the same commit as the first import.
 
-**Files:**
-- Modify: `go.mod`, `go.sum`
-
-- [ ] **Step 8.1: Add the dependency**
-
-Run: `go get github.com/lxn/walk@latest`
-Expected: PASS.
-
-- [ ] **Step 8.2: Confirm tests still pass and Windows cross-compile still works**
-
-Run: `task tidy && task test && GOOS=windows GOARCH=amd64 go build ./...`
-Expected: PASS.
-
-- [ ] **Step 8.3: Commit**
-
-```bash
-git add go.mod go.sum
-git commit -m "chore: add github.com/lxn/walk for native Win32 GUI"
-```
+No commits are produced for Task 8. Skip directly to Task 9.
 
 ---
 
