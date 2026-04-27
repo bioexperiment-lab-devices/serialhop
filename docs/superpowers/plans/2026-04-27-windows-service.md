@@ -46,6 +46,9 @@ import (
 )
 
 func Run(ctx context.Context, cfg config.Config) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	slog.Info("lab_devices_client starting",
 		"chisel_server", cfg.Chisel.Server,
 		"remote_port", cfg.Chisel.RemotePort,
@@ -98,8 +101,10 @@ func Run(ctx context.Context, cfg config.Config) error {
 		slog.Info("shutdown signal received")
 	case err := <-chiselDone:
 		slog.Error("chisel exited", "err", err)
+		cancel()
 	case err := <-apiDone:
 		slog.Error("rest server exited", "err", err)
+		cancel()
 	}
 
 	<-chiselDone
