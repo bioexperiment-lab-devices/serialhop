@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	labserial "github.com/khamitovdr/lab_devices_client/internal/serial"
+	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 // ProbeResult is the outcome of a successful probe + classification.

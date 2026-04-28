@@ -12,9 +12,9 @@ import (
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 
-	"github.com/khamitovdr/lab_devices_client/internal/config"
-	"github.com/khamitovdr/lab_devices_client/internal/version"
-	"github.com/khamitovdr/lab_devices_client/internal/winsvc"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 )
 
 const (

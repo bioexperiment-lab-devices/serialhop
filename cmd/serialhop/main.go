@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/khamitovdr/lab_devices_client/internal/app"
-	"github.com/khamitovdr/lab_devices_client/internal/config"
-	"github.com/khamitovdr/lab_devices_client/internal/panel"
-	"github.com/khamitovdr/lab_devices_client/internal/winsvc"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/panel"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"

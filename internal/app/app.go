@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/khamitovdr/lab_devices_client/internal/api"
-	"github.com/khamitovdr/lab_devices_client/internal/chisel"
-	"github.com/khamitovdr/lab_devices_client/internal/config"
-	"github.com/khamitovdr/lab_devices_client/internal/discovery"
-	"github.com/khamitovdr/lab_devices_client/internal/registry"
-	labserial "github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/chisel"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
+	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 func Run(ctx context.Context, cfg config.Config) error {

@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/khamitovdr/lab_devices_client/internal/app"
-	"github.com/khamitovdr/lab_devices_client/internal/config"
-	"github.com/khamitovdr/lab_devices_client/internal/logship"
-	"github.com/khamitovdr/lab_devices_client/internal/version"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/logship"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 
 	"golang.org/x/sys/windows/svc"
 )

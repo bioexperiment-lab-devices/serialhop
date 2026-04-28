@@ -1,6 +1,6 @@
 package panel
 
-import "github.com/khamitovdr/lab_devices_client/internal/winsvc"
+import "github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 
 type ButtonState struct {
 	Install   bool

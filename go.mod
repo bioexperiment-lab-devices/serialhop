@@ -1,4 +1,4 @@
-module github.com/khamitovdr/lab_devices_client
+module github.com/bioexperiment-lab-devices/serialhop
 
 go 1.25.0
 

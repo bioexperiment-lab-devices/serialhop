@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/khamitovdr/lab_devices_client/internal/registry"
-	"github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 func newOpener(t *testing.T, ports map[string][]byte) *serial.FakeOpener {

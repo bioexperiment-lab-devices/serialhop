@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 // Device is one classified, port-open serial device.

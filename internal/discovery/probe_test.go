@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 func TestProbe_Pump(t *testing.T) {

@@ -6,7 +6,7 @@ vars:
   OUTPUT_DIR: dist
   BINARY_NAME: 'SerialHop{{if eq .GOOS "windows"}}.exe{{end}}'
   RESOURCE_FILE: cmd/serialhop/resource_windows.syso
-  VERSION_PKG: github.com/khamitovdr/lab_devices_client/internal/version
+  VERSION_PKG: github.com/bioexperiment-lab-devices/serialhop/internal/version
 
 tasks:
   bump:

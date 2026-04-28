@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 func newDevice(t *testing.T, id, port string, typeCode byte) *Device {

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/khamitovdr/lab_devices_client/internal/registry"
-	"github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 // FilterPorts applies include / exclude filters per spec section 5.

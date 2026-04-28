@@ -3,7 +3,7 @@ package panel
 import (
 	"testing"
 
-	"github.com/khamitovdr/lab_devices_client/internal/winsvc"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 )
 
 func TestComputeButtons(t *testing.T) {

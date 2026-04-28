@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/khamitovdr/lab_devices_client/internal/discovery"
-	"github.com/khamitovdr/lab_devices_client/internal/registry"
-	labserial "github.com/khamitovdr/lab_devices_client/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
+	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 type DiscoverFn func(ctx context.Context) ([]*registry.Device, error)
