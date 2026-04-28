@@ -13,6 +13,7 @@ import (
 	. "github.com/lxn/walk/declarative"
 
 	"github.com/khamitovdr/lab_devices_client/internal/config"
+	"github.com/khamitovdr/lab_devices_client/internal/version"
 	"github.com/khamitovdr/lab_devices_client/internal/winsvc"
 )
 
@@ -130,7 +131,7 @@ func Run() error {
 
 	if err := (MainWindow{
 		AssignTo: &mw,
-		Title:    "Lab Devices Client",
+		Title:    "Lab Devices Client v" + version.Version,
 		Size:     Size{Width: 480, Height: 360},
 		MinSize:  Size{Width: 480, Height: 360},
 		Layout:   VBox{},

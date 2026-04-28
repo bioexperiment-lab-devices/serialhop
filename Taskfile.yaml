@@ -6,10 +6,17 @@ vars:
   OUTPUT_DIR: dist
   BINARY_NAME: 'lab_devices_client{{if eq .GOOS "windows"}}.exe{{end}}'
   RESOURCE_FILE: cmd/lab_devices_client/resource_windows.syso
+  VERSION_PKG: github.com/khamitovdr/lab_devices_client/internal/version
 
 tasks:
+  bump:
+    desc: Bump minor version in assets/version.json (skipped when tree is clean)
+    cmds:
+      - go run ./tools/bumpversion
+
   resource:
     desc: Compile the .syso resource (icon + UAC manifest + version metadata)
+    deps: [bump]
     cmds:
       - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
           -64
@@ -23,8 +30,10 @@ tasks:
     deps: [resource]
     cmds:
       - mkdir -p {{.OUTPUT_DIR}}
-      - GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build
-          -ldflags="-s -w -H windowsgui"
+      - |
+        VERSION=$(go run ./tools/bumpversion -print)
+        GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build \
+          -ldflags="-s -w -H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
           -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/lab_devices_client
 
   test:
