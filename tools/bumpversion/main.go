@@ -1,6 +1,7 @@
 // Bumps the Minor version in assets/version.json when the working tree has
-// uncommitted source changes (anything other than version.json itself). Patch
-// and Build are reset to 0 on each bump.
+// uncommitted source changes (anything other than the version files this tool
+// rewrites: version.json and manifest.xml). Patch and Build are reset to 0 on
+// each bump.
 //
 //	go run ./tools/bumpversion          # bump-if-dirty, then print final version
 //	go run ./tools/bumpversion -print   # read-only: just print current version
@@ -125,7 +126,8 @@ func findRepoRoot() (string, error) {
 }
 
 func hasSourceChanges(repoRoot string) (bool, error) {
-	cmd := exec.Command("git", "status", "--porcelain", "--", ".", ":!"+versionRelPath)
+	cmd := exec.Command("git", "status", "--porcelain", "--", ".",
+		":!"+versionRelPath, ":!"+manifestRelPath)
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	if err != nil {
