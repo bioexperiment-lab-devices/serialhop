@@ -12,48 +12,42 @@ import (
 
 	"github.com/khamitovdr/lab_devices_client/internal/app"
 	"github.com/khamitovdr/lab_devices_client/internal/config"
+	"github.com/khamitovdr/lab_devices_client/internal/logship"
+	"github.com/khamitovdr/lab_devices_client/internal/version"
 
 	"golang.org/x/sys/windows/svc"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
 	configFileName = "lab_devices_client_config.yaml"
-	logFileName    = "lab_devices_client.log"
 
 	workerStopGracePeriod = 30 * time.Second
+	logshipShutdown       = 2 * time.Second
 )
 
 // RunWorker is the service-mode entry point. It must only be called when
-// svc.IsWindowsService() returns true. It sets up file logging immediately
-// (so the handler can record config-load failures) and hands off to svc.Run.
+// svc.IsWindowsService() returns true. It initializes log streaming
+// before svc.Run so that even a config-load failure is captured both
+// on disk and (if a previous successful run cached chisel auth) in
+// Loki on the next push.
 func RunWorker() error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
 	}
 	dir := filepath.Dir(exePath)
-	configureFileLogger(filepath.Join(dir, logFileName), slog.LevelInfo)
-	redirectStderrToFile(filepath.Join(dir, "lab_devices_client_stderr.log"))
-	return svc.Run(ServiceName, &handler{dir: dir})
-}
 
-// redirectStderrToFile reopens os.Stderr against the given path so any
-// library that writes directly to stderr (chisel's internal logger,
-// runtime panic traces, etc.) lands on disk instead of disappearing into
-// the windowsgui subsystem's null sink. Best-effort; failure is logged
-// and the worker still starts.
-func redirectStderrToFile(path string) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	manager, err := logship.Init(dir, version.Version, slog.LevelInfo)
 	if err != nil {
-		slog.Warn("redirect stderr failed", "path", path, "err", err)
-		return
+		return fmt.Errorf("logship init: %w", err)
 	}
-	os.Stderr = f
+
+	return svc.Run(ServiceName, &handler{dir: dir, manager: manager})
 }
 
 type handler struct {
-	dir string
+	dir     string
+	manager *logship.Manager
 }
 
 func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
@@ -65,10 +59,12 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		slog.Error("config load failed", "path", cfgPath, "err", err)
+		h.shutdownLogship()
 		changes <- svc.Status{State: svc.Stopped, Win32ExitCode: 1}
 		return false, 1
 	}
-	configureFileLogger(filepath.Join(h.dir, logFileName), parseLogLevel(cfg.Log.Level))
+	h.manager.SetLevel(logship.ParseLogLevel(cfg.Log.Level))
+	h.manager.StartShipper(cfg.Chisel.User)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -98,43 +94,27 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 				case <-time.After(workerStopGracePeriod):
 					slog.Error("app did not exit within grace period; forcing stop", "grace", workerStopGracePeriod)
 				}
+				h.shutdownLogship()
 				changes <- svc.Status{State: svc.Stopped}
 				return false, 0
 			}
 		case err := <-appDone:
 			if err != nil {
 				slog.Error("app exited unexpectedly", "err", err)
+				h.shutdownLogship()
 				changes <- svc.Status{State: svc.Stopped, Win32ExitCode: 1}
 				return false, 1
 			}
 			slog.Info("app exited cleanly")
+			h.shutdownLogship()
 			changes <- svc.Status{State: svc.Stopped}
 			return false, 0
 		}
 	}
 }
 
-func configureFileLogger(path string, level slog.Level) {
-	w := &lumberjack.Logger{
-		Filename:   path,
-		MaxSize:    10, // megabytes
-		MaxBackups: 3,
-		LocalTime:  true,
-		Compress:   false,
-	}
-	h := slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
-	slog.SetDefault(slog.New(h))
-}
-
-func parseLogLevel(level string) slog.Level {
-	switch level {
-	case "debug":
-		return slog.LevelDebug
-	case "warn":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
+func (h *handler) shutdownLogship() {
+	ctx, cancel := context.WithTimeout(context.Background(), logshipShutdown)
+	defer cancel()
+	h.manager.Shutdown(ctx)
 }
