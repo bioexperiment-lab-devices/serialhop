@@ -36,7 +36,10 @@ type versionFile struct {
 	FixedFileInfo fixedFileInfo `json:"FixedFileInfo"`
 }
 
-const versionRelPath = "assets/version.json"
+const (
+	versionRelPath  = "assets/version.json"
+	manifestRelPath = "assets/manifest.xml"
+)
 
 func main() {
 	printOnly := flag.Bool("print", false, "print current version and exit (no bump)")
@@ -87,6 +90,20 @@ func main() {
 	if err := atomicWrite(versionPath, updated); err != nil {
 		fail(err)
 	}
+
+	manifestPath := filepath.Join(repoRoot, manifestRelPath)
+	mraw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		fail(fmt.Errorf("read %s: %w", manifestPath, err))
+	}
+	mNew, err := rewriteManifest(mraw, nextStr+".0")
+	if err != nil {
+		fail(err)
+	}
+	if err := atomicWrite(manifestPath, mNew); err != nil {
+		fail(err)
+	}
+
 	fmt.Fprintf(os.Stderr, "bumpversion: %s -> %s\n", formatTriple(cur), nextStr)
 	fmt.Println(nextStr)
 }
@@ -124,7 +141,19 @@ var (
 	// StringFileInfo entries: "...Version": "x.y.z"
 	stringFileRe    = regexp.MustCompile(`("FileVersion":\s*)"[^"]*"`)
 	stringProductRe = regexp.MustCompile(`("ProductVersion":\s*)"[^"]*"`)
+	// manifest.xml's own assemblyIdentity (version is the FIRST attribute, so this
+	// won't match the deeper Microsoft.Windows.Common-Controls block, where
+	// version comes after type/name).
+	manifestVersionRe = regexp.MustCompile(`(<assemblyIdentity\s+version=")[^"]*(")`)
 )
+
+func rewriteManifest(raw []byte, version string) ([]byte, error) {
+	s := string(raw)
+	if manifestVersionRe.FindStringIndex(s) == nil {
+		return nil, fmt.Errorf("assemblyIdentity version attribute not found in %s", manifestRelPath)
+	}
+	return []byte(manifestVersionRe.ReplaceAllString(s, "${1}"+version+"${2}")), nil
+}
 
 func rewrite(raw []byte, next quad, nextStr string) ([]byte, error) {
 	s := string(raw)
