@@ -34,7 +34,22 @@ func RunWorker() error {
 	}
 	dir := filepath.Dir(exePath)
 	configureFileLogger(filepath.Join(dir, logFileName), slog.LevelInfo)
+	redirectStderrToFile(filepath.Join(dir, "lab_devices_client_stderr.log"))
 	return svc.Run(ServiceName, &handler{dir: dir})
+}
+
+// redirectStderrToFile reopens os.Stderr against the given path so any
+// library that writes directly to stderr (chisel's internal logger,
+// runtime panic traces, etc.) lands on disk instead of disappearing into
+// the windowsgui subsystem's null sink. Best-effort; failure is logged
+// and the worker still starts.
+func redirectStderrToFile(path string) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		slog.Warn("redirect stderr failed", "path", path, "err", err)
+		return
+	}
+	os.Stderr = f
 }
 
 type handler struct {

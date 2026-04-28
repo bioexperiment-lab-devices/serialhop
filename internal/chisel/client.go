@@ -39,11 +39,16 @@ func Run(ctx context.Context, cfg Config) error {
 		Remotes:          remotes,
 		KeepAlive:        25 * time.Second,
 		MaxRetryInterval: 5 * time.Minute,
+		MaxRetryCount:    -1, // unbounded; default 0 means "give up after first failed attempt"
 	})
 	if err != nil {
 		return fmt.Errorf("new chisel client: %w", err)
 	}
-	c.Logger.Info = true    // surface chisel state changes via its own logger (writes to stderr)
+	// Chisel's internal logger writes to stderr, which is /dev/null under the
+	// windowsgui subsystem. Stderr is redirected to a file by the service
+	// worker (see winsvc.redirectStderrToFile) so chisel's state-change logs
+	// are captured there.
+	c.Logger.Info = true
 	c.Logger.Debug = false
 	slog.Info("chisel: starting",
 		"server", cfg.Server,
