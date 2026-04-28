@@ -14,6 +14,50 @@ import (
 	"time"
 )
 
+type fakeClock struct {
+	mu      sync.Mutex
+	now     time.Time
+	pending []*pendingSleep
+}
+
+type pendingSleep struct {
+	due  time.Time
+	done chan struct{}
+}
+
+func newFakeClock() *fakeClock {
+	return &fakeClock{now: time.Unix(1_700_000_000, 0)}
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) Sleep(d time.Duration) {
+	c.mu.Lock()
+	p := &pendingSleep{due: c.now.Add(d), done: make(chan struct{})}
+	c.pending = append(c.pending, p)
+	c.mu.Unlock()
+	<-p.done
+}
+
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	var still []*pendingSleep
+	for _, p := range c.pending {
+		if !p.due.After(c.now) {
+			close(p.done)
+		} else {
+			still = append(still, p)
+		}
+	}
+	c.pending = still
+	c.mu.Unlock()
+}
+
 func TestBuildPushBodyGroupsByStream(t *testing.T) {
 	labels := map[string]map[string]string{
 		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
@@ -160,5 +204,105 @@ func TestShipperHappyPath(t *testing.T) {
 	}
 	if gotHeader["Content-Type"] != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", gotHeader["Content-Type"])
+	}
+}
+
+func TestShipperRetriesOn5xxThenSucceeds(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		attempts int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		n := attempts
+		mu.Unlock()
+		if n <= 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	clk := newFakeClock()
+	q := newQueue(1024)
+	labels := map[string]map[string]string{
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+	}
+	s := newShipper(q, srv.URL, labels, clk)
+
+	for i := 0; i < 10; i++ {
+		q.push(record{stream: "stdout", tsNano: int64(i), line: "line"})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.run(ctx)
+
+	// Drive the fake clock through the backoff schedule (1s, 2s, 5s)
+	// while polling for the success.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		clk.advance(15 * time.Second)
+		mu.Lock()
+		n := attempts
+		mu.Unlock()
+		if n >= 4 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts < 4 {
+		t.Fatalf("attempts = %d, want >= 4 (3 failures + 1 success)", attempts)
+	}
+}
+
+func TestShipperDropsBatchOn4xx(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		attempts int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		mu.Unlock()
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	q := newQueue(1024)
+	labels := map[string]map[string]string{
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+	}
+	s := newShipper(q, srv.URL, labels, realClock{})
+
+	q.push(record{stream: "stdout", tsNano: 1, line: "x"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.run(ctx); close(done) }()
+
+	// Add another batch after a beat — first should be dropped without
+	// retry, second should also be dropped, total attempts == 2 (not >>2
+	// from a hot loop).
+	time.Sleep(200 * time.Millisecond)
+	q.push(record{stream: "stdout", tsNano: 2, line: "y"})
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts < 2 {
+		t.Fatalf("attempts = %d, want >= 2 (one per pushed batch)", attempts)
+	}
+	if attempts > 5 {
+		t.Fatalf("attempts = %d — looks like a hot retry loop, want bounded", attempts)
 	}
 }

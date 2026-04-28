@@ -73,6 +73,8 @@ const (
 	maxBatch     = 500
 	flushTimeout = 2 * time.Second
 	httpTimeout  = 5 * time.Second
+	backoffStart = 1 * time.Second
+	backoffMax   = 10 * time.Second
 )
 
 type shipper struct {
@@ -101,7 +103,7 @@ func newShipper(q *queue, url string, labels map[string]map[string]string, clk c
 }
 
 // run drains the queue forever — until ctx is done — and POSTs each
-// batch. The happy path only; retries land in a later task.
+// batch with retry-on-5xx backoff and drop-on-4xx.
 func (s *shipper) run(ctx context.Context) {
 	for {
 		s.q.waitNotify(ctx, flushTimeout)
@@ -117,8 +119,37 @@ func (s *shipper) run(ctx context.Context) {
 			slog.Warn("logship build body failed", "err", err)
 			continue
 		}
-		if err := s.post(ctx, body); err != nil {
-			slog.Warn("logship push failed", "err", err)
+		s.postWithRetry(ctx, body)
+	}
+}
+
+// postWithRetry holds a single batch, retrying on 5xx / transport
+// errors with exponential backoff (1→2→5→10s, capped at 10s). 4xx drops
+// the batch and returns. Returns when ctx is done or the batch is
+// definitively handled.
+func (s *shipper) postWithRetry(ctx context.Context, body []byte) {
+	delay := backoffStart
+	for {
+		err := s.post(ctx, body)
+		if err == nil {
+			return
+		}
+		if hs, ok := err.(*httpStatusError); ok && hs.code/100 == 4 && hs.code != http.StatusTooManyRequests {
+			slog.Warn("logship push rejected", "status", hs.code)
+			return
+		}
+		// Retryable: 5xx, 429, transport errors.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		s.clock.Sleep(delay)
+		if delay < backoffMax {
+			delay *= 2
+			if delay > backoffMax {
+				delay = backoffMax
+			}
 		}
 	}
 }
