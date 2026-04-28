@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/serialhop.webp" alt="SerialHop" width="320">
+</p>
+
 # lab_devices_client
 
 Single-binary Go application that exposes serial-port lab devices to a remote HTTP client through a chisel reverse tunnel. Runs as a Windows service; managed through a small native control-panel window.
