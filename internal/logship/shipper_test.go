@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -304,5 +305,45 @@ func TestShipperDropsBatchOn4xx(t *testing.T) {
 	}
 	if attempts > 5 {
 		t.Fatalf("attempts = %d — looks like a hot retry loop, want bounded", attempts)
+	}
+}
+
+func TestShipperResetsDroppedCounterOnSuccess(t *testing.T) {
+	var success atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		success.Store(true)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	q := newQueue(4)
+	labels := map[string]map[string]string{
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+	}
+	s := newShipper(q, srv.URL, labels, realClock{})
+
+	// Cause some drops.
+	for i := 0; i < 12; i++ {
+		q.push(record{stream: "stdout", tsNano: int64(i), line: "x"})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.run(ctx)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if success.Load() && q.takeDropped() == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+
+	if !success.Load() {
+		t.Fatal("server never received a successful push")
+	}
+	if n := q.takeDropped(); n != 0 {
+		t.Fatalf("dropped = %d after success, want 0 (shipper should have called takeDropped)", n)
 	}
 }

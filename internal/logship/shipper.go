@@ -119,29 +119,33 @@ func (s *shipper) run(ctx context.Context) {
 			slog.Warn("logship build body failed", "err", err)
 			continue
 		}
-		s.postWithRetry(ctx, body)
+		if s.postWithRetry(ctx, body) {
+			if dropped := s.q.takeDropped(); dropped > 0 {
+				slog.Warn("logs dropped", "count", dropped)
+			}
+		}
 	}
 }
 
 // postWithRetry holds a single batch, retrying on 5xx / transport
 // errors with exponential backoff (1→2→5→10s, capped at 10s). 4xx drops
-// the batch and returns. Returns when ctx is done or the batch is
-// definitively handled.
-func (s *shipper) postWithRetry(ctx context.Context, body []byte) {
+// the batch and returns false. Returns true on success, false on
+// ctx-cancellation or 4xx-drop.
+func (s *shipper) postWithRetry(ctx context.Context, body []byte) bool {
 	delay := backoffStart
 	for {
 		err := s.post(ctx, body)
 		if err == nil {
-			return
+			return true
 		}
 		if hs, ok := err.(*httpStatusError); ok && hs.code/100 == 4 && hs.code != http.StatusTooManyRequests {
 			slog.Warn("logship push rejected", "status", hs.code)
-			return
+			return false
 		}
 		// Retryable: 5xx, 429, transport errors.
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		default:
 		}
 		s.clock.Sleep(delay)
