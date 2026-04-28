@@ -61,8 +61,8 @@ func (c *fakeClock) advance(d time.Duration) {
 
 func TestBuildPushBodyGroupsByStream(t *testing.T) {
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
-		"stderr": {"client": "lab-1", "stream": "stderr", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
+		"stderr": {"client": "lab-1", "stream": "stderr", "service": "serialhop", "version": "1.4.2"},
 	}
 	batch := []record{
 		{stream: "stdout", tsNano: 100, line: `{"msg":"a"}`},
@@ -101,7 +101,7 @@ func TestBuildPushBodyGroupsByStream(t *testing.T) {
 	byStream := map[string]int{}
 	for _, s := range parsed.Streams {
 		byStream[s.Stream["stream"]] = len(s.Values)
-		if s.Stream["service"] != "lab_devices_client" {
+		if s.Stream["service"] != "serialhop" {
 			t.Errorf("service label = %q", s.Stream["service"])
 		}
 		if s.Stream["client"] != "lab-1" {
@@ -160,8 +160,8 @@ func TestShipperHappyPath(t *testing.T) {
 
 	q := newQueue(1024)
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
-		"stderr": {"client": "lab-1", "stream": "stderr", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
+		"stderr": {"client": "lab-1", "stream": "stderr", "service": "serialhop", "version": "1.4.2"},
 	}
 	s := newShipper(q, srv.URL, labels, realClock{})
 
@@ -229,7 +229,7 @@ func TestShipperRetriesOn5xxThenSucceeds(t *testing.T) {
 	clk := newFakeClock()
 	q := newQueue(1024)
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
 	}
 	s := newShipper(q, srv.URL, labels, clk)
 
@@ -278,7 +278,7 @@ func TestShipperDropsBatchOn4xx(t *testing.T) {
 
 	q := newQueue(1024)
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
 	}
 	s := newShipper(q, srv.URL, labels, realClock{})
 
@@ -318,7 +318,7 @@ func TestShipperResetsDroppedCounterOnSuccess(t *testing.T) {
 
 	q := newQueue(4)
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
 	}
 	s := newShipper(q, srv.URL, labels, realClock{})
 
@@ -356,7 +356,7 @@ func TestShipperRunExitsPromptlyOnCancel(t *testing.T) {
 
 	q := newQueue(64)
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
 	}
 	s := newShipper(q, srv.URL, labels, realClock{})
 
@@ -386,7 +386,7 @@ func TestShipperFinalDrainOnCancel(t *testing.T) {
 
 	q := newQueue(64)
 	labels := map[string]map[string]string{
-		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "serialhop", "version": "1.4.2"},
 	}
 	s := newShipper(q, srv.URL, labels, realClock{})
 

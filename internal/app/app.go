@@ -17,7 +17,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	slog.Info("lab_devices_client starting",
+	slog.Info("serialhop starting",
 		"chisel_server", cfg.Chisel.Server,
 		"remote_port", cfg.Chisel.RemotePort,
 		"rest_port", cfg.Rest.Port,

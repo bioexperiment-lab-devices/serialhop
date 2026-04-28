@@ -4,8 +4,8 @@ vars:
   GOOS: '{{.GOOS | default "windows"}}'
   GOARCH: '{{.GOARCH | default "amd64"}}'
   OUTPUT_DIR: dist
-  BINARY_NAME: 'lab_devices_client{{if eq .GOOS "windows"}}.exe{{end}}'
-  RESOURCE_FILE: cmd/lab_devices_client/resource_windows.syso
+  BINARY_NAME: 'SerialHop{{if eq .GOOS "windows"}}.exe{{end}}'
+  RESOURCE_FILE: cmd/serialhop/resource_windows.syso
   VERSION_PKG: github.com/khamitovdr/lab_devices_client/internal/version
 
 tasks:
@@ -35,7 +35,7 @@ tasks:
         GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build \
           -trimpath \
           -ldflags="-H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
-          -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/lab_devices_client
+          -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/serialhop
 
   test:
     desc: Run all unit tests

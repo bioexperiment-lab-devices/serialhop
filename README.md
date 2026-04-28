@@ -2,7 +2,7 @@
   <img src="assets/serialhop.webp" alt="SerialHop" width="320">
 </p>
 
-# lab_devices_client
+# SerialHop
 
 Single-binary Go application that exposes serial-port lab devices to a remote HTTP client through a chisel reverse tunnel. Runs as a Windows service; managed through a small native control-panel window. Streams its own logs back to the central Loki/Grafana stack over the same chisel session.
 
@@ -18,23 +18,23 @@ Override target via env variables:
 task build GOOS=linux GOARCH=arm64
 ```
 
-Output: `dist/lab_devices_client.exe`.
+Output: `dist/SerialHop.exe`.
 
 The build embeds an icon, a UAC manifest (`asInvoker`), and version metadata via `goversioninfo`. The first build downloads `goversioninfo` automatically. Each `task build` also auto-bumps the minor version in `assets/version.json` and `assets/manifest.xml` whenever the working tree has uncommitted source changes — the resulting version string is baked into the binary via `-ldflags -X` and shown in the panel title.
 
 ## Install on a Windows lab machine
 
-1. Copy `lab_devices_client.exe` to an install location (e.g., `C:\Tools\LabDevicesClient\`).
-2. Double-click the .exe. The control panel opens. On first launch it writes `lab_devices_client_config.yaml` next to the .exe and shows a validation warning if anything's wrong.
+1. Copy `SerialHop.exe` to an install location (e.g., `C:\Tools\SerialHop\`).
+2. Double-click the .exe. The control panel opens. On first launch it writes `SerialHop_config.yaml` next to the .exe and shows a validation warning if anything's wrong.
 3. Click **Open config file**, set `chisel.remote_port` and `chisel.user`/`chisel.pass` (and any other site-specific values), save.
-4. Click **Install**. UAC prompts; approve. The service is registered as `LabDevicesClient` (auto-start at boot, runs as LocalSystem) and started immediately.
+4. Click **Install**. UAC prompts; approve. The service is registered as `SerialHop` (auto-start at boot, runs as LocalSystem) and started immediately.
 
 After install:
 
 - The service runs across reboots without the panel being open.
 - To apply config changes: edit the YAML file, then click **Restart** in the panel.
 - To remove: click **Uninstall** in the panel.
-- Logs go to `lab_devices_client.log` (slog JSON) and `lab_devices_client_stderr.log` (chisel state, panic traces) next to the .exe — both rotated at 10 MB with 3 backups. Click **Open log file** to view the main log.
+- Logs go to `SerialHop.log` (slog JSON) and `SerialHop_stderr.log` (chisel state, panic traces) next to the .exe — both rotated at 10 MB with 3 backups. Click **Open log file** to view the main log.
 
 ## Windows Defender false positives
 
@@ -46,7 +46,7 @@ If a release is flagged:
 2. **Restore from quarantine and re-test.** Defender caches verdicts by hash, so a clean rebuild produces a new hash that has to be re-evaluated.
 3. **Long-term**: a code-signing certificate (OV ~$200/yr, EV ~$400/yr) is the only durable fix. EV builds SmartScreen reputation immediately; OV accrues it over downloads.
 
-Operators installing on lab machines can also add `C:\Tools\LabDevicesClient\` (or wherever the `.exe` lives) to Defender's exclusion list as a stopgap.
+Operators installing on lab machines can also add `C:\Tools\SerialHop\` (or wherever the `.exe` lives) to Defender's exclusion list as a stopgap.
 
 ## Run modes
 
@@ -73,11 +73,11 @@ Discovered device types: `pump` (type code 10), `valve` (30), `densitometer` (70
 
 ## Log streaming to Loki
 
-In service mode, the client streams every line written to `lab_devices_client.log` and `lab_devices_client_stderr.log` to the in-VPS Loki via a forward tunnel (`127.0.0.1:3100 → loki:3100`) added to the same chisel session. The on-disk rotated files remain the durable record; Loki is a queryable mirror.
+In service mode, the client streams every line written to `SerialHop.log` and `SerialHop_stderr.log` to the in-VPS Loki via a forward tunnel (`127.0.0.1:3100 → loki:3100`) added to the same chisel session. The on-disk rotated files remain the durable record; Loki is a queryable mirror.
 
 - Gated on `chisel.user` being set — without auth the server's per-user allowlist won't grant the route, and the shipper is a no-op (a one-time `slog.Warn` is emitted at startup).
 - In-memory ring buffer (10 000 records, drop-oldest on overflow) decouples disk writes from network. Pushes are gzipped JSON, batched up to 500 records or 2 s, with backoff retry on 5xx and drop-batch on 4xx.
-- Labels: `client` (chisel user), `stream` (`stdout`/`stderr`), `service` (`lab_devices_client`), `version`. Filter on these in Grafana.
+- Labels: `client` (chisel user), `stream` (`stdout`/`stderr`), `service` (`serialhop`), `version`. Filter on these in Grafana.
 
 Foreground developer mode does not ship — stdout there is a real terminal the developer is already watching. See [`docs/superpowers/specs/2026-04-28-log-streaming-design.md`](docs/superpowers/specs/2026-04-28-log-streaming-design.md) for the full design.
 

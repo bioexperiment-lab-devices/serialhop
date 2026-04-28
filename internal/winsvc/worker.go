@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	configFileName = "lab_devices_client_config.yaml"
+	configFileName = "SerialHop_config.yaml"
 
 	workerStopGracePeriod = 30 * time.Second
 	logshipShutdown       = 2 * time.Second

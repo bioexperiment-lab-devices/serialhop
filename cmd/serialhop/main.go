@@ -30,7 +30,7 @@ func init() {
 	runtime.LockOSThread()
 }
 
-const configFileName = "lab_devices_client_config.yaml"
+const configFileName = "SerialHop_config.yaml"
 
 var (
 	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart (used by the GUI)")
@@ -83,7 +83,7 @@ func writePanelStartupError(panelErr error) {
 	if err != nil {
 		return
 	}
-	logPath := filepath.Join(filepath.Dir(exePath), "lab_devices_client_panel_error.log")
+	logPath := filepath.Join(filepath.Dir(exePath), "SerialHop_panel_error.log")
 	line := fmt.Sprintf("%s panel startup failed: %v\n", time.Now().Format(time.RFC3339), panelErr)
 	_ = os.WriteFile(logPath, []byte(line), 0o644)
 }

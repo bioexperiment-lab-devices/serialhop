@@ -54,7 +54,7 @@ func Run(ctx context.Context, cfg Config) error {
 	// Chisel's internal logger writes to stderr, which is /dev/null under the
 	// windowsgui subsystem. The service worker re-points os.Stderr at a pipe
 	// (see logship.installStderrTap) so chisel's state-change logs are
-	// captured to lab_devices_client_stderr.log and shipped to Loki.
+	// captured to SerialHop_stderr.log and shipped to Loki.
 	c.Logger.Info = true
 	c.Logger.Debug = false
 	slog.Info("chisel: starting",

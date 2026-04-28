@@ -1,8 +1,8 @@
 // Package logship streams the client's slog output and stderr to the
 // in-VPS Loki via the chisel forward tunnel.
 //
-// It also owns the durable on-disk log files (lab_devices_client.log,
-// lab_devices_client_stderr.log) so disabling the shipper does not
+// It also owns the durable on-disk log files (SerialHop.log,
+// SerialHop_stderr.log) so disabling the shipper does not
 // affect on-disk logging.
 package logship
 
@@ -15,8 +15,8 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-const LogFileName = "lab_devices_client.log"
-const StderrLogFileName = "lab_devices_client_stderr.log"
+const LogFileName = "SerialHop.log"
+const StderrLogFileName = "SerialHop_stderr.log"
 
 // defaultPushURL is the local end of the chisel forward tunnel that
 // reaches the in-VPS Loki.
@@ -120,7 +120,7 @@ func buildLabels(client, stream, version string) map[string]string {
 	return map[string]string{
 		"client":  client,
 		"stream":  stream,
-		"service": "lab_devices_client",
+		"service": "serialhop",
 		"version": version,
 	}
 }

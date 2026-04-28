@@ -48,7 +48,7 @@ func RunElevatedAdminAction(action string) (errMsg string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("locate executable: %w", err)
 	}
-	errFile := filepath.Join(os.TempDir(), fmt.Sprintf("lab_devices_client_admin_%d.err", os.Getpid()))
+	errFile := filepath.Join(os.TempDir(), fmt.Sprintf("SerialHop_admin_%d.err", os.Getpid()))
 	defer os.Remove(errFile)
 
 	verb, _ := windows.UTF16PtrFromString("runas")

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	configFileName = "lab_devices_client_config.yaml"
-	logFileName    = "lab_devices_client.log"
+	configFileName = "SerialHop_config.yaml"
+	logFileName    = "SerialHop.log"
 	pollInterval   = 1 * time.Second
 )
 
@@ -131,7 +131,7 @@ func Run() error {
 
 	if err := (MainWindow{
 		AssignTo: &mw,
-		Title:    "Lab Devices Client v" + version.Version,
+		Title:    "SerialHop v" + version.Version,
 		Size:     Size{Width: 480, Height: 360},
 		MinSize:  Size{Width: 480, Height: 360},
 		Layout:   VBox{},

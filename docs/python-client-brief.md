@@ -1,6 +1,6 @@
-# lab_devices_client HTTP API reference
+# SerialHop HTTP API reference
 
-`lab_devices_client` is a Go service running on a lab machine. It controls serial-port lab devices and exposes a REST API. The lab machine sits behind NAT and reaches the rest of the docker-compose network through a chisel reverse tunnel.
+`SerialHop` is a Go service running on a lab machine. It controls serial-port lab devices and exposes a REST API. The lab machine sits behind NAT and reaches the rest of the docker-compose network through a chisel reverse tunnel.
 
 This document describes the wire-level behavior of that API.
 

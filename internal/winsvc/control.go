@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	ServiceName = "LabDevicesClient"
-	DisplayName = "Lab Devices Client"
+	ServiceName = "SerialHop"
+	DisplayName = "SerialHop"
 	Description = "Exposes serial-port lab devices via chisel reverse tunnel."
 
 	productionStopTimeout  = 15 * time.Second

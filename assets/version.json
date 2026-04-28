@@ -10,12 +10,12 @@
   },
   "StringFileInfo": {
     "CompanyName":      "Lab Devices",
-    "FileDescription":  "Lab Devices Client",
+    "FileDescription":  "SerialHop",
     "FileVersion":      "0.1.0",
-    "InternalName":     "lab_devices_client",
+    "InternalName":     "serialhop",
     "LegalCopyright":   "Copyright (c) 2026 Lab Devices",
-    "OriginalFilename": "lab_devices_client.exe",
-    "ProductName":      "Lab Devices Client",
+    "OriginalFilename": "SerialHop.exe",
+    "ProductName":      "SerialHop",
     "ProductVersion":   "0.1.0"
   },
   "VarFileInfo": {

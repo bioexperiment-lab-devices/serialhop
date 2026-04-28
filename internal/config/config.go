@@ -46,7 +46,7 @@ func Default() Config {
 	}
 }
 
-const scaffoldTemplate = `# lab_devices_client_config.yaml
+const scaffoldTemplate = `# SerialHop_config.yaml
 # Auto-generated scaffold. Edit values then re-run the executable.
 
 chisel:
