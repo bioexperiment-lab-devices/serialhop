@@ -289,7 +289,7 @@ No special bypass path is needed.
 
 ### 7.3 Stderr line-too-long
 
-`bufio.Scanner.Buffer` is set to 1 MiB. If a single stderr line exceeds that, the shipper logs `slog.Warn("stderr line truncated", "len", n)` once for the occurrence, pushes the truncated line, and continues.
+`bufio.Scanner.Buffer` is set to 1 MiB. If a single stderr line exceeds that, `Scanner.Err()` returns `bufio.ErrTooLong`. The reader logs `slog.Warn("logship stderr scanner error (recreating)", "err", err)`, drops the offending line, recreates the scanner against the same pipe, and continues. The goroutine never exits while the process holds the pipe writer — exiting would deadlock subsequent stderr writes once the pipe buffer fills.
 
 ### 7.4 Cardinality 4xx
 

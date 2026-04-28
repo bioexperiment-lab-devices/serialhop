@@ -127,7 +127,8 @@ func buildLabels(client, stream, version string) map[string]string {
 
 // Shutdown stops the shipper (giving it the caller's deadline to drain
 // in-flight records), closes the stderr tap, and closes the on-disk
-// writers.
+// writers. Single-call: not safe under concurrent invocation. Designed
+// as a process-exit hook owned by the service worker.
 func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()
 	stop := m.shipStop

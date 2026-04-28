@@ -46,11 +46,15 @@ func Run(ctx context.Context, cfg Config) error {
 		Remotes:          remotes,
 		KeepAlive:        25 * time.Second,
 		MaxRetryInterval: 5 * time.Minute,
-		MaxRetryCount:    -1,
+		MaxRetryCount:    -1, // unbounded; default 0 means "give up after first failed attempt"
 	})
 	if err != nil {
 		return fmt.Errorf("new chisel client: %w", err)
 	}
+	// Chisel's internal logger writes to stderr, which is /dev/null under the
+	// windowsgui subsystem. The service worker re-points os.Stderr at a pipe
+	// (see logship.installStderrTap) so chisel's state-change logs are
+	// captured to lab_devices_client_stderr.log and shipped to Loki.
 	c.Logger.Info = true
 	c.Logger.Debug = false
 	slog.Info("chisel: starting",
