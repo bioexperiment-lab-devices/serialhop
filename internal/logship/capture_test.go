@@ -59,3 +59,54 @@ func TestInstallSlogTapWritesToDiskAndQueue(t *testing.T) {
 		t.Errorf("line=%q does not contain message", got[0].line)
 	}
 }
+
+func TestInstallStderrTapWritesToDiskAndQueue(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stderr.log")
+	q := newQueue(64)
+
+	prevStderr := os.Stderr
+	t.Cleanup(func() { os.Stderr = prevStderr })
+
+	lj := &lumberjack.Logger{Filename: path, MaxSize: 1, MaxBackups: 1}
+	t.Cleanup(func() { _ = lj.Close() })
+
+	tap, err := installStderrTap(lj, q)
+	if err != nil {
+		t.Fatalf("installStderrTap: %v", err)
+	}
+	t.Cleanup(func() { tap.close() })
+
+	if _, err := os.Stderr.Write([]byte("panic: something\nstack frame 1\n")); err != nil {
+		t.Fatalf("write stderr: %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		data, _ := os.ReadFile(path)
+		if strings.Contains(string(data), "stack frame 1") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read stderr log: %v", err)
+	}
+	if !strings.Contains(string(data), "panic: something") || !strings.Contains(string(data), "stack frame 1") {
+		t.Fatalf("disk missing lines:\n%s", data)
+	}
+
+	got := q.drainUpTo(10)
+	if len(got) != 2 {
+		t.Fatalf("queue drain returned %d records, want 2", len(got))
+	}
+	for _, r := range got {
+		if r.stream != "stderr" {
+			t.Errorf("stream=%q, want stderr", r.stream)
+		}
+	}
+	if got[0].line != "panic: something" || got[1].line != "stack frame 1" {
+		t.Fatalf("lines=%+v", got)
+	}
+}

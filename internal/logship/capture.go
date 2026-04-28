@@ -1,9 +1,13 @@
 package logship
 
 import (
+	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"sync"
 	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -56,4 +60,81 @@ func (w *queueWriter) Write(p []byte) (int, error) {
 		w.q.push(record{stream: w.stream, tsNano: now, line: string(line)})
 	}
 	return len(p), nil
+}
+
+// stderrTap holds the side state needed to undo installStderrTap on Shutdown.
+type stderrTap struct {
+	prev    *os.File // saved os.Stderr from before install
+	pipeR   *os.File
+	pipeW   *os.File
+	disk    *lumberjack.Logger
+	wg      sync.WaitGroup
+	closing chan struct{}
+}
+
+func (t *stderrTap) close() {
+	if t == nil {
+		return
+	}
+	close(t.closing)
+	// Closing the pipe writer unblocks the reader.
+	_ = t.pipeW.Close()
+	t.wg.Wait()
+	_ = t.pipeR.Close()
+	os.Stderr = t.prev
+}
+
+const stderrScannerBufferSize = 1 << 20 // 1 MiB
+
+// installStderrTap re-points os.Stderr at a pipe whose reader fans each
+// line out to disk (lumberjack) and to q (if non-nil). Returns a tap
+// handle whose close() restores os.Stderr.
+func installStderrTap(disk *lumberjack.Logger, q *queue) (*stderrTap, error) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("os.Pipe: %w", err)
+	}
+	prevStderr := os.Stderr
+	os.Stderr = pw
+
+	tap := &stderrTap{
+		prev:    prevStderr,
+		pipeR:   pr,
+		pipeW:   pw,
+		disk:    disk,
+		closing: make(chan struct{}),
+	}
+	tap.wg.Add(1)
+	go tap.runReader(q)
+	return tap, nil
+}
+
+func (t *stderrTap) runReader(q *queue) {
+	defer t.wg.Done()
+	for {
+		scanner := bufio.NewScanner(t.pipeR)
+		scanner.Buffer(make([]byte, 64*1024), stderrScannerBufferSize)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if _, err := t.disk.Write([]byte(line + "\n")); err != nil {
+				// Disk write failure — log via slog and keep going.
+				slog.Warn("logship stderr disk write failed", "err", err)
+			}
+			if q != nil {
+				q.push(record{stream: "stderr", tsNano: time.Now().UnixNano(), line: line})
+			}
+		}
+		err := scanner.Err()
+		select {
+		case <-t.closing:
+			return
+		default:
+		}
+		if err != nil {
+			slog.Warn("logship stderr scanner error (recreating)", "err", err)
+			continue // recreate scanner on the same pipe — never exit while writers are active
+		}
+		// EOF without close: pipe writer was closed externally. Exit.
+		return
+	}
 }
