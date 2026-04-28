@@ -347,3 +347,68 @@ func TestShipperResetsDroppedCounterOnSuccess(t *testing.T) {
 		t.Fatalf("dropped = %d after success, want 0 (shipper should have called takeDropped)", n)
 	}
 }
+
+func TestShipperRunExitsPromptlyOnCancel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	q := newQueue(64)
+	labels := map[string]map[string]string{
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+	}
+	s := newShipper(q, srv.URL, labels, realClock{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.run(ctx); close(done) }()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shipper did not exit within 2s of cancel")
+	}
+}
+
+func TestShipperFinalDrainOnCancel(t *testing.T) {
+	var (
+		mu   sync.Mutex
+		seen int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen++
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	q := newQueue(64)
+	labels := map[string]map[string]string{
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+	}
+	s := newShipper(q, srv.URL, labels, realClock{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.run(ctx); close(done) }()
+
+	// Push records, then immediately cancel — no time for the periodic
+	// flush. The final drain must still send them.
+	for i := 0; i < 5; i++ {
+		q.push(record{stream: "stdout", tsNano: int64(i), line: "x"})
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shipper did not exit within 2s of cancel")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if seen == 0 {
+		t.Fatal("final drain did not push pending records")
+	}
+}

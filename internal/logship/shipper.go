@@ -108,21 +108,31 @@ func (s *shipper) run(ctx context.Context) {
 	for {
 		s.q.waitNotify(ctx, flushTimeout)
 		if ctx.Err() != nil {
+			// Final best-effort drain. Use a fresh background context
+			// so postWithRetry isn't immediately short-circuited by the
+			// already-cancelled ctx; the manager's caller-supplied
+			// deadline bounds how long we wait via the select on done
+			// in Manager.Shutdown.
+			s.flushOnce(context.Background())
 			return
 		}
-		batch := s.q.drainUpTo(maxBatch)
-		if len(batch) == 0 {
-			continue
-		}
-		body, err := buildPushBody(batch, s.labels)
-		if err != nil {
-			slog.Warn("logship build body failed", "err", err)
-			continue
-		}
-		if s.postWithRetry(ctx, body) {
-			if dropped := s.q.takeDropped(); dropped > 0 {
-				slog.Warn("logs dropped", "count", dropped)
-			}
+		s.flushOnce(ctx)
+	}
+}
+
+func (s *shipper) flushOnce(ctx context.Context) {
+	batch := s.q.drainUpTo(maxBatch)
+	if len(batch) == 0 {
+		return
+	}
+	body, err := buildPushBody(batch, s.labels)
+	if err != nil {
+		slog.Warn("logship build body failed", "err", err)
+		return
+	}
+	if s.postWithRetry(ctx, body) {
+		if dropped := s.q.takeDropped(); dropped > 0 {
+			slog.Warn("logs dropped", "count", dropped)
 		}
 	}
 }
