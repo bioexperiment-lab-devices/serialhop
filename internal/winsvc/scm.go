@@ -65,9 +65,20 @@ var (
 	ErrServiceExists  = errors.New("service is already installed")
 )
 
-// DialSCM opens a real connection to the Windows SCM. Defined per-platform
-// (real on windows, stub elsewhere). Tests inject their own SCMConn instead
-// of going through this.
+// DialSCM opens a real connection to the Windows SCM with full access.
+// Requires admin privileges. Used by the elevated admin-action subprocess
+// (install/uninstall/restart). Defined per-platform (real on windows, stub
+// elsewhere). Tests inject their own SCMConn instead of going through this.
 func DialSCM() (SCMConn, error) {
 	return dialSCM()
+}
+
+// DialSCMReadOnly opens a low-privilege SCM connection sufficient for
+// querying service status. Works without admin elevation. Used by the panel's
+// 1 s polling loop, which runs unelevated. CreateService / Start / Stop /
+// Delete on the returned connection or services will fail with "access
+// denied" — the panel never calls them; admin actions go through the
+// elevated subprocess.
+func DialSCMReadOnly() (SCMConn, error) {
+	return dialSCMReadOnly()
 }

@@ -4,6 +4,7 @@ package winsvc
 
 import (
 	"errors"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
@@ -17,6 +18,60 @@ func dialSCM() (SCMConn, error) {
 	}
 	return &winSCM{m: m}, nil
 }
+
+// dialSCMReadOnly opens an SCM handle with only SC_MANAGER_CONNECT, which
+// works for non-admin users. The returned SCMConn supports OpenService for
+// query (SERVICE_QUERY_STATUS); CreateService and the mutating service
+// methods will fail.
+func dialSCMReadOnly() (SCMConn, error) {
+	h, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return nil, err
+	}
+	return &winSCMReadOnly{handle: h}, nil
+}
+
+type winSCMReadOnly struct {
+	handle windows.Handle
+}
+
+func (w *winSCMReadOnly) Disconnect() error { return windows.CloseServiceHandle(w.handle) }
+
+func (w *winSCMReadOnly) OpenService(name string) (SCMService, error) {
+	namePtr, err := syscall.UTF16PtrFromString(name)
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.OpenService(w.handle, namePtr, windows.SERVICE_QUERY_STATUS)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
+			return nil, ErrServiceMissing
+		}
+		return nil, err
+	}
+	return &winServiceReadOnly{handle: h}, nil
+}
+
+func (w *winSCMReadOnly) CreateService(name string, cfg ServiceConfig) (SCMService, error) {
+	return nil, errors.New("read-only SCM connection cannot create services")
+}
+
+type winServiceReadOnly struct {
+	handle windows.Handle
+}
+
+func (w *winServiceReadOnly) Query() (ServiceState, error) {
+	var status windows.SERVICE_STATUS
+	if err := windows.QueryServiceStatus(w.handle, &status); err != nil {
+		return 0, err
+	}
+	return mapState(svc.State(status.CurrentState)), nil
+}
+
+func (w *winServiceReadOnly) Start() error  { return errors.New("read-only SCM connection") }
+func (w *winServiceReadOnly) Stop() error   { return errors.New("read-only SCM connection") }
+func (w *winServiceReadOnly) Delete() error { return errors.New("read-only SCM connection") }
+func (w *winServiceReadOnly) Close() error  { return windows.CloseServiceHandle(w.handle) }
 
 type winSCM struct{ m *mgr.Mgr }
 

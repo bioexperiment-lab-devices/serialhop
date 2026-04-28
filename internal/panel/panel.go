@@ -207,9 +207,11 @@ func ensureScaffold(cfgPath string) error {
 // etc.) — the panel should keep displaying the last-known state in that
 // case to avoid blinking the indicator. ok=true with state==StateNotInstalled
 // is the legitimate "service is not registered" reading; the SCM call itself
+// succeeded. Uses DialSCMReadOnly so the panel can poll without admin
+// elevation; install/uninstall/restart go through the elevated subprocess.
 // succeeded.
 func queryServiceState() (winsvc.ServiceState, bool) {
-	scm, err := winsvc.DialSCM()
+	scm, err := winsvc.DialSCMReadOnly()
 	if err != nil {
 		return winsvc.StateNotInstalled, false
 	}

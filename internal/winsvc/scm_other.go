@@ -7,3 +7,7 @@ import "errors"
 func dialSCM() (SCMConn, error) {
 	return nil, errors.New("SCM not available on this platform")
 }
+
+func dialSCMReadOnly() (SCMConn, error) {
+	return nil, errors.New("SCM not available on this platform")
+}
