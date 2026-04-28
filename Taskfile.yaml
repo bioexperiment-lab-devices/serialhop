@@ -33,7 +33,8 @@ tasks:
       - |
         VERSION=$(go run ./tools/bumpversion -print)
         GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build \
-          -ldflags="-s -w -H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
+          -trimpath \
+          -ldflags="-H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
           -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/lab_devices_client
 
   test:
