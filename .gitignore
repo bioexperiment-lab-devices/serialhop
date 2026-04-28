@@ -7,6 +7,8 @@
 /lab_devices_client_config.yaml
 /lab_devices_client.log
 /lab_devices_client.log.*
+/lab_devices_client_stderr.log
+/lab_devices_client_panel_error.log
 
 # Editor / OS
 .idea/
