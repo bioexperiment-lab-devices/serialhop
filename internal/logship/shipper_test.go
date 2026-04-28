@@ -3,10 +3,15 @@ package logship
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestBuildPushBodyGroupsByStream(t *testing.T) {
@@ -88,5 +93,72 @@ func TestBuildPushBodyEmptyBatch(t *testing.T) {
 	}
 	if body != nil {
 		t.Fatalf("empty batch must return nil body, got %d bytes", len(body))
+	}
+}
+
+func TestShipperHappyPath(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		requests  [][]byte
+		gotHeader = make(map[string]string)
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requests = append(requests, body)
+		gotHeader["Content-Type"] = r.Header.Get("Content-Type")
+		gotHeader["Content-Encoding"] = r.Header.Get("Content-Encoding")
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	q := newQueue(1024)
+	labels := map[string]map[string]string{
+		"stdout": {"client": "lab-1", "stream": "stdout", "service": "lab_devices_client", "version": "1.4.2"},
+		"stderr": {"client": "lab-1", "stream": "stderr", "service": "lab_devices_client", "version": "1.4.2"},
+	}
+	s := newShipper(q, srv.URL, labels, realClock{})
+
+	for i := 0; i < 600; i++ {
+		stream := "stdout"
+		if i%5 == 0 {
+			stream = "stderr"
+		}
+		q.push(record{stream: stream, tsNano: int64(i), line: "line"})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		s.run(ctx)
+		close(done)
+	}()
+
+	// Wait for at least one request to land.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(requests)
+		mu.Unlock()
+		if n >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requests) == 0 {
+		t.Fatal("no POST received")
+	}
+	if gotHeader["Content-Encoding"] != "gzip" {
+		t.Errorf("Content-Encoding = %q, want gzip", gotHeader["Content-Encoding"])
+	}
+	if gotHeader["Content-Type"] != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotHeader["Content-Type"])
 	}
 }

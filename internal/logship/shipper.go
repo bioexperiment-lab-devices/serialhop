@@ -3,9 +3,14 @@ package logship
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"strconv"
+	"time"
 )
 
 // pushStream is the on-the-wire shape of one stream entry in a Loki push.
@@ -63,3 +68,81 @@ func buildPushBody(batch []record, labels map[string]map[string]string) ([]byte,
 	}
 	return buf.Bytes(), nil
 }
+
+const (
+	maxBatch     = 500
+	flushTimeout = 2 * time.Second
+	httpTimeout  = 5 * time.Second
+)
+
+type shipper struct {
+	q      *queue
+	url    string
+	labels map[string]map[string]string
+	clock  clock
+	client *http.Client
+}
+
+func newShipper(q *queue, url string, labels map[string]map[string]string, clk clock) *shipper {
+	return &shipper{
+		q:      q,
+		url:    url,
+		labels: labels,
+		clock:  clk,
+		client: &http.Client{
+			Timeout: httpTimeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        1,
+				MaxIdleConnsPerHost: 1,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
+	}
+}
+
+// run drains the queue forever — until ctx is done — and POSTs each
+// batch. The happy path only; retries land in a later task.
+func (s *shipper) run(ctx context.Context) {
+	for {
+		s.q.waitNotify(ctx, flushTimeout)
+		if ctx.Err() != nil {
+			return
+		}
+		batch := s.q.drainUpTo(maxBatch)
+		if len(batch) == 0 {
+			continue
+		}
+		body, err := buildPushBody(batch, s.labels)
+		if err != nil {
+			slog.Warn("logship build body failed", "err", err)
+			continue
+		}
+		if err := s.post(ctx, body); err != nil {
+			slog.Warn("logship push failed", "err", err)
+		}
+	}
+}
+
+// post performs one POST; no retry. Returns nil on 2xx, an error otherwise.
+func (s *shipper) post(ctx context.Context, body []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return &httpStatusError{code: resp.StatusCode}
+	}
+	return nil
+}
+
+type httpStatusError struct{ code int }
+
+func (e *httpStatusError) Error() string { return http.StatusText(e.code) }
