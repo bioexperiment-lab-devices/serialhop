@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/khamitovdr/lab_devices_client/internal/app"
 	"github.com/khamitovdr/lab_devices_client/internal/config"
@@ -21,6 +23,12 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
+
+func init() {
+	// walk requires the GUI thread to be locked to a single OS thread for
+	// the lifetime of the process. main goroutine drives the UI in panel mode.
+	runtime.LockOSThread()
+}
 
 const configFileName = "lab_devices_client_config.yaml"
 
@@ -60,10 +68,24 @@ func main() {
 		}
 	default:
 		if err := panel.Run(); err != nil {
+			writePanelStartupError(err)
 			fmt.Fprintln(os.Stderr, "fatal:", err)
 			os.Exit(1)
 		}
 	}
+}
+
+// writePanelStartupError records a panel startup failure to a file next to the
+// .exe so the operator can see what went wrong. Stderr is `/dev/null` under
+// the windowsgui subsystem, so without this the failure is invisible.
+func writePanelStartupError(panelErr error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	logPath := filepath.Join(filepath.Dir(exePath), "lab_devices_client_panel_error.log")
+	line := fmt.Sprintf("%s panel startup failed: %v\n", time.Now().Format(time.RFC3339), panelErr)
+	_ = os.WriteFile(logPath, []byte(line), 0o644)
 }
 
 func runForeground() error {
