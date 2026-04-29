@@ -1,7 +1,12 @@
-// Bumps the Minor version in assets/version.json when the working tree has
-// uncommitted source changes (anything other than the version files this tool
-// rewrites: version.json and manifest.xml). Patch and Build are reset to 0 on
-// each bump.
+// Bumps the Minor version in assets/version.json when there are source
+// changes (anything other than the version files this tool rewrites:
+// version.json and manifest.xml) that the current version does not yet
+// reflect. "Source changes" means either:
+//
+//   - uncommitted modifications in the working tree, or
+//   - commits on HEAD newer than the last commit that bumped version.json.
+//
+// Patch and Build are reset to 0 on each bump.
 //
 //	go run ./tools/bumpversion          # bump-if-dirty, then print final version
 //	go run ./tools/bumpversion -print   # read-only: just print current version
@@ -126,8 +131,64 @@ func findRepoRoot() (string, error) {
 }
 
 func hasSourceChanges(repoRoot string) (bool, error) {
+	if dirty, err := hasUncommittedSourceChanges(repoRoot); err != nil || dirty {
+		return dirty, err
+	}
+	return hasCommittedSourceChangesSinceLastBump(repoRoot)
+}
+
+func hasUncommittedSourceChanges(repoRoot string) (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain", "--", ".",
 		":!"+versionRelPath, ":!"+manifestRelPath)
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	return len(strings.TrimSpace(string(out))) > 0, nil
+}
+
+// hasCommittedSourceChangesSinceLastBump reports whether HEAD contains any
+// commits — newer than the most recent commit that touched version.json —
+// that modify files other than version.json or manifest.xml. This catches
+// the case where source was committed without bumping the version (so the
+// working tree is clean but the binary on HEAD would be stale).
+//
+// If version.json itself has an uncommitted modification, a bump is already
+// queued; reporting "stale" here would re-bump on every build until the
+// queued bump is committed.
+func hasCommittedSourceChangesSinceLastBump(repoRoot string) (bool, error) {
+	queued, err := versionFileQueued(repoRoot)
+	if err != nil {
+		return false, err
+	}
+	if queued {
+		return false, nil
+	}
+	cmd := exec.Command("git", "log", "-1", "--format=%H", "--", versionRelPath)
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	lastBump := strings.TrimSpace(string(out))
+	if lastBump == "" {
+		// version.json has no history (e.g., uncommitted at first run).
+		return false, nil
+	}
+	cmd = exec.Command("git", "log", "--format=%H",
+		lastBump+"..HEAD", "--", ".",
+		":!"+versionRelPath, ":!"+manifestRelPath)
+	cmd.Dir = repoRoot
+	out, err = cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	return len(strings.TrimSpace(string(out))) > 0, nil
+}
+
+func versionFileQueued(repoRoot string) (bool, error) {
+	cmd := exec.Command("git", "status", "--porcelain", "--", versionRelPath)
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	if err != nil {
