@@ -9,7 +9,7 @@ import (
 
 func TestProbe_Pump(t *testing.T) {
 	p := serial.NewFakePort("COM3")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown //nolint:errcheck // test teardown
 
 	// Feed response after drain completes but during read timeout
 	go func() {
@@ -36,7 +36,7 @@ func TestProbe_Pump(t *testing.T) {
 
 func TestProbe_Valve(t *testing.T) {
 	p := serial.NewFakePort("COM4")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown //nolint:errcheck // test teardown
 
 	go func() {
 		time.Sleep(300 * time.Millisecond)
@@ -51,7 +51,7 @@ func TestProbe_Valve(t *testing.T) {
 
 func TestProbe_Densitometer(t *testing.T) {
 	p := serial.NewFakePort("COM7")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown //nolint:errcheck // test teardown
 
 	go func() {
 		time.Sleep(300 * time.Millisecond)
@@ -66,7 +66,7 @@ func TestProbe_Densitometer(t *testing.T) {
 
 func TestProbe_UnknownTypeByte(t *testing.T) {
 	p := serial.NewFakePort("COM5")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	p.Feed([]byte{99, 1, 2, 3})
 	got, err := Probe(p)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestProbe_UnknownTypeByte(t *testing.T) {
 
 func TestProbe_FewerThan4Bytes(t *testing.T) {
 	p := serial.NewFakePort("COM6")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	p.Feed([]byte{10, 1}) // only 2 bytes
 	got, err := Probe(p)
 	if err != nil {
@@ -92,7 +92,7 @@ func TestProbe_FewerThan4Bytes(t *testing.T) {
 
 func TestProbe_NoReply(t *testing.T) {
 	p := serial.NewFakePort("COM8")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	got, err := Probe(p)
 	if err != nil {
 		t.Fatalf("Probe: %v", err)

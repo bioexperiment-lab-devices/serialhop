@@ -243,7 +243,7 @@ func rewrite(raw []byte, next quad, nextStr string) ([]byte, error) {
 
 func atomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil { //nolint:gosec // developer tool; path is repo-internal constant
 		return err
 	}
 	return os.Rename(tmp, path)

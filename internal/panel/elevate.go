@@ -83,7 +83,7 @@ func RunElevatedAdminAction(action string) (errMsg string, err error) {
 		return "", fmt.Errorf("WaitForSingleObject: %w", err)
 	}
 
-	data, readErr := os.ReadFile(errFile)
+	data, readErr := os.ReadFile(errFile) //nolint:gosec // errFile is a temp path constructed in this function
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return "", fmt.Errorf("read error file: %w", readErr)
 	}

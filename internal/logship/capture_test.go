@@ -33,13 +33,13 @@ func TestInstallSlogTapWritesToDiskAndQueue(t *testing.T) {
 	// Disk: file should contain the message.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // test reads temp file created by t.TempDir()
 		if err == nil && strings.Contains(string(data), "hello") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test reads temp file created by t.TempDir()
 	if err != nil {
 		t.Fatalf("read log file: %v", err)
 	}
@@ -83,13 +83,13 @@ func TestInstallStderrTapWritesToDiskAndQueue(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		data, _ := os.ReadFile(path)
+		data, _ := os.ReadFile(path) //nolint:gosec // test reads temp file created by t.TempDir()
 		if strings.Contains(string(data), "stack frame 1") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test reads temp file created by t.TempDir()
 	if err != nil {
 		t.Fatalf("read stderr log: %v", err)
 	}

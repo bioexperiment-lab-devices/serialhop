@@ -85,7 +85,7 @@ func writePanelStartupError(panelErr error) {
 	}
 	logPath := filepath.Join(filepath.Dir(exePath), "SerialHop_panel_error.log")
 	line := fmt.Sprintf("%s panel startup failed: %v\n", time.Now().Format(time.RFC3339), panelErr)
-	_ = os.WriteFile(logPath, []byte(line), 0o644)
+	_ = os.WriteFile(logPath, []byte(line), 0o600)
 }
 
 func runForeground() error {
