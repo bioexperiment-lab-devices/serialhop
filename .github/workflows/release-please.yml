@@ -53,6 +53,13 @@ jobs:
         run: choco install jq -y
         shell: pwsh
 
+      # release-please's `json` updater only writes string values, so the
+      # six FixedFileInfo {File,Product}Version.{Major,Minor,Patch} integers
+      # would otherwise stay frozen at the previous release's numbers. Derive
+      # them from the just-bumped string field and write them in-place. The
+      # working tree becomes dirty as a side-effect; tools/buildcmd uses
+      # `git describe --exact-match` to bypass that and emit a clean
+      # `X.Y.Z+vX.Y.Z` version suffix when HEAD is on a tag.
       - name: sync version.json integer fields
         shell: bash
         run: |
