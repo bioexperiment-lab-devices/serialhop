@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.3...v0.5.0) (2026-05-02)
+
+
+### Features
+
+* add MIT license ([#23](https://github.com/bioexperiment-lab-devices/serialhop/issues/23)) ([c55dea0](https://github.com/bioexperiment-lab-devices/serialhop/commit/c55dea01b0e6785a50b65eb2f0884bbe355be12c))
+
 ## [0.4.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.2...v0.4.3) (2026-05-02)
 
 
