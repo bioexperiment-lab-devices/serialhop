@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.0...v0.4.1) (2026-05-02)
+
+
+### Bug Fixes
+
+* **ci:** use awk instead of sed in manifest task for Windows compat ([#16](https://github.com/bioexperiment-lab-devices/serialhop/issues/16)) ([2a19013](https://github.com/bioexperiment-lab-devices/serialhop/commit/2a190133b1e6d38946264bdb70e41ce609a99196))
+
 ## [0.4.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.3.0...v0.4.0) (2026-05-02)
 
 
