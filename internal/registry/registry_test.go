@@ -10,12 +10,12 @@ import (
 func newDevice(t *testing.T, id, port string, typeCode byte) *Device {
 	t.Helper()
 	return &Device{
-		ID:        id,
-		Type:      typeName(typeCode),
-		TypeCode:  typeCode,
-		Port:      port,
-		Conn:      serial.NewFakePort(port),
-		Opener:    serial.NewFakeOpener(),
+		ID:       id,
+		Type:     typeName(typeCode),
+		TypeCode: typeCode,
+		Port:     port,
+		Conn:     serial.NewFakePort(port),
+		Opener:   serial.NewFakeOpener(),
 	}
 }
 

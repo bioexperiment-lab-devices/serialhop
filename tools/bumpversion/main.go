@@ -57,7 +57,7 @@ func main() {
 	}
 	versionPath := filepath.Join(repoRoot, versionRelPath)
 
-	raw, err := os.ReadFile(versionPath)
+	raw, err := os.ReadFile(versionPath) //nolint:gosec // developer tool; path is repo-internal constant
 	if err != nil {
 		fail(fmt.Errorf("read %s: %w", versionPath, err))
 	}
@@ -98,7 +98,7 @@ func main() {
 	}
 
 	manifestPath := filepath.Join(repoRoot, manifestRelPath)
-	mraw, err := os.ReadFile(manifestPath)
+	mraw, err := os.ReadFile(manifestPath) //nolint:gosec // developer tool; path is repo-internal constant
 	if err != nil {
 		fail(fmt.Errorf("read %s: %w", manifestPath, err))
 	}
@@ -176,7 +176,7 @@ func hasCommittedSourceChangesSinceLastBump(repoRoot string) (bool, error) {
 		// version.json has no history (e.g., uncommitted at first run).
 		return false, nil
 	}
-	cmd = exec.Command("git", "log", "--format=%H",
+	cmd = exec.Command("git", "log", "--format=%H", //nolint:gosec // developer tool; git args constructed from repo-internal constants
 		lastBump+"..HEAD", "--", ".",
 		":!"+versionRelPath, ":!"+manifestRelPath)
 	cmd.Dir = repoRoot
@@ -243,7 +243,7 @@ func rewrite(raw []byte, next quad, nextStr string) ([]byte, error) {
 
 func atomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil { //nolint:gosec // developer tool; path is repo-internal constant
 		return err
 	}
 	return os.Rename(tmp, path)

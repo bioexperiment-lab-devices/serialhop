@@ -37,7 +37,7 @@ type Manager struct {
 
 	mu       sync.Mutex
 	pushURL  string
-	shipperC int                // count of shippers started (for tests)
+	shipperC int // count of shippers started (for tests)
 	shipCtx  context.Context
 	shipStop context.CancelFunc
 	shipDone chan struct{}

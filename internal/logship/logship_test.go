@@ -38,13 +38,13 @@ func TestManagerInitInstallsCaptureSoSlogReachesDisk(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	logPath := filepath.Join(dir, LogFileName)
 	for time.Now().Before(deadline) {
-		data, _ := os.ReadFile(logPath)
+		data, _ := os.ReadFile(logPath) //nolint:gosec // test reads temp file created by t.TempDir()
 		if strings.Contains(string(data), "hello-from-init") {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	data, _ := os.ReadFile(logPath)
+	data, _ := os.ReadFile(logPath) //nolint:gosec // test reads temp file created by t.TempDir()
 	t.Fatalf("hello-from-init missing on disk:\n%s", data)
 }
 
@@ -74,13 +74,13 @@ func TestManagerSetLevelChangesFiltering(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	logPath := filepath.Join(dir, LogFileName)
 	for time.Now().Before(deadline) {
-		data, _ := os.ReadFile(logPath)
+		data, _ := os.ReadFile(logPath) //nolint:gosec // test reads temp file created by t.TempDir()
 		if strings.Contains(string(data), "debug-passes") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	data, _ := os.ReadFile(logPath)
+	data, _ := os.ReadFile(logPath) //nolint:gosec // test reads temp file created by t.TempDir()
 	if strings.Contains(string(data), "debug-suppressed") {
 		t.Errorf("debug-suppressed leaked at Info level:\n%s", data)
 	}

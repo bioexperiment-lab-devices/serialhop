@@ -329,7 +329,7 @@ func TestPostCommand_ReconnectThenSuccess(t *testing.T) {
 	// probe returns same type, retry write+read succeeds.
 	reg := registry.New()
 	fp := serial.NewFakePort("COM3")
-	fp.Close() // simulate port already closed → next Write returns ErrClosed
+	_ = fp.Close() // simulate port already closed → next Write returns ErrClosed
 	opener := serial.NewFakeOpener()
 	opener.Add(fp)
 	dev := &registry.Device{
@@ -343,9 +343,9 @@ func TestPostCommand_ReconnectThenSuccess(t *testing.T) {
 	go func() {
 		// Wait for Probe's Drain (200ms) + some buffer
 		time.Sleep(220 * time.Millisecond)
-		fp.Feed([]byte{10, 1, 2, 3})       // probe reply
+		fp.Feed([]byte{10, 1, 2, 3}) // probe reply
 		time.Sleep(100 * time.Millisecond)
-		fp.Feed([]byte{42, 43})            // actual command reply
+		fp.Feed([]byte{42, 43}) // actual command reply
 	}()
 
 	srv := newTestServer(t, reg, nil)
@@ -363,7 +363,7 @@ func TestPostCommand_ReconnectThenSuccess(t *testing.T) {
 func TestPostCommand_ReconnectIdentityChanged(t *testing.T) {
 	reg := registry.New()
 	fp := serial.NewFakePort("COM3")
-	fp.Close()
+	_ = fp.Close() // simulate port already closed → next Write returns ErrClosed
 	opener := serial.NewFakeOpener()
 	opener.Add(fp)
 	dev := &registry.Device{
@@ -394,7 +394,7 @@ func TestPostCommand_ReconnectIdentityChanged(t *testing.T) {
 func TestPostCommand_ReconnectFailsToOpen(t *testing.T) {
 	reg := registry.New()
 	fp := serial.NewFakePort("COM3")
-	fp.Close()
+	_ = fp.Close() // simulate port already closed → next Write returns ErrClosed
 	opener := serial.NewFakeOpener()
 	// Do NOT register fp with opener — Open will fail.
 	dev := &registry.Device{

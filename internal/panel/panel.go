@@ -199,7 +199,7 @@ func ensureScaffold(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // best-effort cleanup; write errors returned by WriteScaffold are the priority
 	return config.WriteScaffold(f)
 }
 
@@ -216,7 +216,7 @@ func queryServiceState() (winsvc.ServiceState, bool) {
 	if err != nil {
 		return winsvc.StateNotInstalled, false
 	}
-	defer scm.Disconnect()
+	defer scm.Disconnect() //nolint:errcheck // best-effort disconnect; error cannot be handled in defer
 	s, err := scm.OpenService(winsvc.ServiceName)
 	if err != nil {
 		if errors.Is(err, winsvc.ErrServiceMissing) {
@@ -224,7 +224,7 @@ func queryServiceState() (winsvc.ServiceState, bool) {
 		}
 		return winsvc.StateNotInstalled, false
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck // best-effort cleanup; error cannot be handled in defer
 	st, err := s.Query()
 	if err != nil {
 		return winsvc.StateStopped, false

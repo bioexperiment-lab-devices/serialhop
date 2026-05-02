@@ -79,7 +79,7 @@ func TestBuildPushBodyGroupsByStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gzip reader: %v", err)
 	}
-	defer gr.Close()
+	defer gr.Close() //nolint:errcheck // test teardown, error irrelevant
 	raw, err := io.ReadAll(gr)
 	if err != nil {
 		t.Fatalf("read decompressed: %v", err)

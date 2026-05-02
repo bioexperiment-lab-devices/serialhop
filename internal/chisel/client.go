@@ -55,8 +55,8 @@ func Run(ctx context.Context, cfg Config) error {
 	// windowsgui subsystem. The service worker re-points os.Stderr at a pipe
 	// (see logship.installStderrTap) so chisel's state-change logs are
 	// captured to SerialHop_stderr.log and shipped to Loki.
-	c.Logger.Info = true
-	c.Logger.Debug = false
+	c.Info = true
+	c.Debug = false
 	slog.Info("chisel: starting",
 		"server", cfg.Server,
 		"remote_port", cfg.RemotePort,

@@ -13,17 +13,17 @@ var ErrClosed = errors.New("serial port closed")
 // Port is the abstraction the rest of the code uses.
 // All read methods respect the most recent SetReadTimeout call.
 type Port interface {
-	Read(p []byte) (int, error)        // returns (0, nil) on read-timeout, never blocks past it
+	Read(p []byte) (int, error) // returns (0, nil) on read-timeout, never blocks past it
 	Write(p []byte) (int, error)
 	SetReadTimeout(d time.Duration) error
-	Drain(d time.Duration) error       // discard all RX bytes available within d
+	Drain(d time.Duration) error // discard all RX bytes available within d
 	Close() error
 	Name() string
 }
 
 // Opener creates new Ports and lists available port names.
 type Opener interface {
-	Open(name string) (Port, error)    // 9600 / 8N1, no flow control
+	Open(name string) (Port, error) // 9600 / 8N1, no flow control
 	List() ([]string, error)
 }
 

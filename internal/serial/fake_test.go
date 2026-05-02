@@ -8,7 +8,7 @@ import (
 
 func TestFakePort_ReadAfterFeed(t *testing.T) {
 	p := NewFakePort("COMTEST")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	p.Feed([]byte{10, 1, 2, 3})
 	if err := p.SetReadTimeout(50 * time.Millisecond); err != nil {
 		t.Fatal(err)
@@ -22,7 +22,7 @@ func TestFakePort_ReadAfterFeed(t *testing.T) {
 
 func TestFakePort_ReadTimeout(t *testing.T) {
 	p := NewFakePort("COMTEST")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	if err := p.SetReadTimeout(20 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestFakePort_ReadTimeout(t *testing.T) {
 
 func TestFakePort_WriteCapture(t *testing.T) {
 	p := NewFakePort("COMTEST")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	in := []byte{1, 2, 3, 4, 0}
 	n, err := p.Write(in)
 	if err != nil || n != len(in) {
@@ -75,7 +75,7 @@ func TestFakePort_AfterClose(t *testing.T) {
 
 func TestFakePort_Drain(t *testing.T) {
 	p := NewFakePort("COMTEST")
-	defer p.Close()
+	defer p.Close() //nolint:errcheck // test teardown
 	p.Feed([]byte{99, 99, 99})
 	if err := p.Drain(30 * time.Millisecond); err != nil {
 		t.Fatal(err)

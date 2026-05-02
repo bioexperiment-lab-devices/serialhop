@@ -62,9 +62,9 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*reg
 		return nil, nil
 	}
 	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		matches  []probeOutcome
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		matches []probeOutcome
 	)
 	for _, name := range candidates {
 		wg.Add(1)

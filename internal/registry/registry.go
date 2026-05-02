@@ -12,8 +12,8 @@ import (
 // Device is one classified, port-open serial device.
 type Device struct {
 	ID       string
-	Type     string  // "pump" | "valve" | "densitometer"
-	TypeCode byte    // 10 | 30 | 70
+	Type     string // "pump" | "valve" | "densitometer"
+	TypeCode byte   // 10 | 30 | 70
 	Port     string
 	Conn     serial.Port
 	Opener   serial.Opener // used to re-open the port on reconnect
@@ -30,9 +30,9 @@ func (d *Device) Unlock() { d.busy.Store(false) }
 
 // Registry holds the live device set. All methods are safe for concurrent use.
 type Registry struct {
-	mu             sync.RWMutex
-	devices        map[string]*Device
-	discoveredAt   *time.Time
+	mu           sync.RWMutex
+	devices      map[string]*Device
+	discoveredAt *time.Time
 
 	discoverGate atomic.Bool
 }

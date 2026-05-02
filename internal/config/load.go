@@ -12,7 +12,7 @@ import (
 // Load reads, parses, and validates a config file at path.
 // Returns os.IsNotExist-compatible error if the file is missing.
 func Load(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is user-supplied config file; intentional
 	if err != nil {
 		return Config{}, err
 	}
@@ -31,7 +31,7 @@ func Load(path string) (Config, error) {
 // returns a zero Config on validation failure. Used by the GUI panel to
 // display current config values alongside any validation warning.
 func LoadPartial(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is user-supplied config file; intentional
 	if err != nil {
 		return Default(), err
 	}
