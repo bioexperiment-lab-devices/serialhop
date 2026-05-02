@@ -94,3 +94,7 @@ task test
 ```
 
 Tests run on macOS and Windows. The Windows-only files (service worker, real SCM client, walk panel, UAC elevation helpers) are silently skipped on non-Windows hosts; their logic is covered by tests against fakes.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
