@@ -77,7 +77,7 @@ jobs:
             -o /tmp/SerialHop.exe ./cmd/serialhop
 
       - name: upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
           path: /tmp/SerialHop.exe
