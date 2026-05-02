@@ -6,17 +6,22 @@ vars:
   OUTPUT_DIR: dist
   BINARY_NAME: 'SerialHop{{if eq .GOOS "windows"}}.exe{{end}}'
   RESOURCE_FILE: cmd/serialhop/resource_windows.syso
-  VERSION_PKG: github.com/bioexperiment-lab-devices/serialhop/internal/version
 
 tasks:
-  bump:
-    desc: Bump minor version in assets/version.json (skipped when tree is clean)
+  manifest:
+    desc: Generate assets/manifest.xml from template using version from assets/version.json
+    sources:
+      - assets/manifest.template.xml
+      - assets/version.json
+      - tools/render-manifest/main.go
+    generates:
+      - assets/manifest.xml
     cmds:
-      - go run ./tools/bumpversion
+      - go run ./tools/render-manifest
 
   resource:
     desc: Compile the .syso resource (icon + UAC manifest + version metadata)
-    deps: [bump]
+    deps: [manifest]
     cmds:
       - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
           -64
@@ -29,13 +34,7 @@ tasks:
     desc: Build the binary (override target via `task build GOOS=... GOARCH=...`)
     deps: [resource]
     cmds:
-      - mkdir -p {{.OUTPUT_DIR}}
-      - |
-        VERSION=$(go run ./tools/bumpversion -print)
-        GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build \
-          -trimpath \
-          -ldflags="-H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
-          -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/serialhop
+      - go run ./tools/buildcmd -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} -goos {{.GOOS}} -goarch {{.GOARCH}}
 
   test:
     desc: Run all unit tests
@@ -50,4 +49,4 @@ tasks:
   clean:
     desc: Remove build outputs and generated resources
     cmds:
-      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}}
+      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}} assets/manifest.xml

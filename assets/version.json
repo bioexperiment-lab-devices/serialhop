@@ -1,26 +1,39 @@
 {
   "FixedFileInfo": {
-    "FileVersion":    {"Major": 0, "Minor": 3, "Patch": 0, "Build": 0},
-    "ProductVersion": {"Major": 0, "Minor": 3, "Patch": 0, "Build": 0},
-    "FileFlagsMask":  "3f",
-    "FileFlags":      "00",
-    "FileOS":         "040004",
-    "FileType":       "01",
-    "FileSubType":    "00"
+    "FileVersion": {
+      "Major": 0,
+      "Minor": 3,
+      "Patch": 0,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 0,
+      "Minor": 3,
+      "Patch": 0,
+      "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileFlags": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
   },
   "StringFileInfo": {
-    "CompanyName":      "Lab Devices",
-    "FileDescription":  "SerialHop",
-    "FileVersion":      "0.3.0",
-    "InternalName":     "serialhop",
-    "LegalCopyright":   "Copyright (c) 2026 Lab Devices",
+    "CompanyName": "Lab Devices",
+    "FileDescription": "SerialHop",
+    "FileVersion": "0.4.3",
+    "InternalName": "serialhop",
+    "LegalCopyright": "Copyright (c) 2026 Lab Devices",
     "OriginalFilename": "SerialHop.exe",
-    "ProductName":      "SerialHop",
-    "ProductVersion":   "0.3.0"
+    "ProductName": "SerialHop",
+    "ProductVersion": "0.4.3"
   },
   "VarFileInfo": {
-    "Translation": {"LangID": "0409", "CharsetID": "04B0"}
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
   },
   "ManifestPath": "assets/manifest.xml",
-  "IconPath":     "assets/icon.ico"
+  "IconPath": "assets/icon.ico"
 }
