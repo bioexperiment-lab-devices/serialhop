@@ -20,7 +20,13 @@ task build GOOS=linux GOARCH=arm64
 
 Output: `dist/SerialHop.exe`.
 
-The build embeds an icon, a UAC manifest (`asInvoker`), and version metadata via `goversioninfo`. The first build downloads `goversioninfo` automatically. Each `task build` also auto-bumps the minor version in `assets/version.json` and `assets/manifest.xml` whenever the working tree has uncommitted source changes — the resulting version string is baked into the binary via `-ldflags -X` and shown in the panel title.
+The build embeds an icon, a UAC manifest (`asInvoker`), and version metadata via `goversioninfo`. The first build downloads `goversioninfo` automatically. `assets/manifest.xml` is generated at build time from `assets/manifest.template.xml` and the version in `assets/version.json` (the generated file is gitignored). The version baked into the binary via `-ldflags -X` is `<base>+<git-describe>` — e.g. `0.3.0+v0.3.0` on a clean release, `0.3.0+v0.3.0-7-gabc1234-dirty` on a working-tree dev build.
+
+`jq` is required on the build host. Preinstalled on all GitHub-hosted runners; `brew install jq` on macOS or `apt-get install jq` on Debian/Ubuntu.
+
+## Releases
+
+Releases are managed by [release-please](https://github.com/googleapis/release-please). Pull requests merged to `main` use conventional-commit titles (`feat: ...`, `fix: ...`, etc.). release-please maintains an open PR titled `chore(main): release X.Y.Z` that aggregates pending changes; merging that PR creates a `vX.Y.Z` tag, builds `SerialHop-vX.Y.Z.exe` on a Windows runner, and publishes a GitHub Release with the `.exe`, a `SHA256SUMS.txt`, and a Sigstore build-provenance attestation. There is no scheduled cadence — releases ship when the release PR is merged by hand.
 
 ## Install on a Windows lab machine
 

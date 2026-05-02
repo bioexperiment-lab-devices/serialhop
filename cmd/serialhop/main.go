@@ -18,6 +18,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/panel"
+	internalversion "github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 
 	"golang.org/x/sys/windows"
@@ -36,10 +37,16 @@ var (
 	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart (used by the GUI)")
 	flagErrorFile   = flag.String("error-file", "", "internal: path the elevated child writes its error message to")
 	flagForeground  = flag.Bool("foreground", false, "run the device-client logic in the console (developer mode)")
+	flagVersion     = flag.Bool("version", false, "print version and exit")
 )
 
 func main() {
 	flag.Parse()
+
+	if *flagVersion {
+		fmt.Println(internalversion.Version)
+		return
+	}
 
 	if flag.NArg() > 0 {
 		fmt.Fprintln(os.Stderr, "fatal: unexpected positional arguments:", flag.Args())
