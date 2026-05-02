@@ -46,8 +46,19 @@ func main() {
 		fail("assets/version.json: StringFileInfo.FileVersion is empty")
 	}
 
+	// Prefer an exact-match tag when HEAD is on one. Otherwise fall back to
+	// the verbose `git describe` (commits-ahead + sha + optional -dirty).
+	// The exact-match path matters for tagged release builds where a prior
+	// workflow step (e.g. release-please.yml's integer-sync) may have left
+	// the working tree dirty: we still want a clean `0.4.3+v0.4.3` suffix,
+	// not `0.4.3+v0.4.3-dirty`, since the binary is genuinely built from
+	// the tag's source.
 	suffix := "unknown"
-	if descOut, err := exec.Command("git", "describe", "--tags", "--always", "--dirty", "--match=v*").Output(); err == nil {
+	if descOut, err := exec.Command("git", "describe", "--exact-match", "--tags", "HEAD").Output(); err == nil {
+		if s := strings.TrimSpace(string(descOut)); s != "" {
+			suffix = s
+		}
+	} else if descOut, err := exec.Command("git", "describe", "--tags", "--always", "--dirty", "--match=v*").Output(); err == nil {
 		if s := strings.TrimSpace(string(descOut)); s != "" {
 			suffix = s
 		}
