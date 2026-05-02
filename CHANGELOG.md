@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.2...v0.4.3) (2026-05-02)
+
+
+### Bug Fixes
+
+* **ci:** clean version suffix on tagged builds + spec sync ([#20](https://github.com/bioexperiment-lab-devices/serialhop/issues/20)) ([cd79248](https://github.com/bioexperiment-lab-devices/serialhop/commit/cd792482d239ae1c94b094a143818847469fb9fe))
+
 ## [0.4.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.1...v0.4.2) (2026-05-02)
 
 
