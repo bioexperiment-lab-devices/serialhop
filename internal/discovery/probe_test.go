@@ -79,7 +79,7 @@ func TestProbe_UnknownTypeByte(t *testing.T) {
 
 func TestProbe_FewerThan4Bytes(t *testing.T) {
 	p := serial.NewFakePort("COM6")
-	defer p.Close() //nolint:errcheck // test teardown
+	defer p.Close()       //nolint:errcheck // test teardown
 	p.Feed([]byte{10, 1}) // only 2 bytes
 	got, err := Probe(p)
 	if err != nil {

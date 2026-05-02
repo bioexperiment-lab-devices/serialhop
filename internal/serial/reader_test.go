@@ -52,7 +52,7 @@ func TestReadFrame_StopAtMax(t *testing.T) {
 
 func TestReadFrame_PartialBeforeInterByteTimeout(t *testing.T) {
 	p := NewFakePort("COMTEST")
-	defer p.Close() //nolint:errcheck // test teardown
+	defer p.Close()       //nolint:errcheck // test teardown
 	p.Feed([]byte{10, 1}) // only 2 of 4 bytes; rest never arrives
 	got, err := ReadFrame(p, 200*time.Millisecond, 25*time.Millisecond, 4)
 	if err != nil {
