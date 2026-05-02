@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.1...v0.4.2) (2026-05-02)
+
+
+### Bug Fixes
+
+* **ci:** replace Taskfile shell pipelines with Go programs (Windows compat) ([#18](https://github.com/bioexperiment-lab-devices/serialhop/issues/18)) ([8fd75de](https://github.com/bioexperiment-lab-devices/serialhop/commit/8fd75de670663042260730400df11c60c2dcfccf))
+
 ## [0.4.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.0...v0.4.1) (2026-05-02)
 
 
