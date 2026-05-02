@@ -9,14 +9,21 @@ vars:
   VERSION_PKG: github.com/bioexperiment-lab-devices/serialhop/internal/version
 
 tasks:
-  bump:
-    desc: Bump minor version in assets/version.json (skipped when tree is clean)
+  manifest:
+    desc: Generate assets/manifest.xml from template using version from assets/version.json
+    sources:
+      - assets/manifest.template.xml
+      - assets/version.json
+    generates:
+      - assets/manifest.xml
     cmds:
-      - go run ./tools/bumpversion
+      - |
+        VERSION=$(jq -r '.StringFileInfo.FileVersion' assets/version.json)
+        sed "s/@@VERSION@@/${VERSION}.0/" assets/manifest.template.xml > assets/manifest.xml
 
   resource:
     desc: Compile the .syso resource (icon + UAC manifest + version metadata)
-    deps: [bump]
+    deps: [manifest]
     cmds:
       - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
           -64
@@ -31,7 +38,9 @@ tasks:
     cmds:
       - mkdir -p {{.OUTPUT_DIR}}
       - |
-        VERSION=$(go run ./tools/bumpversion -print)
+        VERSION_BASE=$(jq -r '.StringFileInfo.FileVersion' assets/version.json)
+        VERSION_SUFFIX=$(git describe --tags --always --dirty --match='v*' 2>/dev/null || echo "unknown")
+        VERSION="${VERSION_BASE}+${VERSION_SUFFIX}"
         GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build \
           -trimpath \
           -ldflags="-H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
@@ -50,4 +59,4 @@ tasks:
   clean:
     desc: Remove build outputs and generated resources
     cmds:
-      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}}
+      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}} assets/manifest.xml
