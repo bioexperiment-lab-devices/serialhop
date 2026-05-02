@@ -5,12 +5,6 @@
       "package-name": "serialhop",
       "include-component-in-tag": false,
       "extra-files": [
-        { "type": "json", "path": "assets/version.json", "jsonpath": "$.FixedFileInfo.FileVersion.Major" },
-        { "type": "json", "path": "assets/version.json", "jsonpath": "$.FixedFileInfo.FileVersion.Minor" },
-        { "type": "json", "path": "assets/version.json", "jsonpath": "$.FixedFileInfo.FileVersion.Patch" },
-        { "type": "json", "path": "assets/version.json", "jsonpath": "$.FixedFileInfo.ProductVersion.Major" },
-        { "type": "json", "path": "assets/version.json", "jsonpath": "$.FixedFileInfo.ProductVersion.Minor" },
-        { "type": "json", "path": "assets/version.json", "jsonpath": "$.FixedFileInfo.ProductVersion.Patch" },
         { "type": "json", "path": "assets/version.json", "jsonpath": "$.StringFileInfo.FileVersion" },
         { "type": "json", "path": "assets/version.json", "jsonpath": "$.StringFileInfo.ProductVersion" }
       ]
