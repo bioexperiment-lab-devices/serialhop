@@ -31,7 +31,7 @@ func RunAdminAction(action, errorFile string) int {
 		if err != nil {
 			return fmt.Errorf("connect SCM: %w", err)
 		}
-		defer scm.Disconnect()
+		defer scm.Disconnect() //nolint:errcheck // best-effort disconnect; error cannot be handled in defer
 
 		switch action {
 		case "install":
@@ -49,7 +49,7 @@ func RunAdminAction(action, errorFile string) int {
 		}
 	}()
 	if err != nil {
-		_ = os.WriteFile(errorFile, []byte(err.Error()), 0o644)
+		_ = os.WriteFile(errorFile, []byte(err.Error()), 0o600)
 		return 1
 	}
 	return 0
@@ -66,11 +66,11 @@ func install(scm SCMConn, exePath string) error {
 	s, err := scm.CreateService(ServiceName, cfg)
 	if err != nil {
 		if errors.Is(err, ErrServiceExists) {
-			return errors.New("Service already installed.")
+			return errors.New("service already installed")
 		}
 		return fmt.Errorf("create service: %w", err)
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck // best-effort cleanup; error cannot be handled in defer
 
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("start service: %w (service is installed; use Restart after fixing the underlying issue)", err)
@@ -83,7 +83,7 @@ func uninstall(scm SCMConn, stopTimeout, pollInterval time.Duration) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck // best-effort cleanup; error cannot be handled in defer
 
 	state, err := s.Query()
 	if err != nil {
@@ -95,7 +95,7 @@ func uninstall(scm SCMConn, stopTimeout, pollInterval time.Duration) error {
 		}
 		if err := waitForState(s, StateStopped, stopTimeout, pollInterval); err != nil {
 			if errors.Is(err, errWaitTimeout) {
-				return fmt.Errorf("Service did not stop within %s; check the log file or kill the process manually.", stopTimeout)
+				return fmt.Errorf("service did not stop within %s; check the log file or kill the process manually", stopTimeout)
 			}
 			return fmt.Errorf("query while stopping: %w", err)
 		}
@@ -111,7 +111,7 @@ func restart(scm SCMConn, timeout, pollInterval time.Duration) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer s.Close() //nolint:errcheck // best-effort cleanup; error cannot be handled in defer
 
 	state, err := s.Query()
 	if err != nil {
@@ -123,7 +123,7 @@ func restart(scm SCMConn, timeout, pollInterval time.Duration) error {
 		}
 		if err := waitForState(s, StateStopped, timeout, pollInterval); err != nil {
 			if errors.Is(err, errWaitTimeout) {
-				return fmt.Errorf("Service did not stop within %s; check the log file.", timeout)
+				return fmt.Errorf("service did not stop within %s; check the log file", timeout)
 			}
 			return fmt.Errorf("query while stopping: %w", err)
 		}
@@ -133,7 +133,7 @@ func restart(scm SCMConn, timeout, pollInterval time.Duration) error {
 	}
 	if err := waitForState(s, StateRunning, timeout, pollInterval); err != nil {
 		if errors.Is(err, errWaitTimeout) {
-			return errors.New("Service failed to start; check log file.")
+			return errors.New("service failed to start; check log file")
 		}
 		return fmt.Errorf("query while starting: %w", err)
 	}

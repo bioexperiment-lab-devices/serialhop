@@ -180,8 +180,8 @@ func (s *shipper) post(ctx context.Context, body []byte) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	defer resp.Body.Close() //nolint:errcheck // best-effort drain; error irrelevant
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return &httpStatusError{code: resp.StatusCode}
 	}
