@@ -20,7 +20,7 @@ tasks:
       - |
         set -euo pipefail
         VERSION=$(jq -e -r '.StringFileInfo.FileVersion' assets/version.json)
-        sed "s|@@VERSION@@|${VERSION}.0|" assets/manifest.template.xml > assets/manifest.xml
+        awk -v v="${VERSION}.0" '{gsub(/@@VERSION@@/, v); print}' assets/manifest.template.xml > assets/manifest.xml
 
   resource:
     desc: Compile the .syso resource (icon + UAC manifest + version metadata)
