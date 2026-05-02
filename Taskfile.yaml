@@ -6,7 +6,6 @@ vars:
   OUTPUT_DIR: dist
   BINARY_NAME: 'SerialHop{{if eq .GOOS "windows"}}.exe{{end}}'
   RESOURCE_FILE: cmd/serialhop/resource_windows.syso
-  VERSION_PKG: github.com/bioexperiment-lab-devices/serialhop/internal/version
 
 tasks:
   manifest:
@@ -14,13 +13,11 @@ tasks:
     sources:
       - assets/manifest.template.xml
       - assets/version.json
+      - tools/render-manifest/main.go
     generates:
       - assets/manifest.xml
     cmds:
-      - |
-        set -euo pipefail
-        VERSION=$(jq -e -r '.StringFileInfo.FileVersion' assets/version.json)
-        awk -v v="${VERSION}.0" '{gsub(/@@VERSION@@/, v); print}' assets/manifest.template.xml > assets/manifest.xml
+      - go run ./tools/render-manifest
 
   resource:
     desc: Compile the .syso resource (icon + UAC manifest + version metadata)
@@ -37,16 +34,7 @@ tasks:
     desc: Build the binary (override target via `task build GOOS=... GOARCH=...`)
     deps: [resource]
     cmds:
-      - mkdir -p {{.OUTPUT_DIR}}
-      - |
-        set -euo pipefail
-        VERSION_BASE=$(jq -e -r '.StringFileInfo.FileVersion' assets/version.json)
-        VERSION_SUFFIX=$(git describe --tags --always --dirty --match='v*' 2>/dev/null || echo "unknown")
-        VERSION="${VERSION_BASE}+${VERSION_SUFFIX}"
-        GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build \
-          -trimpath \
-          -ldflags="-H windowsgui -X '{{.VERSION_PKG}}.Version=${VERSION}'" \
-          -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} ./cmd/serialhop
+      - go run ./tools/buildcmd -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} -goos {{.GOOS}} -goarch {{.GOARCH}}
 
   test:
     desc: Run all unit tests
