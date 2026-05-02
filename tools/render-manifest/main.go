@@ -46,7 +46,7 @@ func main() {
 		fail("read %s: %v", templatePath, err)
 	}
 	out := strings.ReplaceAll(string(tmpl), placeholder, vf.StringFileInfo.FileVersion+".0")
-	if err := os.WriteFile(outputPath, []byte(out), 0o644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(out), 0o600); err != nil {
 		fail("write %s: %v", outputPath, err)
 	}
 }

@@ -55,7 +55,7 @@ func main() {
 	version := vf.StringFileInfo.FileVersion + "+" + suffix
 
 	if dir := filepath.Dir(*out); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			fail("mkdir %s: %v", dir, err)
 		}
 	}
@@ -63,7 +63,7 @@ func main() {
 	ldflags := fmt.Sprintf("-H windowsgui -X %s.Version=%s", versionPkg, version)
 	args := []string{"build", "-trimpath", "-ldflags=" + ldflags, "-o", *out, "./cmd/serialhop"}
 
-	cmd := exec.Command("go", args...)
+	cmd := exec.Command("go", args...) //nolint:gosec // args derived from build inputs (version.json, git describe, caller flags); this is a build-tool subprocess, not user-input handling
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "GOOS="+*goos, "GOARCH="+*goarch)
