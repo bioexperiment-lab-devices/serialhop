@@ -13,11 +13,11 @@ import (
 type FakePort struct {
 	name        string
 	mu          sync.Mutex
-	rx          []byte                   // bytes available to be read
-	tx          []byte                   // bytes written by consumer
+	rx          []byte // bytes available to be read
+	tx          []byte // bytes written by consumer
 	readTimeout time.Duration
 	closed      bool
-	rxSignal    chan struct{}            // signaled whenever rx grows
+	rxSignal    chan struct{} // signaled whenever rx grows
 }
 
 func NewFakePort(name string) *FakePort {

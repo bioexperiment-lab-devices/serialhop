@@ -52,8 +52,8 @@ func TestRun_AssignsSequentialIDs(t *testing.T) {
 func TestRun_SkipsUnknownAndPartial(t *testing.T) {
 	o := newOpener(t, map[string][]byte{
 		"COM3": {10, 1, 2, 3},
-		"COM4": {99, 1, 2, 3},        // unknown type byte
-		"COM5": {30, 1, 1},           // only 3 bytes
+		"COM4": {99, 1, 2, 3}, // unknown type byte
+		"COM5": {30, 1, 1},    // only 3 bytes
 	})
 	devs, err := Run(context.Background(), o, []string{"COM3", "COM4", "COM5"})
 	if err != nil {

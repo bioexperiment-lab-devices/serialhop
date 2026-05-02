@@ -343,9 +343,9 @@ func TestPostCommand_ReconnectThenSuccess(t *testing.T) {
 	go func() {
 		// Wait for Probe's Drain (200ms) + some buffer
 		time.Sleep(220 * time.Millisecond)
-		fp.Feed([]byte{10, 1, 2, 3})       // probe reply
+		fp.Feed([]byte{10, 1, 2, 3}) // probe reply
 		time.Sleep(100 * time.Millisecond)
-		fp.Feed([]byte{42, 43})            // actual command reply
+		fp.Feed([]byte{42, 43}) // actual command reply
 	}()
 
 	srv := newTestServer(t, reg, nil)
