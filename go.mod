@@ -3,7 +3,7 @@ module github.com/bioexperiment-lab-devices/serialhop
 go 1.25.0
 
 require (
-	github.com/jpillora/chisel v1.11.5
+	github.com/jpillora/chisel v1.11.6
 	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794
 	go.bug.st/serial v1.6.4
 	golang.org/x/sys v0.41.0
