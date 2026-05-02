@@ -26,7 +26,22 @@ The build embeds an icon, a UAC manifest (`asInvoker`), and version metadata via
 
 ## Releases
 
-Releases are managed by [release-please](https://github.com/googleapis/release-please). Pull requests merged to `main` use conventional-commit titles (`feat: ...`, `fix: ...`, etc.). release-please maintains an open PR titled `chore(main): release X.Y.Z` that aggregates pending changes; merging that PR creates a `vX.Y.Z` tag, builds `SerialHop-vX.Y.Z.exe` on a Windows runner, and publishes a GitHub Release with the `.exe`, a `SHA256SUMS.txt`, and a Sigstore build-provenance attestation. There is no scheduled cadence — releases ship when the release PR is merged by hand.
+Releases are managed by [release-please](https://github.com/googleapis/release-please). The flow is fully hands-off:
+
+1. Merge a `feat:` / `fix:` PR to `main`.
+2. release-please opens (or updates) a release PR titled `chore(main): release X.Y.Z`. It's authored by a dedicated GitHub App, so `pr.yml` checks fire automatically.
+3. Watch `verify` go green on the release PR.
+4. Click **Squash and merge** on the release PR.
+5. The `release-build` job runs on `windows-latest` and publishes a GitHub Release with `SerialHop-vX.Y.Z.exe`, `SHA256SUMS.txt`, and a Sigstore build-provenance attestation.
+
+There is no scheduled cadence — releases ship only when the release PR is merged by hand.
+
+Verify a downloaded binary:
+```
+gh release download vX.Y.Z -p "SerialHop-*.exe" -p "SHA256SUMS.txt"
+shasum -a 256 -c SHA256SUMS.txt
+gh attestation verify SerialHop-vX.Y.Z.exe --owner bioexperiment-lab-devices
+```
 
 ## Install on a Windows lab machine
 
