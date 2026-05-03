@@ -121,7 +121,10 @@ jobs:
           AGENT_UPLOAD_TOKEN: ${{ secrets.AGENT_UPLOAD_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          curl -fsSL -X POST "https://${VPS_HOST}/api/agent/upload" \
+          # Server's VERSION_RE rejects the leading 'v'; post bare semver.
+          VERSION="${TAG#v}"
+          curl --fail-with-body -sSL -X POST "https://${VPS_HOST}/api/agent/upload" \
             -H "Authorization: Bearer ${AGENT_UPLOAD_TOKEN}" \
-            -F "version=${TAG}" \
-            -F "binary=@dist/SerialHop-${TAG}.exe"
+            -F "version=${VERSION}" \
+            -F "binary=@dist/SerialHop-${TAG}.exe" \
+            -w '\nHTTP %{http_code}\n'
