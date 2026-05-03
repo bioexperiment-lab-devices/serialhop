@@ -20,7 +20,7 @@
   },
   "StringFileInfo": {
     "CompanyName": "Lab Devices",
-    "FileDescription": "SerialHop",
+    "FileDescription": "SerialHop — serial-port lab device tunnel",
     "FileVersion": "0.5.0",
     "InternalName": "serialhop",
     "LegalCopyright": "Copyright (c) 2026 Lab Devices",
