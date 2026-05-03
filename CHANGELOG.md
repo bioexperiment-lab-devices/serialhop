@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.5.1...v0.5.2) (2026-05-03)
+
+
+### Bug Fixes
+
+* **ci:** strip 'v' prefix from VPS upload version ([#33](https://github.com/bioexperiment-lab-devices/serialhop/issues/33)) ([1a8b9e6](https://github.com/bioexperiment-lab-devices/serialhop/commit/1a8b9e69a1efee39fa067d4afab7148e3cb55187))
+
 ## [0.5.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.5.0...v0.5.1) (2026-05-03)
 
 
