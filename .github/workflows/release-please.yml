@@ -113,3 +113,15 @@ jobs:
         run: |
           $tag = "${{ needs.release-please.outputs.tag_name }}"
           gh release upload $tag dist/SerialHop-$tag.exe dist/SHA256SUMS.txt --clobber
+
+      - name: upload agent build to VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          AGENT_UPLOAD_TOKEN: ${{ secrets.AGENT_UPLOAD_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          curl -fsSL -X POST "https://${VPS_HOST}/api/agent/upload" \
+            -H "Authorization: Bearer ${AGENT_UPLOAD_TOKEN}" \
+            -F "version=${TAG}" \
+            -F "binary=@dist/SerialHop-${TAG}.exe"
