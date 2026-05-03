@@ -107,11 +107,13 @@ func runForeground() error {
 		if err != nil {
 			return fmt.Errorf("create scaffold: %w", err)
 		}
-		if err := config.WriteScaffold(f); err != nil {
-			f.Close()
-			return fmt.Errorf("write scaffold: %w", err)
+		if writeErr := config.WriteScaffold(f); writeErr != nil {
+			_ = f.Close()
+			return fmt.Errorf("write scaffold: %w", writeErr)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("close scaffold: %w", err)
+		}
 		fmt.Printf("Config file created at %s. Please review and edit it, then run again.\n", cfgPath)
 		return errors.New("config scaffold generated; please edit and rerun")
 	}

@@ -135,13 +135,30 @@ func parseCmdParams(r *http.Request) (cmdParams, error) {
 	return p, nil
 }
 
-func parseCommandBody(r *http.Request) ([]byte, error) {
+// maxCommandBodyBytes caps the JSON body size for POST /devices/{id}/command.
+// A worst-case 1024-byte command serialises to ~4KB of JSON; 32KB leaves
+// generous slack for whitespace and over-spec'd clients without exposing
+// the process to memory exhaustion via an unbounded body.
+const maxCommandBodyBytes = 32 * 1024
+
+// maxCommandLen is the upper bound on the decoded byte command. Mirrors the
+// 1024-byte ceiling on expected_response_bytes so neither direction of the
+// transaction can be coerced into pathological I/O.
+const maxCommandLen = 1024
+
+func parseCommandBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCommandBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	var body CommandRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := dec.Decode(&body); err != nil {
 		return nil, fmt.Errorf("body: %v", err)
 	}
 	if len(body.Command) == 0 {
 		return nil, errors.New("command must be non-empty")
+	}
+	if len(body.Command) > maxCommandLen {
+		return nil, fmt.Errorf("command length %d exceeds max %d", len(body.Command), maxCommandLen)
 	}
 	out := make([]byte, len(body.Command))
 	for i, v := range body.Command {
@@ -179,7 +196,7 @@ func (s *Server) handlePostCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid query param", err.Error())
 		return
 	}
-	cmd, err := parseCommandBody(r)
+	cmd, err := parseCommandBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
 		return

@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -25,6 +27,9 @@ func Serve(ctx context.Context, l net.Listener, handler http.Handler) error {
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      90 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(l) }()
@@ -32,10 +37,12 @@ func Serve(ctx context.Context, l net.Listener, handler http.Handler) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("api server shutdown", "err", err)
+		}
 		return nil
 	case err := <-errCh:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err

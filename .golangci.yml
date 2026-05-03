@@ -11,3 +11,6 @@ linters:
     - unused
     - ineffassign
     - gosec
+    - govet
+    - bodyclose
+    - misspell

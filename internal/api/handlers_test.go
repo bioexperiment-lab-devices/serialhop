@@ -312,6 +312,65 @@ func TestPostCommand_BadByte(t *testing.T) {
 	}
 }
 
+func TestPostCommand_BodyTooLarge(t *testing.T) {
+	reg := registry.New()
+	dev := makeFakeDevice(t, "pump_1", "COM3", 10, nil, nil)
+	reg.Replace([]*registry.Device{dev})
+	srv := newTestServer(t, reg, nil)
+
+	body := strings.Builder{}
+	body.WriteString(`{"command":[`)
+	for i := 0; i < 20000; i++ {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		body.WriteString("1")
+	}
+	body.WriteString("]}")
+
+	rec := postCmd(t, srv, "/devices/pump_1/command", body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400 (body too large)", rec.Code)
+	}
+}
+
+func TestPostCommand_CommandTooLong(t *testing.T) {
+	reg := registry.New()
+	dev := makeFakeDevice(t, "pump_1", "COM3", 10, nil, nil)
+	reg.Replace([]*registry.Device{dev})
+	srv := newTestServer(t, reg, nil)
+
+	body := strings.Builder{}
+	body.WriteString(`{"command":[`)
+	for i := 0; i < 1100; i++ {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		body.WriteString("0")
+	}
+	body.WriteString("]}")
+
+	rec := postCmd(t, srv, "/devices/pump_1/command", body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400 (command too long)", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "exceeds max") {
+		t.Errorf("body: %s", rec.Body.String())
+	}
+}
+
+func TestPostCommand_UnknownField(t *testing.T) {
+	reg := registry.New()
+	dev := makeFakeDevice(t, "pump_1", "COM3", 10, nil, nil)
+	reg.Replace([]*registry.Device{dev})
+	srv := newTestServer(t, reg, nil)
+
+	rec := postCmd(t, srv, "/devices/pump_1/command", `{"command":[1,2,3],"hidden":"x"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400 (unknown field)", rec.Code)
+	}
+}
+
 func TestPostCommand_BadQueryParam(t *testing.T) {
 	reg := registry.New()
 	dev := makeFakeDevice(t, "pump_1", "COM3", 10, nil, nil)
