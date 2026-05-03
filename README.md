@@ -110,6 +110,10 @@ task test
 
 Tests run on macOS and Windows. The Windows-only files (service worker, real SCM client, walk panel, UAC elevation helpers) are silently skipped on non-Windows hosts; their logic is covered by tests against fakes.
 
+## Security
+
+Threat model and vulnerability-reporting instructions are in [`SECURITY.md`](SECURITY.md). It also addresses the "is this a RAT?" question in detail.
+
 ## License
 
 Apache-2.0 — see [`LICENSE`](LICENSE).
