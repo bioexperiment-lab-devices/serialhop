@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.5.0...v0.5.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* cap HTTP request body size and set server timeouts ([#31](https://github.com/bioexperiment-lab-devices/serialhop/issues/31)) ([d1ba0e7](https://github.com/bioexperiment-lab-devices/serialhop/commit/d1ba0e79631102dd896693ac4ee538409717a92e))
+
 ## [0.5.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.4.3...v0.5.0) (2026-05-02)
 
 
