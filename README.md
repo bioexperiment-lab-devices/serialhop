@@ -112,4 +112,4 @@ Tests run on macOS and Windows. The Windows-only files (service worker, real SCM
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+Apache-2.0 — see [`LICENSE`](LICENSE).
