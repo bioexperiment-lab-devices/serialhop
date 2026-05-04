@@ -31,7 +31,7 @@ jobs:
       # manually closed-and-reopened. App-minted tokens don't have that
       # restriction, so release PRs auto-fire CI.
       - id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_KEY }}
