@@ -67,6 +67,140 @@ func TestGetSerialPorts_EmptyRegistry(t *testing.T) {
 	}
 }
 
+func postRaw(t *testing.T, srv http.Handler, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestPostSerialCommand_DisabledReturns403(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, false)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1]}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status: got %d, want 403", rec.Code)
+	}
+}
+
+func TestPostSerialCommand_PortNotFound(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM99/command", `{"command":[1]}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "port not found") {
+		t.Errorf("body: %s", rec.Body.String())
+	}
+}
+
+func TestPostSerialCommand_PortHasDiscoveredDevice(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	reg.Replace([]*registry.Device{
+		{ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3", Conn: serial.NewFakePort("COM3"), Opener: opener},
+	})
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1]}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status: got %d, want 409", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "port has discovered device") {
+		t.Errorf("body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "/devices/pump_1/command") {
+		t.Errorf("body should suggest /devices/pump_1/command, got: %s", rec.Body.String())
+	}
+}
+
+func TestPostSerialCommand_DiscoveryInProgress(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	if !reg.LockDiscovery() {
+		t.Fatal("setup: LockDiscovery should succeed")
+	}
+	defer reg.UnlockDiscovery()
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1]}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status: got %d, want 409", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "discovery in progress") {
+		t.Errorf("body: %s", rec.Body.String())
+	}
+}
+
+func TestPostSerialCommand_BadQueryParam(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command?timeout_ms=99999999", `{"command":[1]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestPostSerialCommand_BadByte(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[300,1,2]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestPostSerialCommand_UnknownField(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1,2,3],"hidden":"x"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestPostSerialCommand_BodyTooLarge(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, true)
+
+	body := strings.Builder{}
+	body.WriteString(`{"command":[`)
+	for i := 0; i < 20000; i++ {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		body.WriteString("1")
+	}
+	body.WriteString("]}")
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400", rec.Code)
+	}
+}
+
 func TestGetSerialPorts_AnnotatesDiscoveredDevices(t *testing.T) {
 	reg := registry.New()
 	opener := serial.NewFakeOpener()
