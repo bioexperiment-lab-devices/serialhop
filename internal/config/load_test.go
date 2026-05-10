@@ -161,6 +161,29 @@ func TestLoadPartial_MalformedYAMLReturnsDefault(t *testing.T) {
 	}
 }
 
+func TestLoad_RawSerialEnabled(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+chisel:
+  server: "10.0.0.1:7000"
+  remote_port: 9000
+rest:
+  port: 0
+log:
+  level: "info"
+raw_serial:
+  enabled: true
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.RawSerial.Enabled {
+		t.Errorf("raw_serial.enabled: got false, want true")
+	}
+}
+
 func TestLoadPartial_MissingFile(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "nope.yaml")
 	cfg, err := LoadPartial(p)

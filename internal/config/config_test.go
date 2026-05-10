@@ -27,6 +27,13 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_RawSerialDisabled(t *testing.T) {
+	c := Default()
+	if c.RawSerial.Enabled {
+		t.Errorf("raw_serial.enabled: got true, want false (must default off)")
+	}
+}
+
 func TestWriteScaffold_RoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteScaffold(&buf); err != nil {
@@ -50,5 +57,8 @@ func TestWriteScaffold_RoundTrip(t *testing.T) {
 	}
 	if parsed.Chisel.RemotePort != def.Chisel.RemotePort {
 		t.Errorf("round-trip chisel.remote_port: got %d, want %d", parsed.Chisel.RemotePort, def.Chisel.RemotePort)
+	}
+	if parsed.RawSerial.Enabled {
+		t.Errorf("round-trip raw_serial.enabled: got true, want false (default)")
 	}
 }

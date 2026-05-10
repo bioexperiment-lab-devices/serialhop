@@ -10,6 +10,7 @@ type Config struct {
 	Rest      RestConfig      `yaml:"rest"`
 	Discovery DiscoveryConfig `yaml:"discovery"`
 	Log       LogConfig       `yaml:"log"`
+	RawSerial RawSerialConfig `yaml:"raw_serial"`
 }
 
 type ChiselConfig struct {
@@ -32,6 +33,10 @@ type LogConfig struct {
 	Level string `yaml:"level"`
 }
 
+type RawSerialConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 func Default() Config {
 	return Config{
 		Chisel: ChiselConfig{
@@ -43,6 +48,7 @@ func Default() Config {
 		Rest:      RestConfig{Port: 0},
 		Discovery: DiscoveryConfig{Include: []string{}, Exclude: []string{}},
 		Log:       LogConfig{Level: "info"},
+		RawSerial: RawSerialConfig{Enabled: false},
 	}
 }
 
@@ -64,6 +70,11 @@ discovery:
 
 log:
   level: "info"                   # debug | info | warn | error
+
+raw_serial:
+  enabled: false                  # set true to allow GET /serial/ports and
+                                  # POST /serial/ports/{port}/command. bypasses
+                                  # device classification — leave off unless diagnosing.
 `
 
 func WriteScaffold(w io.Writer) error {

@@ -88,7 +88,9 @@ The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from ou
 |---|---|---|
 | `POST` | `/discover` | Run a fresh discovery and return the device list |
 | `GET`  | `/devices`  | Return the cached device list |
-| `POST` | `/devices/{id}/command` | Send raw bytes; optionally read a reply |
+| `POST` | `/devices/{id}/command` | Send raw bytes to a discovered device; optionally read a reply |
+| `GET`  | `/serial/ports` | List enumerated serial ports, annotated with discovery state (gated by `raw_serial.enabled`) |
+| `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device (gated by `raw_serial.enabled`) |
 
 Discovered device types: `pump` (type code 10), `valve` (30), `densitometer` (70). See [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md) for full request/response shapes and behavior.
 

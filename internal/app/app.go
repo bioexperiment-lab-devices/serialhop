@@ -46,7 +46,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return discovery.Run(ctx, opener, ports)
 	}
 
-	srv := api.New(reg, discoverFn)
+	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled)
 
 	chiselDone := make(chan error, 1)
 	go func() {

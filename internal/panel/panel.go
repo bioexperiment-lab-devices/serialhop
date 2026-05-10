@@ -50,6 +50,7 @@ func Run() error {
 		restPort     *walk.Label
 		discoveryLbl *walk.Label
 		logLevel     *walk.Label
+		rawSerialLbl *walk.Label
 
 		btnInstall   *walk.PushButton
 		btnUninstall *walk.PushButton
@@ -90,6 +91,11 @@ func Run() error {
 		remotePort.SetText(fmt.Sprintf("Remote port:      %d", cfg.Chisel.RemotePort))
 		restPort.SetText(fmt.Sprintf("REST port:        %d", cfg.Rest.Port))
 		discoveryLbl.SetText(fmt.Sprintf("Discovery:        include=%v, exclude=%v", cfg.Discovery.Include, cfg.Discovery.Exclude))
+		rawSerialState := "disabled"
+		if cfg.RawSerial.Enabled {
+			rawSerialState = "enabled"
+		}
+		rawSerialLbl.SetText("Raw serial:       " + rawSerialState)
 		logLevel.SetText("Log level:        " + cfg.Log.Level)
 
 		if cfgErr != nil {
@@ -149,6 +155,7 @@ func Run() error {
 			Label{AssignTo: &remotePort},
 			Label{AssignTo: &restPort},
 			Label{AssignTo: &discoveryLbl},
+			Label{AssignTo: &rawSerialLbl},
 			Label{AssignTo: &logLevel},
 			Label{AssignTo: &warnLabel, TextColor: walk.RGB(192, 0, 0)},
 			Composite{
