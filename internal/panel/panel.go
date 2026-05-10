@@ -92,11 +92,11 @@ func Run() error {
 		restPort.SetText(fmt.Sprintf("REST port:        %d", cfg.Rest.Port))
 		discoveryLbl.SetText(fmt.Sprintf("Discovery:        include=%v, exclude=%v", cfg.Discovery.Include, cfg.Discovery.Exclude))
 		logLevel.SetText("Log level:        " + cfg.Log.Level)
+		rawSerialState := "disabled"
 		if cfg.RawSerial.Enabled {
-			rawSerialLbl.SetText("Raw serial:       enabled")
-		} else {
-			rawSerialLbl.SetText("Raw serial:       disabled")
+			rawSerialState = "enabled"
 		}
+		rawSerialLbl.SetText("Raw serial:       " + rawSerialState)
 
 		if cfgErr != nil {
 			warnLabel.SetText("⚠ " + cfgErr.Error())
