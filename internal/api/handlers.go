@@ -38,6 +38,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /devices", s.handleGetDevices)
 	mux.HandleFunc("POST /discover", s.handlePostDiscover)
 	mux.HandleFunc("POST /devices/{id}/command", s.handlePostCommand)
+	mux.HandleFunc("GET /serial/ports", s.handleGetSerialPorts)
 	return mux
 }
 

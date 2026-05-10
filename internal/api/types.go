@@ -26,3 +26,13 @@ type ErrorBody struct {
 	Error  string `json:"error"`
 	Detail string `json:"detail,omitempty"`
 }
+
+type PortDTO struct {
+	Name       string `json:"name"`
+	Discovered bool   `json:"discovered"`
+	DeviceID   string `json:"device_id,omitempty"`
+}
+
+type PortsResponse struct {
+	Ports []PortDTO `json:"ports"`
+}
