@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.5.2...v0.6.0) (2026-05-10)
+
+
+### Features
+
+* **api:** raw serial port endpoints ([#44](https://github.com/bioexperiment-lab-devices/serialhop/issues/44)) ([cd1775c](https://github.com/bioexperiment-lab-devices/serialhop/commit/cd1775cb73fce8c9ea7f6f19444b6cfffbc87211))
+* **discovery:** log sent probe bytes and reply per port ([#43](https://github.com/bioexperiment-lab-devices/serialhop/issues/43)) ([9b10318](https://github.com/bioexperiment-lab-devices/serialhop/commit/9b10318dfa337ae06b108dc046b8ea16991d0a07))
+
+
+### Bug Fixes
+
+* **logs:** emit command/response bytes as integer arrays ([#42](https://github.com/bioexperiment-lab-devices/serialhop/issues/42)) ([5333bd8](https://github.com/bioexperiment-lab-devices/serialhop/commit/5333bd8bfb5eb962d8209337eabf62c138682a37))
+* **manifest:** drop unsupported Windows versions from supportedOS ([#39](https://github.com/bioexperiment-lab-devices/serialhop/issues/39)) ([aacb5f4](https://github.com/bioexperiment-lab-devices/serialhop/commit/aacb5f465f763486cff3ac648556afe68e57c1ff))
+* **ui:** strip git-describe suffix from window title ([#41](https://github.com/bioexperiment-lab-devices/serialhop/issues/41)) ([30eec48](https://github.com/bioexperiment-lab-devices/serialhop/commit/30eec48c63662bd0fd802b572ae811716d7283b3))
+
 ## [0.5.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.5.1...v0.5.2) (2026-05-03)
 
 
