@@ -52,6 +52,18 @@ type probeOutcome struct {
 	result *ProbeResult
 }
 
+// bytesToInts widens a byte slice for slog: the default JSON handler base64-
+// encodes []byte, which makes probe traces unreadable. Returning []int gets
+// the values rendered as a number array — matching the convention used by
+// /devices/{id}/command response logging.
+func bytesToInts(b []byte) []int {
+	out := make([]int, len(b))
+	for i, v := range b {
+		out[i] = int(v)
+	}
+	return out
+}
+
 // Run probes every port in candidates concurrently (no cap), classifies the
 // replies, and returns a slice of *registry.Device with sequential per-type
 // IDs ("pump_1", "pump_2", ...). Ports that do not match a known device are
@@ -61,6 +73,7 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*reg
 	if len(candidates) == 0 {
 		return nil, nil
 	}
+	sent := bytesToInts(ProbeBytes())
 	var (
 		wg      sync.WaitGroup
 		mu      sync.Mutex
@@ -75,17 +88,30 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*reg
 				slog.Debug("discovery: open failed", "port", portName, "err", err)
 				return
 			}
-			res, err := Probe(conn)
+			reply, res, err := Probe(conn)
 			if err != nil {
-				slog.Debug("discovery: probe error", "port", portName, "err", err)
+				slog.Debug("discovery: probe error",
+					"port", portName,
+					"sent", sent,
+					"reply", bytesToInts(reply),
+					"err", err)
 				_ = conn.Close()
 				return
 			}
 			if res == nil {
-				slog.Debug("discovery: no device on port", "port", portName)
+				slog.Debug("discovery: no device on port",
+					"port", portName,
+					"sent", sent,
+					"reply", bytesToInts(reply))
 				_ = conn.Close()
 				return
 			}
+			slog.Debug("discovery: matched device",
+				"port", portName,
+				"sent", sent,
+				"reply", bytesToInts(reply),
+				"type", res.Type,
+				"type_code", int(res.TypeCode))
 			mu.Lock()
 			matches = append(matches, probeOutcome{port: portName, conn: conn, result: res})
 			mu.Unlock()
