@@ -131,7 +131,7 @@ func Run() error {
 
 	if err := (MainWindow{
 		AssignTo: &mw,
-		Title:    "SerialHop v" + version.Version,
+		Title:    "SerialHop v" + version.Base(),
 		Size:     Size{Width: 480, Height: 360},
 		MinSize:  Size{Width: 480, Height: 360},
 		Layout:   VBox{},
