@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
@@ -243,5 +245,190 @@ func TestGetSerialPorts_AnnotatesDiscoveredDevices(t *testing.T) {
 			t.Errorf("port %q: got discovered=%v id=%q, want discovered=%v id=%q",
 				p.Name, p.Discovered, p.DeviceID, w.discovered, w.id)
 		}
+	}
+}
+
+func TestPostSerialCommand_HappyPath(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	fp := serial.NewFakePort("COM3")
+	opener.Add(fp)
+	// Feed response after drain completes (DrainDuration=200ms) but within read timeout.
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		fp.Feed([]byte{99, 88, 77})
+	}()
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1,2,3,4,0]}`)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp CommandResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := []int{99, 88, 77}
+	if len(resp.Response) != len(want) {
+		t.Fatalf("response: got %v, want %v", resp.Response, want)
+	}
+	for i := range want {
+		if resp.Response[i] != want[i] {
+			t.Errorf("response[%d]: got %d, want %d", i, resp.Response[i], want[i])
+		}
+	}
+	written := fp.Written()
+	wantWritten := []byte{1, 2, 3, 4, 0}
+	if string(written) != string(wantWritten) {
+		t.Errorf("written: got %v, want %v", written, wantWritten)
+	}
+}
+
+func TestPostSerialCommand_NoReply(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	opener.Add(serial.NewFakePort("COM3"))
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command?timeout_ms=20", `{"command":[1,2,3]}`)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp CommandResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Response) != 0 {
+		t.Errorf("response: got %v, want []", resp.Response)
+	}
+}
+
+func TestPostSerialCommand_WaitForResponseFalse(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	fp := serial.NewFakePort("COM3")
+	fp.Feed([]byte{99, 88}) // would be returned, but caller opts out
+	opener.Add(fp)
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command?wait_for_response=false", `{"command":[1,2,3]}`)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp CommandResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Response) != 0 {
+		t.Errorf("response: got %v, want []", resp.Response)
+	}
+	if string(fp.Written()) != string([]byte{1, 2, 3}) {
+		t.Errorf("written: got %v, want [1 2 3]", fp.Written())
+	}
+}
+
+func TestPostSerialCommand_ExpectedBytesStopsEarly(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	fp := serial.NewFakePort("COM3")
+	opener.Add(fp)
+	// Feed response after drain completes (DrainDuration=200ms) but within read timeout.
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		fp.Feed([]byte{1, 2, 3, 4, 99, 99, 99}) // more than 4 — must stop at 4
+	}()
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command?expected_response_bytes=4", `{"command":[1]}`)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp CommandResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Response) != 4 {
+		t.Errorf("response: got %v, want 4 bytes", resp.Response)
+	}
+}
+
+func TestPostSerialCommand_WriteFails(t *testing.T) {
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	fp := serial.NewFakePort("COM3")
+	opener.Add(fp)
+	// FakeOpener.Open resets closed=false on each call, so a port closed
+	// AFTER it's first opened by the handler is what we want to simulate.
+	// Achieve that with a stub opener that wraps FakeOpener and returns the
+	// already-closed port without resetting the flag.
+	srv := rawSrv(t, reg, &alreadyClosedOpener{inner: opener, target: "COM3", port: fp}, true)
+	_ = fp.Close()
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1]}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "port write failed") &&
+		!strings.Contains(rec.Body.String(), "port drain failed") {
+		t.Errorf("body should mention drain or write failure, got: %s", rec.Body.String())
+	}
+}
+
+// alreadyClosedOpener returns a pre-closed port for `target`, bypassing
+// FakeOpener.Open's auto-reopen behavior, so the handler observes I/O errors.
+type alreadyClosedOpener struct {
+	inner  *serial.FakeOpener
+	target string
+	port   *serial.FakePort
+}
+
+func (o *alreadyClosedOpener) List() ([]string, error) { return o.inner.List() }
+func (o *alreadyClosedOpener) Open(name string) (serial.Port, error) {
+	if name == o.target {
+		return o.port, nil
+	}
+	return o.inner.Open(name)
+}
+
+// listOnlyOpener wraps FakeOpener and adds names that List returns but Open
+// rejects. Used to simulate the OS-level race where a port disappears between
+// enumeration and Open().
+type listOnlyOpener struct {
+	*serial.FakeOpener
+	listOnly map[string]error
+}
+
+func (o *listOnlyOpener) List() ([]string, error) {
+	base, err := o.FakeOpener.List()
+	if err != nil {
+		return nil, err
+	}
+	for n := range o.listOnly {
+		base = append(base, n)
+	}
+	return base, nil
+}
+
+func (o *listOnlyOpener) Open(name string) (serial.Port, error) {
+	if err, ok := o.listOnly[name]; ok {
+		return nil, err
+	}
+	return o.FakeOpener.Open(name)
+}
+
+func TestPostSerialCommand_OpenFails(t *testing.T) {
+	reg := registry.New()
+	opener := &listOnlyOpener{
+		FakeOpener: serial.NewFakeOpener(),
+		listOnly:   map[string]error{"COM3": io.ErrUnexpectedEOF},
+	}
+	srv := rawSrv(t, reg, opener, true)
+
+	rec := postRaw(t, srv, "/serial/ports/COM3/command", `{"command":[1]}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d, want 503 body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "port open failed") {
+		t.Errorf("body: %s", rec.Body.String())
 	}
 }
