@@ -211,7 +211,7 @@ func (s *Server) handlePostCommand(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", time.Since(start).Milliseconds(),
 			"outcome", outcome,
 		)
-		slog.Debug("command bytes", "device", dev.ID, "cmd", cmd, "resp", resp)
+		slog.Debug("command bytes", "device", dev.ID, "cmd", bytesToInts(cmd), "resp", bytesToInts(resp))
 	}
 
 	resp, err := s.executeCommand(dev, cmd, params)

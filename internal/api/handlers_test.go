@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -224,6 +226,85 @@ func TestPostCommand_HappyPathWithReply(t *testing.T) {
 	if string(written) != string(wantWritten) {
 		t.Errorf("written: got %v, want %v", written, wantWritten)
 	}
+}
+
+func TestPostCommand_DebugLogsBytesAsIntArrays(t *testing.T) {
+	// Regression: the Debug "command bytes" line used to render []byte via
+	// slog's default JSON encoder, which base64-encodes them ("AQIDBAA=").
+	// Operators want raw integer arrays so the bytes are readable in logs.
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	reg := registry.New()
+	fp := serial.NewFakePort("COM3")
+	fp.Feed([]byte{10, 1, 0, 181})
+	dev := makeFakeDevice(t, "pump_1", "COM3", 10, fp, nil)
+	reg.Replace([]*registry.Device{dev})
+	srv := newTestServer(t, reg, nil)
+
+	rec := postCmd(t, srv, "/devices/pump_1/command", `{"command":[1,2,3,4,0]}`)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var line struct {
+		Msg  string `json:"msg"`
+		Cmd  any    `json:"cmd"`
+		Resp any    `json:"resp"`
+	}
+	var found bool
+	for _, raw := range bytes.Split(bytes.TrimRight(buf.Bytes(), "\n"), []byte("\n")) {
+		var probe struct {
+			Msg string `json:"msg"`
+		}
+		if err := json.Unmarshal(raw, &probe); err != nil {
+			t.Fatalf("log line is not JSON: %s", raw)
+		}
+		if probe.Msg != "command bytes" {
+			continue
+		}
+		if err := json.Unmarshal(raw, &line); err != nil {
+			t.Fatalf("decode command-bytes line: %v", err)
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("did not find 'command bytes' debug line in:\n%s", buf.String())
+	}
+
+	wantCmd := []any{1.0, 2.0, 3.0, 4.0, 0.0}
+	wantResp := []any{10.0, 1.0, 0.0, 181.0}
+	gotCmd, ok := line.Cmd.([]any)
+	if !ok {
+		t.Fatalf("cmd: got %T (%v), want []any (JSON number array)", line.Cmd, line.Cmd)
+	}
+	if !equalJSONNums(gotCmd, wantCmd) {
+		t.Errorf("cmd: got %v, want %v", gotCmd, wantCmd)
+	}
+	gotResp, ok := line.Resp.([]any)
+	if !ok {
+		t.Fatalf("resp: got %T (%v), want []any (JSON number array)", line.Resp, line.Resp)
+	}
+	if !equalJSONNums(gotResp, wantResp) {
+		t.Errorf("resp: got %v, want %v", gotResp, wantResp)
+	}
+}
+
+func equalJSONNums(a, b []any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		af, aok := a[i].(float64)
+		bf, bok := b[i].(float64)
+		if !aok || !bok || af != bf {
+			return false
+		}
+	}
+	return true
 }
 
 func TestPostCommand_NoReplyReturnsEmpty(t *testing.T) {
