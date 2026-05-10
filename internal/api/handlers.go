@@ -18,12 +18,19 @@ import (
 type DiscoverFn func(ctx context.Context) ([]*registry.Device, error)
 
 type Server struct {
-	reg      *registry.Registry
-	discover DiscoverFn
+	reg              *registry.Registry
+	discover         DiscoverFn
+	opener           labserial.Opener
+	rawSerialEnabled bool
 }
 
-func New(reg *registry.Registry, discover DiscoverFn) *Server {
-	return &Server{reg: reg, discover: discover}
+func New(reg *registry.Registry, discover DiscoverFn, opener labserial.Opener, rawSerialEnabled bool) *Server {
+	return &Server{
+		reg:              reg,
+		discover:         discover,
+		opener:           opener,
+		rawSerialEnabled: rawSerialEnabled,
+	}
 }
 
 func (s *Server) Handler() http.Handler {
