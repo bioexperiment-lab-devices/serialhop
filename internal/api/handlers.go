@@ -277,15 +277,33 @@ func (s *Server) tryReconnect(dev *registry.Device) error {
 	if err != nil {
 		return fmt.Errorf("reopen %s: %w", dev.Port, err)
 	}
-	res, err := probeAdapter(conn)
+	reply, res, err := probeAdapter(conn)
 	if err != nil {
+		slog.Debug("reprobe: probe error",
+			"device", dev.ID,
+			"port", dev.Port,
+			"sent", bytesToInts(discovery.ProbeBytes()),
+			"reply", bytesToInts(reply),
+			"err", err)
 		_ = conn.Close()
 		return fmt.Errorf("reprobe %s: %w", dev.Port, err)
 	}
 	if res == nil {
+		slog.Debug("reprobe: no reply or unknown device",
+			"device", dev.ID,
+			"port", dev.Port,
+			"sent", bytesToInts(discovery.ProbeBytes()),
+			"reply", bytesToInts(reply))
 		_ = conn.Close()
 		return fmt.Errorf("%w: no reply on reprobe", errIdentityChanged)
 	}
+	slog.Debug("reprobe: got reply",
+		"device", dev.ID,
+		"port", dev.Port,
+		"sent", bytesToInts(discovery.ProbeBytes()),
+		"reply", bytesToInts(reply),
+		"type", res.Type,
+		"type_code", int(res.TypeCode))
 	if res.TypeCode != dev.TypeCode {
 		_ = conn.Close()
 		return fmt.Errorf("%w: expected type=%d, got type=%d", errIdentityChanged, dev.TypeCode, res.TypeCode)
@@ -295,7 +313,7 @@ func (s *Server) tryReconnect(dev *registry.Device) error {
 }
 
 // probeAdapter is a swappable function for tests. Defaults to the real probe.
-var probeAdapter = func(p labserial.Port) (*discovery.ProbeResult, error) {
+var probeAdapter = func(p labserial.Port) ([]byte, *discovery.ProbeResult, error) {
 	return discovery.Probe(p)
 }
 
