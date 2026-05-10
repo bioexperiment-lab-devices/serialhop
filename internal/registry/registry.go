@@ -49,6 +49,12 @@ func (r *Registry) LockDiscovery() bool {
 
 func (r *Registry) UnlockDiscovery() { r.discoverGate.Store(false) }
 
+// IsDiscovering reports whether a discovery is currently in progress.
+// Non-acquiring read; callers must NOT use it as a lock.
+func (r *Registry) IsDiscovering() bool {
+	return r.discoverGate.Load()
+}
+
 // Replace closes every device currently in the registry and installs the new set.
 // If devs is nil (e.g. shutdown path), the existing devices are closed but
 // discoveredAt is NOT updated so a racing GET /devices sees the original timestamp.
@@ -125,6 +131,21 @@ func (r *Registry) List() []*Device {
 		return out[i].Port < out[j].Port
 	})
 	return out
+}
+
+// HasPort reports whether any device in the registry currently uses the named
+// serial port. If a match exists, returns its device ID and true; otherwise
+// "", false. Linear scan — registry size is bounded by the number of attached
+// devices (typically <10).
+func (r *Registry) HasPort(name string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, d := range r.devices {
+		if d.Port == name {
+			return d.ID, true
+		}
+	}
+	return "", false
 }
 
 // DiscoveredAt returns the timestamp of the most recent successful discovery

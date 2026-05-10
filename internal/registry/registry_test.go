@@ -152,3 +152,42 @@ func TestRegistry_ConcurrentGetIsSafe(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestRegistry_IsDiscovering(t *testing.T) {
+	r := New()
+	if r.IsDiscovering() {
+		t.Errorf("IsDiscovering(): got true on fresh registry, want false")
+	}
+	if !r.LockDiscovery() {
+		t.Fatal("LockDiscovery: setup failed")
+	}
+	if !r.IsDiscovering() {
+		t.Errorf("IsDiscovering(): got false while locked, want true")
+	}
+	r.UnlockDiscovery()
+	if r.IsDiscovering() {
+		t.Errorf("IsDiscovering(): got true after Unlock, want false")
+	}
+}
+
+func TestRegistry_HasPort(t *testing.T) {
+	r := New()
+
+	if id, ok := r.HasPort("COM3"); ok {
+		t.Errorf("HasPort(COM3): got (%q, true) on empty registry, want (\"\", false)", id)
+	}
+
+	r.Replace([]*Device{
+		{ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3"},
+		{ID: "valve_1", Type: "valve", TypeCode: 30, Port: "COM4"},
+	})
+
+	id, ok := r.HasPort("COM3")
+	if !ok || id != "pump_1" {
+		t.Errorf("HasPort(COM3): got (%q, %v), want (\"pump_1\", true)", id, ok)
+	}
+	id, ok = r.HasPort("COM99")
+	if ok || id != "" {
+		t.Errorf("HasPort(COM99): got (%q, %v), want (\"\", false)", id, ok)
+	}
+}
