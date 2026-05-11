@@ -43,20 +43,35 @@ var (
 // it to perform an admin action. Returns the contents of the temp error
 // file on failure (or an empty string on success). Returns ErrUserCancelled
 // if the user dismissed the UAC prompt.
-func RunElevatedAdminAction(action string) (errMsg string, err error) {
+//
+// `extraArgs` are appended to the elevated child's command line. Each
+// entry should be a single `--flag=value` token; values containing spaces
+// are automatically double-quoted so a path like `C:\Program Files\...`
+// arrives as one argument. Used by the update action to pass
+// `--update-src=<path>`; ignored by install/uninstall/restart.
+func RunElevatedAdminAction(action string, extraArgs ...string) (errMsg string, err error) {
 	exePath, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate executable: %w", err)
 	}
 	errFile := filepath.Join(os.TempDir(), fmt.Sprintf("SerialHop_admin_%d.err", os.Getpid()))
-	defer os.Remove(errFile)
+	defer os.Remove(errFile) //nolint:errcheck
 
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, _ := windows.UTF16PtrFromString(exePath)
-	// We compose the args directly. The error-file path is built from
-	// os.TempDir() + a numeric PID, neither of which contain spaces or
-	// quotes, so plain string concatenation is safe here.
-	params, _ := windows.UTF16PtrFromString(fmt.Sprintf("--admin-action=%s --error-file=%s", action, errFile))
+
+	// Compose the command line. errFile and action are already controlled
+	// inputs (action is a literal constant from panel.go, errFile is built
+	// from os.TempDir + numeric PID). extraArgs are caller-supplied — the
+	// only current caller passes a path produced by filepath.Join inside
+	// the same dir as os.Executable(), which on Windows can contain spaces
+	// in 'Program Files'-style installs. Quote the value half of each
+	// extraArg's `--flag=value` token to handle spaces.
+	args := fmt.Sprintf("--admin-action=%s --error-file=%s", action, errFile)
+	for _, a := range extraArgs {
+		args += " " + quoteFlagValue(a)
+	}
+	params, _ := windows.UTF16PtrFromString(args)
 
 	info := shellExecuteInfoW{
 		cbSize:       uint32(unsafe.Sizeof(shellExecuteInfoW{})),
@@ -78,7 +93,7 @@ func RunElevatedAdminAction(action string) (errMsg string, err error) {
 	}
 
 	hProc := windows.Handle(info.hProcess)
-	defer windows.CloseHandle(hProc)
+	defer windows.CloseHandle(hProc) //nolint:errcheck
 	if _, err := windows.WaitForSingleObject(hProc, windows.INFINITE); err != nil {
 		return "", fmt.Errorf("WaitForSingleObject: %w", err)
 	}
@@ -88,6 +103,26 @@ func RunElevatedAdminAction(action string) (errMsg string, err error) {
 		return "", fmt.Errorf("read error file: %w", readErr)
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// quoteFlagValue takes a "--flag=value" token and double-quotes the value
+// half if it contains a space. Windows command-line parsing splits on
+// unquoted spaces, so an install path under "C:\Program Files\..." would
+// otherwise arrive as multiple args. Tokens without '=' or without spaces
+// pass through unchanged.
+func quoteFlagValue(token string) string {
+	eq := strings.IndexByte(token, '=')
+	if eq < 0 {
+		return token
+	}
+	flag := token[:eq]
+	val := token[eq+1:]
+	if !strings.ContainsAny(val, " \t") {
+		return token
+	}
+	// We don't expect literal quotes inside the value (install paths are
+	// not quoted by the OS), so no escaping beyond the wrapping is needed.
+	return flag + `="` + val + `"`
 }
 
 // ErrUserCancelled is returned when the user dismisses the UAC prompt.

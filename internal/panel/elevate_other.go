@@ -6,7 +6,7 @@ import "errors"
 
 var ErrUserCancelled = errors.New("user cancelled")
 
-func RunElevatedAdminAction(action string) (string, error) {
+func RunElevatedAdminAction(action string, _ ...string) (string, error) {
 	return "", errors.New("RunElevatedAdminAction is only available on Windows")
 }
 
