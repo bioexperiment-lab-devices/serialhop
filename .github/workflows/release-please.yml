@@ -100,7 +100,10 @@ jobs:
         run: |
           $tag = "${{ needs.release-please.outputs.tag_name }}"
           Move-Item dist\SerialHop.exe "dist\SerialHop-$tag.exe"
-          Get-FileHash -Algorithm SHA256 dist\*.exe | Format-List | Out-File -Encoding ascii dist\SHA256SUMS.txt
+          $lines = Get-FileHash -Algorithm SHA256 dist\*.exe | ForEach-Object {
+            "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))"
+          }
+          [System.IO.File]::WriteAllText("dist\SHA256SUMS.txt", ($lines -join "`n") + "`n", [System.Text.Encoding]::ASCII)
 
       - uses: actions/attest-build-provenance@v4
         with:
