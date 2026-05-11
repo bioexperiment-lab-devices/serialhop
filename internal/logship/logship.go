@@ -49,10 +49,6 @@ type Manager struct {
 // The shipper is NOT started yet — call StartShipper once the chisel
 // user is known.
 func Init(version string, level slog.Level) (*Manager, error) {
-	if err := paths.EnsureDirs(); err != nil {
-		return nil, errInitMissingPaths
-	}
-
 	servicePath := paths.ServiceLogPath()
 	stderrPath := paths.StderrLogPath()
 	if servicePath == "" || stderrPath == "" {
