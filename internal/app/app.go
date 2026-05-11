@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
@@ -19,7 +21,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 	defer cancel()
 
 	slog.Info("serialhop starting",
-		"chisel_server", cfg.Chisel.Server,
+		"chisel_host", cfg.LabBridge.Host,
+		"chisel_port", cfg.Chisel.Port,
 		"remote_port", cfg.Chisel.RemotePort,
 		"rest_port", cfg.Rest.Port,
 		"discovery_include", cfg.Discovery.Include,
@@ -55,9 +58,9 @@ func Run(ctx context.Context, cfg config.Config) error {
 	chiselDone := make(chan error, 1)
 	go func() {
 		chiselDone <- chisel.Run(ctx, chisel.Config{
-			Server:     cfg.Chisel.Server,
-			User:       cfg.Chisel.User,
-			Pass:       cfg.Chisel.Pass,
+			Server:     net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(cfg.Chisel.Port)),
+			User:       cfg.LabBridge.User,
+			Pass:       cfg.LabBridge.Pass,
 			RemotePort: cfg.Chisel.RemotePort,
 			LocalPort:  localPort,
 		})

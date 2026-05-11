@@ -58,7 +58,7 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 		return false, 1
 	}
 	h.manager.SetLevel(logship.ParseLogLevel(cfg.Log.Level))
-	h.manager.StartShipper(cfg.Chisel.User)
+	h.manager.StartShipper(cfg.LabBridge.User)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

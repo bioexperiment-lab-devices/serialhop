@@ -19,11 +19,13 @@ func writeFile(t *testing.T, dir, name, body string) string {
 func TestLoad_Success(t *testing.T) {
 	dir := t.TempDir()
 	body := `
-chisel:
-  server: "10.0.0.1:7000"
-  remote_port: 9000
+lab_bridge:
+  host: "10.0.0.1"
   user: "u"
   pass: "p"
+chisel:
+  port: 7000
+  remote_port: 9000
 rest:
   port: 8080
 discovery:
@@ -36,8 +38,14 @@ log:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.Chisel.Server != "10.0.0.1:7000" {
-		t.Errorf("server: got %q", c.Chisel.Server)
+	if c.LabBridge.Host != "10.0.0.1" {
+		t.Errorf("lab_bridge.host: got %q", c.LabBridge.Host)
+	}
+	if c.LabBridge.User != "u" {
+		t.Errorf("lab_bridge.user: got %q", c.LabBridge.User)
+	}
+	if c.Chisel.Port != 7000 {
+		t.Errorf("chisel.port: got %d", c.Chisel.Port)
 	}
 	if c.Chisel.RemotePort != 9000 {
 		t.Errorf("remote_port: got %d", c.Chisel.RemotePort)
@@ -60,8 +68,9 @@ func TestValidate_Cases(t *testing.T) {
 		mut     func(*Config)
 		wantErr string
 	}{
-		{"server empty", func(c *Config) { c.Chisel.Server = "" }, "chisel.server"},
-		{"server no port", func(c *Config) { c.Chisel.Server = "host" }, "host:port"},
+		{"host empty", func(c *Config) { c.LabBridge.Host = "" }, "lab_bridge.host"},
+		{"chisel.port low", func(c *Config) { c.Chisel.Port = 0 }, "chisel.port"},
+		{"chisel.port high", func(c *Config) { c.Chisel.Port = 70000 }, "chisel.port"},
 		{"remote_port low", func(c *Config) { c.Chisel.RemotePort = 0 }, "remote_port"},
 		{"remote_port high", func(c *Config) { c.Chisel.RemotePort = 70000 }, "remote_port"},
 		{"include+exclude both set", func(c *Config) {
@@ -98,11 +107,13 @@ func TestValidate_DefaultIsValid(t *testing.T) {
 func TestLoadPartial_Valid(t *testing.T) {
 	dir := t.TempDir()
 	body := `
-chisel:
-  server: "10.0.0.1:7000"
-  remote_port: 9001
+lab_bridge:
+  host: "10.0.0.1"
   user: "u"
   pass: "p"
+chisel:
+  port: 7000
+  remote_port: 9001
 rest:
   port: 8080
 discovery:
@@ -115,8 +126,8 @@ log:
 	if err != nil {
 		t.Fatalf("LoadPartial err: %v", err)
 	}
-	if cfg.Chisel.Server != "10.0.0.1:7000" {
-		t.Errorf("server: got %q", cfg.Chisel.Server)
+	if cfg.LabBridge.Host != "10.0.0.1" {
+		t.Errorf("host: got %q", cfg.LabBridge.Host)
 	}
 	if cfg.Chisel.RemotePort != 9001 {
 		t.Errorf("remote_port: got %d", cfg.Chisel.RemotePort)
@@ -129,8 +140,10 @@ log:
 func TestLoadPartial_InvalidValidationReturnsParsedFields(t *testing.T) {
 	dir := t.TempDir()
 	body := `
+lab_bridge:
+  host: ""
 chisel:
-  server: ""
+  port: 7000
   remote_port: 9001
 log:
   level: "info"
@@ -140,7 +153,7 @@ log:
 	if err == nil {
 		t.Fatal("expected validation error, got nil")
 	}
-	if !strings.Contains(err.Error(), "chisel.server must be non-empty") {
+	if !strings.Contains(err.Error(), "lab_bridge.host must be non-empty") {
 		t.Errorf("unexpected err: %v", err)
 	}
 	if cfg.Chisel.RemotePort != 9001 {
@@ -159,16 +172,18 @@ func TestLoadPartial_MalformedYAMLReturnsDefault(t *testing.T) {
 		t.Fatal("expected parse error, got nil")
 	}
 	def := Default()
-	if cfg.Chisel.Server != def.Chisel.Server {
-		t.Errorf("on parse failure, expected Default()-server %q, got %q", def.Chisel.Server, cfg.Chisel.Server)
+	if cfg.LabBridge.Host != def.LabBridge.Host {
+		t.Errorf("on parse failure, expected Default()-host %q, got %q", def.LabBridge.Host, cfg.LabBridge.Host)
 	}
 }
 
 func TestLoad_PostOpenSettleCustom(t *testing.T) {
 	dir := t.TempDir()
 	body := `
+lab_bridge:
+  host: "10.0.0.1"
 chisel:
-  server: "10.0.0.1:7000"
+  port: 7000
   remote_port: 9000
 rest:
   port: 0
@@ -190,8 +205,10 @@ log:
 func TestLoad_RawSerialEnabled(t *testing.T) {
 	dir := t.TempDir()
 	body := `
+lab_bridge:
+  host: "10.0.0.1"
 chisel:
-  server: "10.0.0.1:7000"
+  port: 7000
   remote_port: 9000
 rest:
   port: 0
@@ -217,16 +234,18 @@ func TestLoadPartial_MissingFile(t *testing.T) {
 		t.Errorf("expected os.IsNotExist, got %v", err)
 	}
 	def := Default()
-	if cfg.Chisel.Server != def.Chisel.Server {
-		t.Errorf("on missing file, expected Default()-server %q, got %q", def.Chisel.Server, cfg.Chisel.Server)
+	if cfg.LabBridge.Host != def.LabBridge.Host {
+		t.Errorf("on missing file, expected Default()-host %q, got %q", def.LabBridge.Host, cfg.LabBridge.Host)
 	}
 }
 
 func TestLoad_AutoUpdateDisabled(t *testing.T) {
 	dir := t.TempDir()
 	body := `
+lab_bridge:
+  host: "10.0.0.1"
 chisel:
-  server: "10.0.0.1:7000"
+  port: 7000
   remote_port: 9000
 rest:
   port: 0
@@ -249,8 +268,10 @@ func TestLoad_AutoUpdateDefaultsToTrue(t *testing.T) {
 	// A config file written by an older binary has no auto_update section.
 	dir := t.TempDir()
 	body := `
+lab_bridge:
+  host: "10.0.0.1"
 chisel:
-  server: "10.0.0.1:7000"
+  port: 7000
   remote_port: 9000
 rest:
   port: 0
@@ -264,5 +285,35 @@ log:
 	}
 	if !c.AutoUpdate.Enabled {
 		t.Errorf("auto_update.enabled: got false, want true (default)")
+	}
+}
+
+func TestLoad_OldSchemaIsRejected(t *testing.T) {
+	// Old configs with chisel.server / chisel.user / chisel.pass should
+	// surface as a clear "lab_bridge.host must be non-empty" error.
+	// yaml.v3 silently ignores unknown fields, and Load() seeds from
+	// Default() so AutoUpdate.Enabled defaults to true for older configs.
+	// To exercise the validation path on an old config, we explicitly clear
+	// lab_bridge.host (the only field with a non-empty default that the new
+	// schema requires the operator to set).
+	dir := t.TempDir()
+	body := `
+lab_bridge:
+  host: ""
+chisel:
+  server: "10.0.0.1:7000"
+  remote_port: 9000
+  user: "u"
+  pass: "p"
+log:
+  level: "info"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "lab_bridge.host") {
+		t.Errorf("expected lab_bridge.host error, got %v", err)
 	}
 }

@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -122,7 +124,7 @@ func Run() error {
 			statusDot.SetTextColor(walk.RGB(128, 128, 128))
 		}
 
-		serverLbl.SetText("Chisel server:    " + cfg.Chisel.Server)
+		serverLbl.SetText("Chisel server:    " + net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(cfg.Chisel.Port)))
 		remotePort.SetText(fmt.Sprintf("Remote port:      %d", cfg.Chisel.RemotePort))
 		restPort.SetText(fmt.Sprintf("REST port:        %d", cfg.Rest.Port))
 		discoveryLbl.SetText(fmt.Sprintf("Discovery:        include=%v, exclude=%v", cfg.Discovery.Include, cfg.Discovery.Exclude))

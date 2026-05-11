@@ -6,6 +6,7 @@ import (
 )
 
 type Config struct {
+	LabBridge  LabBridgeConfig  `yaml:"lab_bridge"`
 	Chisel     ChiselConfig     `yaml:"chisel"`
 	Rest       RestConfig       `yaml:"rest"`
 	Discovery  DiscoveryConfig  `yaml:"discovery"`
@@ -14,11 +15,15 @@ type Config struct {
 	AutoUpdate AutoUpdateConfig `yaml:"auto_update"`
 }
 
+type LabBridgeConfig struct {
+	Host string `yaml:"host"`
+	User string `yaml:"user"`
+	Pass string `yaml:"pass"`
+}
+
 type ChiselConfig struct {
-	Server     string `yaml:"server"`
-	RemotePort int    `yaml:"remote_port"`
-	User       string `yaml:"user"`
-	Pass       string `yaml:"pass"`
+	Port       int `yaml:"port"`
+	RemotePort int `yaml:"remote_port"`
 }
 
 type RestConfig struct {
@@ -45,11 +50,14 @@ type AutoUpdateConfig struct {
 
 func Default() Config {
 	return Config{
+		LabBridge: LabBridgeConfig{
+			Host: "111.88.145.138",
+			User: "devices_coordinator",
+			Pass: "",
+		},
 		Chisel: ChiselConfig{
-			Server:     "111.88.145.138:7000",
+			Port:       7000,
 			RemotePort: 8081,
-			User:       "devices_coordinator",
-			Pass:       "",
 		},
 		Rest: RestConfig{Port: 0},
 		Discovery: DiscoveryConfig{
@@ -66,11 +74,14 @@ func Default() Config {
 const scaffoldTemplate = `# SerialHop_config.yaml
 # Auto-generated scaffold. Edit values then re-run the executable.
 
+lab_bridge:
+  host: "111.88.145.138"          # lab-bridge VPS host (used for chisel + public HTTPS API)
+  user: "devices_coordinator"     # chisel auth user; also bearer-token identity for the public API
+  pass: ""                        # chisel password; also bearer token for /api/public/clients/{user}
+
 chisel:
-  server: "111.88.145.138:7000"   # chisel server host:port
-  remote_port: 8081               # REQUIRED — port to expose on the chisel server
-  user: "devices_coordinator"     # default; override if your chisel server expects different
-  pass: ""                        # optional
+  port: 7000                      # chisel server port on the lab-bridge host
+  remote_port: 8081               # REQUIRED — reverse-tunnel port assigned to this agent
 
 rest:
   port: 0                         # local REST port; 0 = OS picks a free one

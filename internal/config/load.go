@@ -2,9 +2,7 @@ package config
 
 import (
 	"fmt"
-	"net"
 	"os"
-	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -44,15 +42,11 @@ func LoadPartial(path string) (Config, error) {
 
 // Validate checks the config for invariants documented in the spec.
 func Validate(c *Config) error {
-	if c.Chisel.Server == "" {
-		return fmt.Errorf("chisel.server must be non-empty")
+	if c.LabBridge.Host == "" {
+		return fmt.Errorf("lab_bridge.host must be non-empty")
 	}
-	host, port, err := net.SplitHostPort(c.Chisel.Server)
-	if err != nil || host == "" {
-		return fmt.Errorf("chisel.server must be host:port (got %q)", c.Chisel.Server)
-	}
-	if _, err := strconv.Atoi(port); err != nil {
-		return fmt.Errorf("chisel.server must be host:port (got %q)", c.Chisel.Server)
+	if c.Chisel.Port < 1 || c.Chisel.Port > 65535 {
+		return fmt.Errorf("chisel.port must be in 1..65535 (got %d)", c.Chisel.Port)
 	}
 	if c.Chisel.RemotePort < 1 || c.Chisel.RemotePort > 65535 {
 		return fmt.Errorf("chisel.remote_port must be in 1..65535 (got %d)", c.Chisel.RemotePort)
