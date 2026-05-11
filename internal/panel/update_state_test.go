@@ -60,3 +60,18 @@ func TestUpdateState_HideTransitions(t *testing.T) {
 		t.Errorf("installed + hide: got %v, want UpdateIdle", got)
 	}
 }
+
+func TestUpdateState_CancelTransitions(t *testing.T) {
+	// Download cancel → back to Available.
+	if got := nextUpdateState(UpdateDownloading, EvCancel); got != UpdateAvailable {
+		t.Errorf("downloading + cancel: got %v, want UpdateAvailable", got)
+	}
+	// UAC cancel during install → back to Ready (nothing was restored).
+	if got := nextUpdateState(UpdateInstalling, EvCancel); got != UpdateReady {
+		t.Errorf("installing + cancel: got %v, want UpdateReady", got)
+	}
+	// Cancel is a no-op in other states.
+	if got := nextUpdateState(UpdateAvailable, EvCancel); got != UpdateAvailable {
+		t.Errorf("available + cancel should be no-op: got %v", got)
+	}
+}

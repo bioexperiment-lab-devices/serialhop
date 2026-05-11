@@ -511,6 +511,11 @@ func ctlDownload(
 		mw.Synchronize(func() { _ = statusBar.SetText(msg) })
 	}
 	if err := updater.Download(ctx, hc, asset.BrowserDownloadURL, dest, userAgent, progress); err != nil {
+		if errors.Is(err, context.Canceled) {
+			mw.Synchronize(func() { _ = statusBar.SetText("Download cancelled.") })
+			apply(EvCancel)
+			return
+		}
 		writePanelDebugLog(installDir, "update_download_failed", err)
 		apply(EvDownloadFail)
 		return
@@ -564,7 +569,7 @@ func ctlInstall(
 	switch {
 	case errors.Is(err, ErrUserCancelled):
 		mw.Synchronize(func() { _ = statusBar.SetText("Cancelled.") })
-		apply(EvInstallFail)
+		apply(EvCancel)
 		return
 	case err != nil:
 		mw.Synchronize(func() { _ = statusBar.SetText("Failed: " + err.Error()) })

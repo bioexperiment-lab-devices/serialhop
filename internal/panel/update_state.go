@@ -28,6 +28,7 @@ const (
 	EvInstallFail
 	EvRetry
 	EvHide
+	EvCancel
 )
 
 // nextUpdateState returns the new state given the current state and an
@@ -52,6 +53,8 @@ func nextUpdateState(cur UpdateState, ev UpdateEvent) UpdateState {
 			return UpdateReady
 		case EvDownloadFail:
 			return UpdateDownloadFailed
+		case EvCancel:
+			return UpdateAvailable
 		}
 	case UpdateDownloadFailed:
 		if ev == EvRetry {
@@ -67,6 +70,8 @@ func nextUpdateState(cur UpdateState, ev UpdateEvent) UpdateState {
 			return UpdateInstalled
 		case EvInstallFail:
 			return UpdateInstallFailed
+		case EvCancel:
+			return UpdateReady
 		}
 	case UpdateInstallFailed:
 		if ev == EvRetry {
