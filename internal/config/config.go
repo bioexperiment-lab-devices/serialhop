@@ -25,8 +25,9 @@ type RestConfig struct {
 }
 
 type DiscoveryConfig struct {
-	Include []string `yaml:"include"`
-	Exclude []string `yaml:"exclude"`
+	Include          []string `yaml:"include"`
+	Exclude          []string `yaml:"exclude"`
+	PostOpenSettleMs int      `yaml:"post_open_settle_ms"`
 }
 
 type LogConfig struct {
@@ -45,8 +46,12 @@ func Default() Config {
 			User:       "devices_coordinator",
 			Pass:       "",
 		},
-		Rest:      RestConfig{Port: 0},
-		Discovery: DiscoveryConfig{Include: []string{}, Exclude: []string{}},
+		Rest: RestConfig{Port: 0},
+		Discovery: DiscoveryConfig{
+			Include:          []string{},
+			Exclude:          []string{},
+			PostOpenSettleMs: 2000,
+		},
 		Log:       LogConfig{Level: "info"},
 		RawSerial: RawSerialConfig{Enabled: false},
 	}
@@ -67,6 +72,9 @@ rest:
 discovery:
   include: []                     # optional: only probe these COM ports, e.g. ["COM3", "COM4"]
   exclude: []                     # optional: skip these COM ports, e.g. ["COM1"]
+  post_open_settle_ms: 2000       # wait after opening a port before probing. covers the
+                                  # Arduino auto-reset bootloader window (~1-2 s). lower
+                                  # if your boards don't reset on DTR; 0 to disable.
 
 log:
   level: "info"                   # debug | info | warn | error
