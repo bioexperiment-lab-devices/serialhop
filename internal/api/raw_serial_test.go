@@ -10,9 +10,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
+
+func init() {
+	// Raw-serial endpoint inherits its post-open settle default from the
+	// discovery package var. Zero it for tests so existing fixtures that
+	// feed responses after 250 ms remain valid without scheduling shifts.
+	discovery.PostOpenSettle = 0
+}
 
 // rawSrv builds an api.Server.Handler() with the given registry, opener, and
 // raw_serial.enabled flag. Used by every test in this file.
@@ -154,6 +162,53 @@ func TestPostSerialCommand_BadQueryParam(t *testing.T) {
 	rec := postRaw(t, srv, "/serial/ports/COM3/command?timeout_ms=99999999", `{"command":[1]}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestPostSerialCommand_BadSettleQueryParam(t *testing.T) {
+	cases := map[string]struct {
+		url      string
+		wantCode int
+	}{
+		"negative":    {"/serial/ports/COM3/command?post_open_settle_ms=-1&wait_for_response=false", http.StatusBadRequest},
+		"too_large":   {"/serial/ports/COM3/command?post_open_settle_ms=60001&wait_for_response=false", http.StatusBadRequest},
+		"not_an_int":  {"/serial/ports/COM3/command?post_open_settle_ms=abc&wait_for_response=false", http.StatusBadRequest},
+		"empty_value": {"/serial/ports/COM3/command?post_open_settle_ms=&wait_for_response=false", http.StatusOK}, // empty = use default
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			reg := registry.New()
+			opener := serial.NewFakeOpener()
+			opener.Add(serial.NewFakePort("COM3"))
+			srv := rawSrv(t, reg, opener, true)
+			rec := postRaw(t, srv, c.url, `{"command":[1]}`)
+			if rec.Code != c.wantCode {
+				t.Errorf("%s: got %d body=%s, want %d", name, rec.Code, rec.Body.String(), c.wantCode)
+			}
+		})
+	}
+}
+
+func TestPostSerialCommand_SettleOverrideApplied(t *testing.T) {
+	// With the package-level default at 0 (set in init()) and an explicit
+	// 80 ms override, the raw call must wait at least the override before
+	// returning.
+	reg := registry.New()
+	opener := serial.NewFakeOpener()
+	fp := serial.NewFakePort("COM3")
+	opener.Add(fp)
+	srv := rawSrv(t, reg, opener, true)
+
+	start := time.Now()
+	rec := postRaw(t, srv,
+		"/serial/ports/COM3/command?post_open_settle_ms=80&wait_for_response=false",
+		`{"command":[1]}`)
+	elapsed := time.Since(start)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if elapsed < 80*time.Millisecond {
+		t.Errorf("elapsed=%v, want >= 80ms (settle not applied)", elapsed)
 	}
 }
 
