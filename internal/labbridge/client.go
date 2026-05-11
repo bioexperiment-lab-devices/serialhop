@@ -73,6 +73,55 @@ func FetchHealth(ctx context.Context, hc *http.Client, base, userAgent string) (
 	return Health{ChiselOK: hb.Chisel == "ok", Detail: hb.Error}, nil
 }
 
-// ClientInfo and FetchClient land in Task 3.
+// ClientInfo is the parsed result of GET /api/public/clients/{user}.
+type ClientInfo struct {
+	Port      int
+	Connected bool
+}
 
-var _ = url.PathEscape // silence the import until Task 3 uses it
+type clientBody struct {
+	Port      int  `json:"port"`
+	Connected bool `json:"connected"`
+}
+
+// FetchClient looks up the agent's reverse-tunnel port and the server's
+// view of whether its tunnel is currently connected.
+//
+// Returns wrapped ErrUnauthorized on HTTP 401 (intentionally
+// indistinguishable from "unknown user" per spec); wrapped ErrServerError
+// on HTTP 5xx; plain error for network failures, unexpected status codes,
+// and JSON parse errors.
+func FetchClient(ctx context.Context, hc *http.Client, base, user, pass, userAgent string) (ClientInfo, error) {
+	endpoint := base + clientsPath + url.PathEscape(user)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return ClientInfo{}, fmt.Errorf("labbridge: build request: %w", err)
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Authorization", "Bearer "+pass)
+
+	resp, err := hc.Do(req)
+	if err != nil {
+		return ClientInfo{}, fmt.Errorf("labbridge: do: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return ClientInfo{}, fmt.Errorf("labbridge: client: %w", ErrUnauthorized)
+	case resp.StatusCode >= 500:
+		return ClientInfo{}, fmt.Errorf("labbridge: client: %w (status %d)", ErrServerError, resp.StatusCode)
+	case resp.StatusCode != http.StatusOK:
+		return ClientInfo{}, fmt.Errorf("labbridge: client: unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	if err != nil {
+		return ClientInfo{}, fmt.Errorf("labbridge: read client body: %w", err)
+	}
+	var cb clientBody
+	if err := json.Unmarshal(body, &cb); err != nil {
+		return ClientInfo{}, fmt.Errorf("labbridge: parse client body: %w", err)
+	}
+	return ClientInfo(cb), nil
+}

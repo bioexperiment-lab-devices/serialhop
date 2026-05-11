@@ -130,3 +130,93 @@ func TestFetchHealth_SendsUserAgent(t *testing.T) {
 		t.Errorf("User-Agent: got %q, want %q", gotUA, testUserAgent)
 	}
 }
+
+func TestFetchClient_200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/public/clients/devices_coordinator" {
+			t.Errorf("path: got %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer s3cret" {
+			t.Errorf("auth: got %q, want %q", got, "Bearer s3cret")
+		}
+		_, _ = w.Write([]byte(`{"port":8089,"connected":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := FetchClient(context.Background(), srv.Client(), srv.URL, "devices_coordinator", "s3cret", testUserAgent)
+	if err != nil {
+		t.Fatalf("FetchClient: %v", err)
+	}
+	if got.Port != 8089 || !got.Connected {
+		t.Errorf("got %+v, want {Port:8089 Connected:true}", got)
+	}
+}
+
+func TestFetchClient_401_WrapsErrUnauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"detail":"unauthorized"}`, http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := FetchClient(context.Background(), srv.Client(), srv.URL, "u", "p", testUserAgent)
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestFetchClient_500_WrapsErrServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "roster broken", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := FetchClient(context.Background(), srv.Client(), srv.URL, "u", "p", testUserAgent)
+	if !errors.Is(err, ErrServerError) {
+		t.Fatalf("expected ErrServerError, got %v", err)
+	}
+}
+
+func TestFetchClient_MalformedJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := FetchClient(context.Background(), srv.Client(), srv.URL, "u", "p", testUserAgent)
+	if err == nil || !strings.Contains(err.Error(), "parse client body") {
+		t.Fatalf("expected parse-body error, got %v", err)
+	}
+}
+
+func TestFetchClient_UsernameURLEscaped(t *testing.T) {
+	gotPath := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		_, _ = w.Write([]byte(`{"port":1,"connected":false}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := FetchClient(context.Background(), srv.Client(), srv.URL, "foo bar", "p", testUserAgent)
+	if err != nil {
+		t.Fatalf("FetchClient: %v", err)
+	}
+	if gotPath != "/api/public/clients/foo%20bar" {
+		t.Errorf("escaped path: got %q, want %q", gotPath, "/api/public/clients/foo%20bar")
+	}
+}
+
+func TestFetchClient_ContextCanceled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"port":1,"connected":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err := FetchClient(ctx, srv.Client(), srv.URL, "u", "p", testUserAgent)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected ctx.DeadlineExceeded, got %v", err)
+	}
+}
