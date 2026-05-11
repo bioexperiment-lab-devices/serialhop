@@ -216,7 +216,7 @@ const (
 )
 ```
 
-Three pure presentation functions in `state.go` map state values → `(color, text)`: `serviceLampPresentation(serviceLamp)`, `serverLampPresentation(netLamp)`, `tunnelLampPresentation(netLamp)`. The Server and Tunnel functions handle their per-lamp text differences (e.g. `lampOK` renders as `Up` for Server and `Connected` for Tunnel; `lampUnreachable` renders identically). Table-driven, easy to unit-test. All three live outside `//go:build windows` so the macOS test runner exercises them.
+Three pure presentation functions in `lampstate.go` (new file, no build tag) map state values → `(color, text)`: `serviceLampPresentation(serviceLamp)`, `serverLampPresentation(netLamp)`, `tunnelLampPresentation(netLamp)`. The existing `state.go` retains `StatusIndicator` and `ComputeButtons` and is reused by `serviceLampPresentation`. The Server and Tunnel functions handle their per-lamp text differences (e.g. `lampOK` renders as `Up` for Server and `Connected` for Tunnel; `lampUnreachable` renders identically). Table-driven, easy to unit-test. All three live outside `//go:build windows` so the macOS test runner exercises them.
 
 ### State → color/text mapping
 
@@ -373,14 +373,20 @@ No unit test for the polling goroutine itself — its logic is `time.Ticker` + t
 
 - `internal/labbridge/client.go`
 - `internal/labbridge/client_test.go`
+- `internal/panel/lampstate.go` (no build tag): `lampKind` enum, `netLamp`/`serviceLamp`/`lampState` types, three presentation functions.
+- `internal/panel/lampstate_test.go`: presentation mapping tests.
+- `internal/panel/probe.go` (no build tag): `runServerProbe`, `runTunnelProbe`, `probeLoop`, result-mapping helpers.
+- `internal/panel/probe_test.go`: probe-result mapping tests via `httptest.NewServer`.
+- `internal/panel/debug_log.go` (no build tag): relocated `writePanelDebugLog` so the cross-platform probe loop can call it. (Used to live inside the windows-only `panel.go`.)
 
 **Modified:**
 
-- `internal/config/config.go` — schema change, scaffold update.
-- `internal/config/load.go` / `load_test.go` — validator + tests.
-- `internal/chisel/client.go` — `Server` composed from host+port; user/pass from `LabBridge`.
-- `internal/logship/*.go` — any `cfg.Chisel.User` → `cfg.LabBridge.User`.
-- `internal/panel/panel.go` — Status group layout; polling goroutines; `refresh()` reads `lampState`.
-- `internal/panel/state.go` / `state_test.go` — `lampKind`, presentation function, mapping tests.
+- `internal/config/config.go` — schema change, `Default()` and scaffold updated.
+- `internal/config/config_test.go` — field-name updates.
+- `internal/config/load.go` — `Validate()` checks new fields; drops `net.SplitHostPort` logic.
+- `internal/config/load_test.go` — YAML bodies updated; new `TestLoad_OldSchemaIsRejected`.
+- `internal/app/app.go` — compose `chisel.Config.Server` from `cfg.LabBridge.Host` + `cfg.Chisel.Port`; pass `LabBridge.User/Pass`.
+- `internal/winsvc/worker.go` — `cfg.Chisel.User` → `cfg.LabBridge.User`.
+- `internal/panel/panel.go` — Status group widget; probe goroutines wired; `refresh()` reads `lampState`; composed host:port display; service-lamp color fix.
 
-No changes to: `cmd/`, `Taskfile.yaml`, `release-please-config.json`, CI workflows.
+Unchanged: `internal/chisel/client.go` (its internal `Config.Server` field remains `host:port` — only the caller in `app.go` changes); `internal/logship/*` (it takes a string label, not a Config); `cmd/`, `Taskfile.yaml`, `release-please-config.json`, CI workflows.
