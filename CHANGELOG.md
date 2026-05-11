@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.6.0...v0.6.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **discovery:** wait out Arduino bootloader before probing ([#46](https://github.com/bioexperiment-lab-devices/serialhop/issues/46)) ([caa7f1d](https://github.com/bioexperiment-lab-devices/serialhop/commit/caa7f1d38113167b12019f2109b9ccfc0d93bda4))
+
 ## [0.6.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.5.2...v0.6.0) (2026-05-10)
 
 
