@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.6.1...v0.7.0) (2026-05-11)
+
+
+### Features
+
+* **api:** per-call post-open settle on raw serial command ([#50](https://github.com/bioexperiment-lab-devices/serialhop/issues/50)) ([0922195](https://github.com/bioexperiment-lab-devices/serialhop/commit/09221956817e39f4871cf43de46cf4b653363474))
+* **discovery:** configurable post-open settle delay ([#48](https://github.com/bioexperiment-lab-devices/serialhop/issues/48)) ([b2d3095](https://github.com/bioexperiment-lab-devices/serialhop/commit/b2d30959d6bc7edf5614fc4a5a447bb123ee056a))
+* in-app auto-update with SHA-256 verification ([#51](https://github.com/bioexperiment-lab-devices/serialhop/issues/51)) ([7eea174](https://github.com/bioexperiment-lab-devices/serialhop/commit/7eea17406e75dfae369243b83856e2714af9b623))
+
 ## [0.6.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.6.0...v0.6.1) (2026-05-11)
 
 
