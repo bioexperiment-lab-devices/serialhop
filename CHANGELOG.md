@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.8.0...v0.9.0) (2026-05-11)
+
+
+### Features
+
+* status lamps for service, lab-bridge server, and tunnel ([#55](https://github.com/bioexperiment-lab-devices/serialhop/issues/55)) ([fc18fb4](https://github.com/bioexperiment-lab-devices/serialhop/commit/fc18fb480d9da65e2d23d2daf77b2282f35d453e))
+
 ## [0.8.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.7.0...v0.8.0) (2026-05-11)
 
 
