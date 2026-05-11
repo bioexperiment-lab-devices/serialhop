@@ -50,9 +50,12 @@ func Run() error {
 
 	cfgPath := paths.ConfigPath()
 	if pathsErr == nil {
-		if err := ensureScaffold(cfgPath); err != nil {
-			// Non-fatal: the panel can still run; it'll show "config missing".
-			_ = err
+		state := readFirstRunState(cfgPath)
+		if decideFirstRun(state) == FirstRunShowDialog {
+			_ = runCredsDialog(cfgPath, state.Cfg)
+			// Whether the user saved or cancelled, fall through. On cancel,
+			// the panel opens with empty creds and the existing
+			// validation-warning label surfaces the missing-fields error.
 		}
 	}
 
@@ -391,18 +394,6 @@ func Run() error {
 	refresh()
 	mw.Run()
 	return nil
-}
-
-func ensureScaffold(cfgPath string) error {
-	if _, err := os.Stat(cfgPath); err == nil {
-		return nil
-	}
-	f, err := os.Create(cfgPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close() //nolint:errcheck // best-effort cleanup; write errors returned by WriteScaffold are the priority
-	return config.WriteScaffold(f)
 }
 
 // queryServiceState returns the current SCM state plus an "ok" flag.
