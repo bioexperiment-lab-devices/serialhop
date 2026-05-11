@@ -157,6 +157,7 @@ func TestManagerStartShipperIsIdempotent(t *testing.T) {
 		m.Shutdown(ctx)
 	})
 
+	m.SetPushURL("http://localhost:3100/loki/api/v1/push")
 	m.StartShipper("lab-1")
 	m.StartShipper("lab-1")
 	if got := m.shipperCountForTest(); got != 1 {

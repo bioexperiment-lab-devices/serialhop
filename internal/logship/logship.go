@@ -17,10 +17,6 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 )
 
-// defaultPushURL is the local end of the chisel forward tunnel that
-// reaches the in-VPS Loki.
-const defaultPushURL = "http://127.0.0.1:3100/loki/api/v1/push"
-
 var errInitMissingPaths = errors.New("logship: paths.ServiceLogPath/StderrLogPath unavailable; call paths.EnsureDirs first")
 
 // Manager owns the capture taps, ring buffer, and shipper goroutine.
@@ -58,7 +54,6 @@ func Init(version string, level slog.Level) (*Manager, error) {
 	m := &Manager{
 		version:  version,
 		levelVar: new(slog.LevelVar),
-		pushURL:  defaultPushURL,
 		q:        newQueue(10_000),
 	}
 	m.levelVar.Set(level)
