@@ -61,7 +61,7 @@ func Run() error {
 		serviceDot   *walk.Label
 		serviceLabel *walk.Label
 		serverDot    *walk.Label
-		serverLbl2   *walk.Label // lamp state text — distinct from serverLbl which shows the configured host:port
+		serverState  *walk.Label // lamp state text — distinct from serverLbl which shows the configured host:port
 		tunnelDot    *walk.Label
 		tunnelLabel  *walk.Label
 		warnLabel    *walk.Label
@@ -127,6 +127,16 @@ func Run() error {
 		dot.Invalidate() // force the WM_PAINT that SetTextColor alone is not triggering.
 	}
 
+	repaintLamps := func() {
+		svc, srv, tun := state.snapshot()
+		sc, st := serviceLampPresentation(svc)
+		paintLamp(serviceDot, serviceLabel, sc, st)
+		sec, set := serverLampPresentation(srv)
+		paintLamp(serverDot, serverState, sec, set)
+		tc, tt := tunnelLampPresentation(tun)
+		paintLamp(tunnelDot, tunnelLabel, tc, tt)
+	}
+
 	refresh := func() {
 		scmState, ok := queryServiceState()
 		if !ok {
@@ -138,13 +148,7 @@ func Run() error {
 
 		state.setService(serviceLamp{state: scmState, cfgValid: cfgErr == nil})
 
-		svc, srv, tun := state.snapshot()
-		sc, st := serviceLampPresentation(svc)
-		paintLamp(serviceDot, serviceLabel, sc, st)
-		sec, set := serverLampPresentation(srv)
-		paintLamp(serverDot, serverLbl2, sec, set)
-		tc, tt := tunnelLampPresentation(tun)
-		paintLamp(tunnelDot, tunnelLabel, tc, tt)
+		repaintLamps()
 
 		serverLbl.SetText("Chisel server:    " + net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(cfg.Chisel.Port)))
 		remotePort.SetText(fmt.Sprintf("Remote port:      %d", cfg.Chisel.RemotePort))
@@ -216,7 +220,7 @@ func Run() error {
 
 					Label{Text: "Server:"},
 					Label{AssignTo: &serverDot, Text: "●", MinSize: Size{Width: 16}},
-					Label{AssignTo: &serverLbl2, Text: "Checking…"},
+					Label{AssignTo: &serverState, Text: "Checking…"},
 
 					Label{Text: "Tunnel:"},
 					Label{AssignTo: &tunnelDot, Text: "●", MinSize: Size{Width: 16}},
@@ -297,8 +301,9 @@ func Run() error {
 
 	probeCtx, probeCancel := context.WithCancel(context.Background())
 	defer probeCancel()
+	mw.Closing().Attach(func(_ *bool, _ walk.CloseReason) { probeCancel() })
 
-	probeHC := &http.Client{} // per-call timeout via probeTimeout in probe.go
+	probeHC := &http.Client{Timeout: 30 * time.Second} // fallback; per-call 5s ctx in probe.go still primary
 
 	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
@@ -307,7 +312,7 @@ func Run() error {
 			base = "https://" + c.LabBridge.Host
 		}
 		runServerProbe(ctx, probeHC, base, userAgent, state)
-		mw.Synchronize(refresh)
+		mw.Synchronize(repaintLamps)
 	})
 	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
@@ -316,7 +321,7 @@ func Run() error {
 			base = "https://" + c.LabBridge.Host
 		}
 		runTunnelProbe(ctx, probeHC, base, c.LabBridge.User, c.LabBridge.Pass, userAgent, state)
-		mw.Synchronize(refresh)
+		mw.Synchronize(repaintLamps)
 	})
 
 	timer, err := newTickTimer(mw, pollInterval, refresh)
