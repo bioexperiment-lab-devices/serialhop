@@ -5,11 +5,30 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
+
+// parseRawSettle returns the post-open settle for one raw-serial call.
+// Defaults to discovery.PostOpenSettle (set from config at startup), allowing
+// callers to override via post_open_settle_ms query param. 0 disables.
+func parseRawSettle(r *http.Request) (time.Duration, error) {
+	v := r.URL.Query().Get("post_open_settle_ms")
+	if v == "" {
+		return discovery.PostOpenSettle, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("post_open_settle_ms: %v", err)
+	}
+	if n < 0 || n > 60000 {
+		return 0, fmt.Errorf("post_open_settle_ms must be 0..60000 (got %d)", n)
+	}
+	return time.Duration(n) * time.Millisecond, nil
+}
 
 func (s *Server) handleGetSerialPorts(w http.ResponseWriter, r *http.Request) {
 	if !s.rawSerialEnabled {
@@ -77,6 +96,11 @@ func (s *Server) handlePostSerialCommand(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid query param", err.Error())
 		return
 	}
+	settle, err := parseRawSettle(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid query param", err.Error())
+		return
+	}
 	cmd, err := parseCommandBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
@@ -89,6 +113,7 @@ func (s *Server) handlePostSerialCommand(w http.ResponseWriter, r *http.Request)
 			"port", port,
 			"cmd_bytes", len(cmd),
 			"resp_bytes", len(resp),
+			"settle_ms", settle.Milliseconds(),
 			"duration_ms", time.Since(start).Milliseconds(),
 			"outcome", outcome,
 		)
@@ -106,6 +131,10 @@ func (s *Server) handlePostSerialCommand(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer func() { _ = conn.Close() }()
+
+	if settle > 0 {
+		time.Sleep(settle)
+	}
 
 	if err := conn.Drain(discovery.DrainDuration); err != nil {
 		logOutcome("drain_failed", nil)

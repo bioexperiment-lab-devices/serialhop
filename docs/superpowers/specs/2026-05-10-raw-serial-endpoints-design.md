@@ -67,7 +67,7 @@ Open `{port}` at 9600/8N1, drain (200 ms), write the bytes, optionally read, clo
 
 **Path param:** `{port}` is the OS port name as returned by `GET /serial/ports` (e.g. `COM3`). The production target is Windows where `COM<n>` names are URL-safe; clients on other platforms must URL-encode (`%2Fdev%2FttyUSB0`).
 
-**Query params** (verbatim copy of `POST /devices/{id}/command`):
+**Query params** (verbatim copy of `POST /devices/{id}/command`, plus a raw-only post-open settle):
 
 | Param | Default (`expected=-1`) | Default (`expected>0`) | Range |
 |---|---|---|---|
@@ -75,6 +75,9 @@ Open `{port}` at 9600/8N1, drain (200 ms), write the bytes, optionally read, clo
 | `inter_byte_ms` | 25 | 50 | 1..1000 |
 | `wait_for_response` | true | true | true / false |
 | `expected_response_bytes` | -1 | — | -1 or 1..1024 |
+| `post_open_settle_ms` | `discovery.post_open_settle_ms` from config | same | 0..60000 |
+
+`post_open_settle_ms` waits after `Opener.Open` and before `Drain`, mirroring the discovery runner. Useful for diagnosing Arduino-class boards that auto-reset on DTR — the default inherits the value the operator already tuned for their hardware in config. Set to `0` for boards that don't need it.
 
 **Request body** (≤ 32 KB; `command` ≤ 1024 bytes; each byte 0..255):
 
@@ -101,11 +104,12 @@ or `{ "response": [] }` when the port stayed silent or `wait_for_response=false`
 5. Parse + validate query params → **400** on bad input.
 6. Parse + validate body bytes → **400** on bad input.
 7. `Opener.Open({port})` → on error **503** `{"error":"port open failed","detail":"..."}`.
-8. `port.Drain(200ms)` → on error close + **503**.
-9. `port.Write(cmd)` → on error close + **503** `{"error":"port write failed","detail":"..."}`.
-10. If `wait_for_response = false` → close, return `{"response":[]}`.
-11. `serial.ReadFrame(...)` per query params → on error close + **503** `{"error":"port read failed","detail":"..."}`.
-12. Close. Return `{"response":[...]}`.
+8. Sleep `post_open_settle_ms` (no-op if 0) — covers the Arduino bootloader window on boards that auto-reset on DTR.
+9. `port.Drain(200ms)` → on error close + **503**.
+10. `port.Write(cmd)` → on error close + **503** `{"error":"port write failed","detail":"..."}`.
+11. If `wait_for_response = false` → close, return `{"response":[]}`.
+12. `serial.ReadFrame(...)` per query params → on error close + **503** `{"error":"port read failed","detail":"..."}`.
+13. Close. Return `{"response":[...]}`.
 
 **No reconnect-and-reprobe.** No identity to preserve; the port is closed at the end of every call regardless of outcome.
 
