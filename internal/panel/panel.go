@@ -57,11 +57,15 @@ func Run() error {
 	}
 
 	var (
-		mw          *walk.MainWindow
-		statusDot   *walk.Label
-		statusLabel *walk.Label
-		warnLabel   *walk.Label
-		statusBar   *walk.Label
+		mw           *walk.MainWindow
+		serviceDot   *walk.Label
+		serviceLabel *walk.Label
+		serverDot    *walk.Label
+		serverLbl2   *walk.Label // lamp state text — distinct from serverLbl which shows the configured host:port
+		tunnelDot    *walk.Label
+		tunnelLabel  *walk.Label
+		warnLabel    *walk.Label
+		statusBar    *walk.Label
 
 		serverLbl    *walk.Label
 		remotePort   *walk.Label
@@ -93,7 +97,8 @@ func Run() error {
 	ctl := &updateCtl{}
 
 	httpClient := &http.Client{} // timeouts applied via per-request ctx
-	userAgent := "SerialHop/" + version.Base() + " (auto-update; +https://github.com/bioexperiment-lab-devices/serialhop)"
+	updateUA := "SerialHop/" + version.Base() + " (auto-update; +https://github.com/bioexperiment-lab-devices/serialhop)"
+	userAgent := "SerialHop/" + version.Base() + " (status-probe)"
 
 	cfg, _ := config.LoadPartial(cfgPath)
 	autoUpdateEnabled := cfg.AutoUpdate.Enabled
@@ -102,27 +107,44 @@ func Run() error {
 	// instead of blinking to "Not installed".
 	lastState := winsvc.StateNotInstalled
 
+	state := &lampState{
+		server: netLamp{kind: lampChecking},
+		tunnel: netLamp{kind: lampChecking},
+	}
+
+	paintLamp := func(dot, label *walk.Label, color StatusColor, text string) {
+		_ = label.SetText(text)
+		switch color {
+		case ColorGreen:
+			dot.SetTextColor(walk.RGB(0, 160, 0))
+		case ColorYellow:
+			dot.SetTextColor(walk.RGB(200, 160, 0))
+		case ColorRed:
+			dot.SetTextColor(walk.RGB(192, 0, 0))
+		default:
+			dot.SetTextColor(walk.RGB(128, 128, 128))
+		}
+		dot.Invalidate() // force the WM_PAINT that SetTextColor alone is not triggering.
+	}
+
 	refresh := func() {
-		state, ok := queryServiceState()
+		scmState, ok := queryServiceState()
 		if !ok {
-			state = lastState
+			scmState = lastState
 		} else {
-			lastState = state
+			lastState = scmState
 		}
 		cfg, cfgErr := config.LoadPartial(cfgPath)
 
-		statusLabel.SetText(state.String())
-		statusDot.SetText("●")
-		switch StatusIndicator(state, cfgErr == nil) {
-		case ColorGreen:
-			statusDot.SetTextColor(walk.RGB(0, 160, 0))
-		case ColorYellow:
-			statusDot.SetTextColor(walk.RGB(200, 160, 0))
-		case ColorRed:
-			statusDot.SetTextColor(walk.RGB(192, 0, 0))
-		default:
-			statusDot.SetTextColor(walk.RGB(128, 128, 128))
-		}
+		state.setService(serviceLamp{state: scmState, cfgValid: cfgErr == nil})
+
+		svc, srv, tun := state.snapshot()
+		sc, st := serviceLampPresentation(svc)
+		paintLamp(serviceDot, serviceLabel, sc, st)
+		sec, set := serverLampPresentation(srv)
+		paintLamp(serverDot, serverLbl2, sec, set)
+		tc, tt := tunnelLampPresentation(tun)
+		paintLamp(tunnelDot, tunnelLabel, tc, tt)
 
 		serverLbl.SetText("Chisel server:    " + net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(cfg.Chisel.Port)))
 		remotePort.SetText(fmt.Sprintf("Remote port:      %d", cfg.Chisel.RemotePort))
@@ -147,7 +169,7 @@ func Run() error {
 			warnLabel.SetVisible(false)
 		}
 
-		btns := ComputeButtons(state, cfgErr == nil)
+		btns := ComputeButtons(scmState, cfgErr == nil)
 		btnInstall.SetEnabled(btns.Install)
 		btnUninstall.SetEnabled(btns.Uninstall)
 		btnRestart.SetEnabled(btns.Restart)
@@ -180,16 +202,25 @@ func Run() error {
 	if err := (MainWindow{
 		AssignTo: &mw,
 		Title:    "SerialHop v" + version.Base(),
-		Size:     Size{Width: 480, Height: 360},
-		MinSize:  Size{Width: 480, Height: 360},
+		Size:     Size{Width: 480, Height: 420},
+		MinSize:  Size{Width: 480, Height: 420},
 		Layout:   VBox{},
 		Children: []Widget{
-			Composite{
-				Layout: HBox{MarginsZero: true},
+			GroupBox{
+				Title:  "Status",
+				Layout: Grid{Columns: 3},
 				Children: []Widget{
-					Label{Text: "Status:"},
-					Label{AssignTo: &statusDot, Text: "●", MinSize: Size{Width: 16}},
-					Label{AssignTo: &statusLabel, Text: "…"},
+					Label{Text: "Service:"},
+					Label{AssignTo: &serviceDot, Text: "●", MinSize: Size{Width: 16}},
+					Label{AssignTo: &serviceLabel, Text: "…"},
+
+					Label{Text: "Server:"},
+					Label{AssignTo: &serverDot, Text: "●", MinSize: Size{Width: 16}},
+					Label{AssignTo: &serverLbl2, Text: "Checking…"},
+
+					Label{Text: "Tunnel:"},
+					Label{AssignTo: &tunnelDot, Text: "●", MinSize: Size{Width: 16}},
+					Label{AssignTo: &tunnelLabel, Text: "Checking…"},
 				},
 			},
 			Label{Text: "─── Configuration ─────────────────────────────"},
@@ -207,7 +238,7 @@ func Run() error {
 				Children: []Widget{
 					Label{AssignTo: &updateLabel, Text: ""},
 					PushButton{AssignTo: &btnDownload, Text: "Download", Visible: false, OnClicked: func() {
-						go ctlDownload(mw, ctl, httpClient, userAgent, installDir, statusBar,
+						go ctlDownload(mw, ctl, httpClient, updateUA, installDir, statusBar,
 							applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
 					}},
 					PushButton{AssignTo: &btnInstall2, Text: "Install update", Visible: false, OnClicked: func() {
@@ -264,6 +295,30 @@ func Run() error {
 		return err
 	}
 
+	probeCtx, probeCancel := context.WithCancel(context.Background())
+	defer probeCancel()
+
+	probeHC := &http.Client{} // per-call timeout via probeTimeout in probe.go
+
+	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
+		c, _ := config.LoadPartial(cfgPath)
+		base := ""
+		if c.LabBridge.Host != "" {
+			base = "https://" + c.LabBridge.Host
+		}
+		runServerProbe(ctx, probeHC, base, userAgent, state)
+		mw.Synchronize(refresh)
+	})
+	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
+		c, _ := config.LoadPartial(cfgPath)
+		base := ""
+		if c.LabBridge.Host != "" {
+			base = "https://" + c.LabBridge.Host
+		}
+		runTunnelProbe(ctx, probeHC, base, c.LabBridge.User, c.LabBridge.Pass, userAgent, state)
+		mw.Synchronize(refresh)
+	})
+
 	timer, err := newTickTimer(mw, pollInterval, refresh)
 	if err != nil {
 		return err
@@ -277,13 +332,13 @@ func Run() error {
 		go func() {
 			// Small delay so the panel paints first.
 			time.Sleep(500 * time.Millisecond)
-			runUpdateCheck(mw, ctl, httpClient, userAgent, installDir,
+			runUpdateCheck(mw, ctl, httpClient, updateUA, installDir,
 				applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
 		}()
 
 		// Periodic recheck (6 h).
 		updateTicker, err := newTickTimer(mw, 6*time.Hour, func() {
-			go runUpdateCheck(mw, ctl, httpClient, userAgent, installDir,
+			go runUpdateCheck(mw, ctl, httpClient, updateUA, installDir,
 				applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
 		})
 		if err != nil {
