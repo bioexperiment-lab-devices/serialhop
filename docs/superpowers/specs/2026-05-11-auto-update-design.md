@@ -103,7 +103,7 @@ States:
 | Install in progress | `Update: installing…` | (disabled) |
 | Install succeeded | `Updated to v0.7.0. Close and reopen this window to load the new panel.` | — |
 | Install failed (rolled back) | `Update failed — service restored to v0.6.1.` (red) | `[Retry]` `[View error]` |
-| Network error during check | (no row; logged to `SerialHop_panel_error.log` at debug) | — |
+| Network error during check | (no row; logged to `%ProgramData%\SerialHop\logs\SerialHop_panel_error.log` at debug) | — |
 
 Layout details:
 
@@ -115,14 +115,14 @@ Layout details:
 
 - One check fires from a goroutine `~500 ms` after `panel.Run()` finishes its first `refresh()` (so the panel paints first, then the network call happens).
 - A `walk.Timer`-driven re-check every 6 h while the panel stays open. Lab operators rarely keep the panel open that long, so this mostly serves the rare long-running session.
-- Network failures (DNS, TCP, TLS, non-200 HTTP) are logged to `SerialHop_panel_error.log` at one line per failure with `time.Now().Format(time.RFC3339)` prefix, and the update row stays hidden. No popup, no status-bar noise — a flaky upstream shouldn't badger the operator.
+- Network failures (DNS, TCP, TLS, non-200 HTTP) are logged to `%ProgramData%\SerialHop\logs\SerialHop_panel_error.log` at one line per failure with `time.Now().Format(time.RFC3339)` prefix, and the update row stays hidden. No popup, no status-bar noise — a flaky upstream shouldn't badger the operator.
 - HTTP timeout: 10 s for the JSON metadata call; no retry on this layer (it'll retry naturally at the next 6 h tick or the next panel open).
 
 ### 4.3 Download
 
 - Destination: `<install_dir>/<asset.Name>` — the asset's filename verbatim from the GitHub API (e.g., `SerialHop-v0.7.0.exe`). Same volume as `SerialHop.exe`, which is required for the rename trick in §5. If `<install_dir>` is not writable (read-only network share, ACL'd `Program Files` install), the download fails and surfaces "permission denied — install dir not writable" in red. We do not fall back to `%TEMP%` because the rename step needs same-volume.
 - Stream from the asset's `browser_download_url` (also from the API JSON — never hand-constructed) with a 5 min overall timeout. Show `Cancel` while in flight; cancelling closes the connection, deletes the partial file, and reverts the row to the "available" state.
-- After the body completes, fetch `SHA256SUMS.txt` from the same release (separate request, 10 s timeout). Parse `<hex>  <filename>` lines, find the row whose filename equals `<asset.Name>`, compare against the SHA-256 of the downloaded file. On mismatch: delete the file, set the row to the red "checksum mismatch" state, log full detail to `SerialHop_panel_error.log`.
+- After the body completes, fetch `SHA256SUMS.txt` from the same release (separate request, 10 s timeout). Parse `<hex>  <filename>` lines, find the row whose filename equals `<asset.Name>`, compare against the SHA-256 of the downloaded file. On mismatch: delete the file, set the row to the red "checksum mismatch" state, log full detail to `%ProgramData%\SerialHop\logs\SerialHop_panel_error.log`.
 - The verified file is left on disk under its versioned name. If the operator closes the panel before clicking `Install update`, the file persists; on next panel open, the panel looks for `<install_dir>/<latest_asset.Name>` (using the asset name returned by the current release check). If it exists *and* its SHA-256 still matches the release's `SHA256SUMS.txt`, the row jumps straight to "ready to install" without re-downloading. The re-checksum is cheap (one local SHA-256 over ~40 MB) and forecloses the cheap attack where someone with write access to the install dir swaps the staged file between download and install.
 - Any other `SerialHop-v*.exe` file in the install directory whose name does **not** match the current latest-release asset name is treated as a stale leftover from a previous staging attempt and deleted on launch (§4.4). The currently-installed `SerialHop.exe` (no version in the name) is of course not in scope of this glob.
 
@@ -255,7 +255,7 @@ All these log lines go through the panel process's logging path, which today is 
 
 | Trigger | Where surfaced | Message |
 |---|---|---|
-| Update check network failure | Silent in panel; `SerialHop_panel_error.log` | (logged only) |
+| Update check network failure | Silent in panel; `%ProgramData%\SerialHop\logs\SerialHop_panel_error.log` | (logged only) |
 | Tag name unparseable | Silent | (logged only) |
 | GitHub API rate limited (403) | Silent | (logged only; next 6 h tick retries) |
 | Install dir not writable for download | Update row, red | "Update v0.7.0 — install dir is not writable" |
