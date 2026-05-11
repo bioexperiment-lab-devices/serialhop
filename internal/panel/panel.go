@@ -18,16 +18,13 @@ import (
 	. "github.com/lxn/walk/declarative"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 )
 
-const (
-	configFileName = "SerialHop_config.yaml"
-	logFileName    = "SerialHop.log"
-	pollInterval   = 1 * time.Second
-)
+const pollInterval = 1 * time.Second
 
 // updateCtl holds the state machine and current release info for the update
 // row. All fields are guarded by mu except where noted.
@@ -46,13 +43,15 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
 	}
-	dir := filepath.Dir(exePath)
-	cfgPath := filepath.Join(dir, configFileName)
-	logPath := filepath.Join(dir, logFileName)
+	installDir := filepath.Dir(exePath)
+	pathsErr := paths.EnsureDirs() // non-fatal: surfaced via warn label and disabled file buttons
 
-	if err := ensureScaffold(cfgPath); err != nil {
-		// Non-fatal: the panel can still run; it'll show "config missing".
-		_ = err
+	cfgPath := paths.ConfigPath()
+	if pathsErr == nil {
+		if err := ensureScaffold(cfgPath); err != nil {
+			// Non-fatal: the panel can still run; it'll show "config missing".
+			_ = err
+		}
 	}
 
 	var (
@@ -73,7 +72,7 @@ func Run() error {
 		btnUninstall *walk.PushButton
 		btnRestart   *walk.PushButton
 		btnOpenCfg   *walk.PushButton
-		btnOpenLog   *walk.PushButton
+		btnOpenLogs  *walk.PushButton
 
 		updateRow   *walk.Composite
 		updateLabel *walk.Label
@@ -134,10 +133,14 @@ func Run() error {
 		rawSerialLbl.SetText("Raw serial:       " + rawSerialState)
 		logLevel.SetText("Log level:        " + cfg.Log.Level)
 
-		if cfgErr != nil {
+		switch {
+		case pathsErr != nil:
+			warnLabel.SetText("⚠ " + pathsErr.Error())
+			warnLabel.SetVisible(true)
+		case cfgErr != nil:
 			warnLabel.SetText("⚠ " + cfgErr.Error())
 			warnLabel.SetVisible(true)
-		} else {
+		default:
 			warnLabel.SetText("")
 			warnLabel.SetVisible(false)
 		}
@@ -146,6 +149,8 @@ func Run() error {
 		btnInstall.SetEnabled(btns.Install)
 		btnUninstall.SetEnabled(btns.Uninstall)
 		btnRestart.SetEnabled(btns.Restart)
+		btnOpenCfg.SetEnabled(pathsErr == nil)
+		btnOpenLogs.SetEnabled(pathsErr == nil)
 	}
 
 	performAdmin := func(action, successMsg string) {
@@ -200,7 +205,7 @@ func Run() error {
 				Children: []Widget{
 					Label{AssignTo: &updateLabel, Text: ""},
 					PushButton{AssignTo: &btnDownload, Text: "Download", Visible: false, OnClicked: func() {
-						go ctlDownload(mw, ctl, httpClient, userAgent, dir, statusBar,
+						go ctlDownload(mw, ctl, httpClient, userAgent, installDir, statusBar,
 							applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
 					}},
 					PushButton{AssignTo: &btnInstall2, Text: "Install update", Visible: false, OnClicked: func() {
@@ -240,12 +245,12 @@ func Run() error {
 				Layout: HBox{},
 				Children: []Widget{
 					PushButton{AssignTo: &btnOpenCfg, Text: "Open config file", OnClicked: func() {
-						if err := OpenWithDefaultApp(cfgPath); err != nil {
+						if err := OpenWithDefaultApp(paths.ConfigPath()); err != nil {
 							walk.MsgBox(mw, "Error", err.Error(), walk.MsgBoxIconError)
 						}
 					}},
-					PushButton{AssignTo: &btnOpenLog, Text: "Open log file", OnClicked: func() {
-						if err := OpenWithDefaultApp(logPath); err != nil {
+					PushButton{AssignTo: &btnOpenLogs, Text: "Open logs folder", OnClicked: func() {
+						if err := OpenWithDefaultApp(paths.LogsDir()); err != nil {
 							walk.MsgBox(mw, "Error", err.Error(), walk.MsgBoxIconError)
 						}
 					}},
@@ -264,19 +269,19 @@ func Run() error {
 	defer timer.Dispose()
 
 	// on-launch cleanup of old binary stub — unconditional, no network needed.
-	_ = os.Remove(filepath.Join(dir, "SerialHop.exe.old"))
+	_ = os.Remove(filepath.Join(installDir, "SerialHop.exe.old"))
 
 	if autoUpdateEnabled {
 		go func() {
 			// Small delay so the panel paints first.
 			time.Sleep(500 * time.Millisecond)
-			runUpdateCheck(mw, ctl, httpClient, userAgent, dir,
+			runUpdateCheck(mw, ctl, httpClient, userAgent, installDir,
 				applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
 		}()
 
 		// Periodic recheck (6 h).
 		updateTicker, err := newTickTimer(mw, 6*time.Hour, func() {
-			go runUpdateCheck(mw, ctl, httpClient, userAgent, dir,
+			go runUpdateCheck(mw, ctl, httpClient, userAgent, installDir,
 				applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
 		})
 		if err != nil {
@@ -403,12 +408,12 @@ func runUpdateCheck(
 	defer cancel()
 	rel, err := updater.LatestRelease(ctx, hc, updater.DefaultReleasesURL, userAgent)
 	if err != nil {
-		writePanelDebugLog(installDir, "update_check_failed", err)
+		writePanelDebugLog("update_check_failed", err)
 		return
 	}
 	newer, err := updater.IsNewer(rel.TagName, version.Version)
 	if err != nil {
-		writePanelDebugLog(installDir, "update_check_parse_failed", err)
+		writePanelDebugLog("update_check_parse_failed", err)
 		return
 	}
 	if !newer {
@@ -424,7 +429,7 @@ func runUpdateCheck(
 		}
 	}
 	if exeAsset == nil {
-		writePanelDebugLog(installDir, "update_check_no_asset", fmt.Errorf("no SerialHop-v*.exe asset on release %s", rel.TagName))
+		writePanelDebugLog("update_check_no_asset", fmt.Errorf("no SerialHop-v*.exe asset on release %s", rel.TagName))
 		return
 	}
 
@@ -513,7 +518,7 @@ func ctlDownload(
 			apply(EvCancel)
 			return
 		}
-		writePanelDebugLog(installDir, "update_download_failed", err)
+		writePanelDebugLog("update_download_failed", err)
 		apply(EvDownloadFail)
 		return
 	}
@@ -521,20 +526,20 @@ func ctlDownload(
 	sumsAsset := rel.AssetByName("SHA256SUMS.txt")
 	if sumsAsset == nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog(installDir, "update_no_sums_asset", fmt.Errorf("release %s has no SHA256SUMS.txt", rel.TagName))
+		writePanelDebugLog("update_no_sums_asset", fmt.Errorf("release %s has no SHA256SUMS.txt", rel.TagName))
 		apply(EvDownloadFail)
 		return
 	}
 	body, err := fetchSums(hc, userAgent, sumsAsset.BrowserDownloadURL)
 	if err != nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog(installDir, "update_fetch_sums_failed", err)
+		writePanelDebugLog("update_fetch_sums_failed", err)
 		apply(EvDownloadFail)
 		return
 	}
 	if err := updater.VerifyFile(dest, body, asset.Name); err != nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog(installDir, "update_verify_failed", err)
+		writePanelDebugLog("update_verify_failed", err)
 		apply(EvDownloadFail)
 		return
 	}
@@ -617,12 +622,18 @@ func cleanupStaleStagedFiles(installDir, keep string) {
 	}
 }
 
-// writePanelDebugLog appends a single line to SerialHop_panel_error.log.
-// Used for failures the operator might want to inspect post-mortem without
-// surfacing a popup. Best-effort.
-func writePanelDebugLog(installDir, code string, err error) {
+// writePanelDebugLog appends a single line to SerialHop_panel_error.log
+// inside %ProgramData%\SerialHop\logs\. Used for failures the operator
+// might want to inspect post-mortem without surfacing a popup.
+// Best-effort: if the target path is unreachable (paths.LogsDir() == ""),
+// the entry is silently dropped.
+func writePanelDebugLog(code string, err error) {
+	target := paths.PanelErrorLogPath()
+	if target == "" {
+		return
+	}
 	line := fmt.Sprintf("%s %s: %v\n", time.Now().Format(time.RFC3339), code, err)
-	f, ferr := os.OpenFile(filepath.Join(installDir, "SerialHop_panel_error.log"), //nolint:gosec // path is constructed from the install directory; not user-controlled
+	f, ferr := os.OpenFile(target, //nolint:gosec // target is paths.PanelErrorLogPath(), not user-controlled
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if ferr != nil {
 		return
