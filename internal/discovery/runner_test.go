@@ -12,6 +12,10 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
+func init() {
+	PostOpenSettle = 0
+}
+
 func newOpener(t *testing.T, ports map[string][]byte) *serial.FakeOpener {
 	t.Helper()
 	o := serial.NewFakeOpener()
