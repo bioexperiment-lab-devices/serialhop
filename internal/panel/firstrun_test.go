@@ -7,8 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 )
@@ -149,5 +152,167 @@ func TestVerifyCredentials_NetworkNeedsConfirm(t *testing.T) {
 		"http://127.0.0.1:1", "u", "p", "test/1")
 	if got.Kind != CredsNeedsConfirm {
 		t.Errorf("Kind: got %v, want CredsNeedsConfirm", got.Kind)
+	}
+}
+
+func TestPatchCredentials_ReplacesUserAndPass(t *testing.T) {
+	in := []byte(`# top comment
+lab_bridge:
+  host: "10.0.0.1"   # host comment
+  user: ""           # user comment
+  pass: ""           # pass comment
+
+rest:
+  port: 0
+`)
+	got, err := patchCredentials(in, "alice", "s3cret")
+	if err != nil {
+		t.Fatalf("patchCredentials: %v", err)
+	}
+	s := string(got)
+	if !strings.Contains(s, `user: "alice"`) {
+		t.Errorf("user not replaced:\n%s", s)
+	}
+	if !strings.Contains(s, `pass: "s3cret"`) {
+		t.Errorf("pass not replaced:\n%s", s)
+	}
+	if !strings.Contains(s, `host: "10.0.0.1"`) {
+		t.Errorf("host should be preserved:\n%s", s)
+	}
+	if !strings.Contains(s, "# top comment") {
+		t.Errorf("top comment dropped:\n%s", s)
+	}
+	if !strings.Contains(s, "# host comment") {
+		t.Errorf("inline host comment dropped:\n%s", s)
+	}
+}
+
+func TestPatchCredentials_PreservesUnrelatedFields(t *testing.T) {
+	in := []byte(`lab_bridge:
+  host: "h"
+  user: ""
+  pass: ""
+discovery:
+  include: ["COM3", "COM4"]
+log:
+  level: "debug"
+`)
+	got, err := patchCredentials(in, "alice", "s3cret")
+	if err != nil {
+		t.Fatalf("patchCredentials: %v", err)
+	}
+	var c config.Config
+	if err := yaml.Unmarshal(got, &c); err != nil {
+		t.Fatalf("unmarshal patched: %v", err)
+	}
+	if c.LabBridge.User != "alice" || c.LabBridge.Pass != "s3cret" {
+		t.Errorf("creds: got user=%q pass=%q", c.LabBridge.User, c.LabBridge.Pass)
+	}
+	if c.Log.Level != "debug" {
+		t.Errorf("log.level: got %q, want debug", c.Log.Level)
+	}
+	if len(c.Discovery.Include) != 2 || c.Discovery.Include[0] != "COM3" {
+		t.Errorf("discovery.include not preserved: %+v", c.Discovery.Include)
+	}
+}
+
+func TestPatchCredentials_AppendsLabBridgeWhenAbsent(t *testing.T) {
+	in := []byte(`rest:
+  port: 0
+log:
+  level: "info"
+`)
+	got, err := patchCredentials(in, "alice", "s3cret")
+	if err != nil {
+		t.Fatalf("patchCredentials: %v", err)
+	}
+	var c config.Config
+	if err := yaml.Unmarshal(got, &c); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, got)
+	}
+	if c.LabBridge.User != "alice" || c.LabBridge.Pass != "s3cret" {
+		t.Errorf("creds: got user=%q pass=%q", c.LabBridge.User, c.LabBridge.Pass)
+	}
+}
+
+func TestPatchCredentials_AddsKeysWhenLabBridgePresentButCredsMissing(t *testing.T) {
+	in := []byte(`lab_bridge:
+  host: "h"
+rest:
+  port: 0
+`)
+	got, err := patchCredentials(in, "alice", "s3cret")
+	if err != nil {
+		t.Fatalf("patchCredentials: %v", err)
+	}
+	var c config.Config
+	if err := yaml.Unmarshal(got, &c); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, got)
+	}
+	if c.LabBridge.Host != "h" {
+		t.Errorf("host: got %q", c.LabBridge.Host)
+	}
+	if c.LabBridge.User != "alice" || c.LabBridge.Pass != "s3cret" {
+		t.Errorf("creds: got user=%q pass=%q", c.LabBridge.User, c.LabBridge.Pass)
+	}
+}
+
+func TestPatchCredentials_RejectsMalformedYAML(t *testing.T) {
+	_, err := patchCredentials([]byte("::: not yaml :::"), "u", "p")
+	if err == nil {
+		t.Errorf("expected error on malformed YAML, got nil")
+	}
+}
+
+func TestWriteOrPatchCreds_CreatesScaffoldWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cfg.yaml")
+	if err := writeOrPatchCreds(p, "alice", "s3cret"); err != nil {
+		t.Fatalf("writeOrPatchCreds: %v", err)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(data), `user: "alice"`) {
+		t.Errorf("scaffold missing user:\n%s", data)
+	}
+	if !strings.Contains(string(data), `pass: "s3cret"`) {
+		t.Errorf("scaffold missing pass:\n%s", data)
+	}
+	// File must validate end-to-end (post-creds).
+	c, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.LabBridge.User != "alice" {
+		t.Errorf("loaded user: got %q", c.LabBridge.User)
+	}
+}
+
+func TestWriteOrPatchCreds_PatchesWhenPresent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cfg.yaml")
+	if err := os.WriteFile(p, []byte(`lab_bridge:
+  host: "10.0.0.1"
+  user: ""
+  pass: ""
+log:
+  level: "debug"
+`), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := writeOrPatchCreds(p, "alice", "s3cret"); err != nil {
+		t.Fatalf("writeOrPatchCreds: %v", err)
+	}
+	c, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.LabBridge.User != "alice" || c.LabBridge.Pass != "s3cret" {
+		t.Errorf("creds: got %+v", c.LabBridge)
+	}
+	if c.Log.Level != "debug" {
+		t.Errorf("log.level not preserved: got %q", c.Log.Level)
 	}
 }
