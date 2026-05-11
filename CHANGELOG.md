@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.7.0...v0.8.0) (2026-05-11)
+
+
+### Features
+
+* relocate config and logs to %ProgramData%, add Open logs folder button ([#52](https://github.com/bioexperiment-lab-devices/serialhop/issues/52)) ([8e09c65](https://github.com/bioexperiment-lab-devices/serialhop/commit/8e09c659a8dcd771eec8e246681fd53b492eba17))
+
+
+### Bug Fixes
+
+* shipper drops records when ctx cancels mid-HTTP-post ([#54](https://github.com/bioexperiment-lab-devices/serialhop/issues/54)) ([e5263c4](https://github.com/bioexperiment-lab-devices/serialhop/commit/e5263c419559f25a85def2e4c650a676b5fb08d1))
+
 ## [0.7.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.6.1...v0.7.0) (2026-05-11)
 
 
