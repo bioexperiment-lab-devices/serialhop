@@ -23,7 +23,7 @@ A control plane for serial-attached lab instruments (peristaltic pumps, distribu
 On startup, `internal/chisel.Run` configures **exactly two routes** (`internal/chisel/client.go:26-32`):
 
 1. **Reverse route** `R:<remote_port>:127.0.0.1:<local_port>` — exposes the local REST listener on the chisel server's loopback at `<remote_port>`. The server's docker compose puts an authenticating proxy in front of that port; the reverse-tunnel port itself is not published outside the server's docker network.
-2. **Forward route** `127.0.0.1:3100:loki:3100` — opens a local listener on the **lab machine's loopback** that forwards to the Loki container in the chisel server's docker network. The in-process log shipper POSTs to this loopback address; nothing else can reach it. Only enabled when `chisel.user` is set (server allowlist is per-user).
+2. **Forward route** `127.0.0.1:3100:loki:3100` — opens a local listener on the **lab machine's loopback** that forwards to the Loki container in the chisel server's docker network. The in-process log shipper POSTs to this loopback address; nothing else can reach it. Only enabled when `lab_bridge.user` is set (server allowlist is per-user).
 
 That's the entire tunneling configuration. There is no SOCKS proxy, no dynamic port forwarding, no remote-shell feature, no file-transfer feature. chisel's binary supports SOCKS, but we don't configure it and don't import the relevant client code path.
 
@@ -47,7 +47,7 @@ If a future change adds any of the above, this section must be updated in the sa
 | Threat | Mitigation |
 |---|---|
 | Operator chisel-server compromise | Attacker gains the same access the legitimate operator has: the three REST endpoints. Containment depends on the server's auth proxy. Not solvable by the client. |
-| Stolen `chisel.user`/`chisel.pass` from a single lab | Per-lab credentials. Attacker can authenticate to the chisel server as that lab but cannot impersonate other labs. Server allowlist is per-user; rotate on disclosure. |
+| Stolen `lab_bridge.user`/`lab_bridge.pass` from a single lab | Per-lab credentials. Attacker can authenticate to the chisel server as that lab but cannot impersonate other labs. Server allowlist is per-user; rotate on disclosure. |
 | Bug in the byte-handling REST handler exploited via the tunnel | Service runs as LocalSystem, so an exploitable bug is high-impact. Mitigations: input validation (`parseCommandBody` rejects out-of-range bytes, length-bounded reads, per-device mutex); race tests in CI (`go test -race`); `govulncheck` and `gosec` in `pr.yml`. |
 | Tampered binary distributed to operators | Releases are built on `windows-latest` from `main`, published with `SHA256SUMS.txt` and a Sigstore build-provenance attestation. Verify with `gh attestation verify` (see `README.md` → "Releases"). |
 | Config-file disclosure on the lab machine | The config contains the chisel server URL and the per-lab credentials. Disclosure → rotate credentials and reissue. The file lives next to the .exe at install location; protect with normal NTFS ACLs. No secrets are logged. |
@@ -65,7 +65,7 @@ If a future change adds any of the above, this section must be updated in the sa
 The threat model assumes the operator:
 
 - Runs the chisel server on infrastructure they control, with an authenticating proxy in front of any reverse-tunnel port.
-- Provisions per-lab `chisel.user`/`chisel.pass` credentials and rotates them on personnel changes or suspected disclosure.
+- Provisions per-lab `lab_bridge.user`/`lab_bridge.pass` credentials and rotates them on personnel changes or suspected disclosure.
 - Verifies release artifacts against `SHA256SUMS.txt` and the Sigstore attestation before deploying.
 - Restricts NTFS permissions on the install directory so non-admin users can't read `SerialHop_config.yaml`.
 - Treats the lab machine as a single-purpose device — no shared workstation use.
