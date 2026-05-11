@@ -69,6 +69,9 @@ func TestValidate_Cases(t *testing.T) {
 			c.Discovery.Exclude = []string{"COM2"}
 		}, "mutually exclusive"},
 		{"log.level invalid", func(c *Config) { c.Log.Level = "verbose" }, "log.level"},
+		{"post_open_settle_ms negative", func(c *Config) {
+			c.Discovery.PostOpenSettleMs = -1
+		}, "post_open_settle_ms"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,6 +161,29 @@ func TestLoadPartial_MalformedYAMLReturnsDefault(t *testing.T) {
 	def := Default()
 	if cfg.Chisel.Server != def.Chisel.Server {
 		t.Errorf("on parse failure, expected Default()-server %q, got %q", def.Chisel.Server, cfg.Chisel.Server)
+	}
+}
+
+func TestLoad_PostOpenSettleCustom(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+chisel:
+  server: "10.0.0.1:7000"
+  remote_port: 9000
+rest:
+  port: 0
+discovery:
+  post_open_settle_ms: 500
+log:
+  level: "info"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Discovery.PostOpenSettleMs != 500 {
+		t.Errorf("post_open_settle_ms: got %d, want 500", c.Discovery.PostOpenSettleMs)
 	}
 }
 

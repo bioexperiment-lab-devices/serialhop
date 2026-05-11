@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/chisel"
@@ -23,6 +24,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		"rest_port", cfg.Rest.Port,
 		"discovery_include", cfg.Discovery.Include,
 		"discovery_exclude", cfg.Discovery.Exclude,
+		"discovery_post_open_settle_ms", cfg.Discovery.PostOpenSettleMs,
 	)
 
 	listener, localPort, err := api.Listen(cfg.Rest.Port)
@@ -30,6 +32,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("bind rest: %w", err)
 	}
 	slog.Info("rest listening", "addr", listener.Addr().String())
+
+	discovery.PostOpenSettle = time.Duration(cfg.Discovery.PostOpenSettleMs) * time.Millisecond
 
 	reg := registry.New()
 	opener := labserial.NewRealOpener()

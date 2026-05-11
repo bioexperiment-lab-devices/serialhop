@@ -34,6 +34,13 @@ func TestDefaultConfig_RawSerialDisabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_PostOpenSettle(t *testing.T) {
+	c := Default()
+	if c.Discovery.PostOpenSettleMs != 2000 {
+		t.Errorf("discovery.post_open_settle_ms: got %d, want 2000", c.Discovery.PostOpenSettleMs)
+	}
+}
+
 func TestWriteScaffold_RoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteScaffold(&buf); err != nil {
@@ -60,5 +67,9 @@ func TestWriteScaffold_RoundTrip(t *testing.T) {
 	}
 	if parsed.RawSerial.Enabled {
 		t.Errorf("round-trip raw_serial.enabled: got true, want false (default)")
+	}
+	if parsed.Discovery.PostOpenSettleMs != def.Discovery.PostOpenSettleMs {
+		t.Errorf("round-trip discovery.post_open_settle_ms: got %d, want %d",
+			parsed.Discovery.PostOpenSettleMs, def.Discovery.PostOpenSettleMs)
 	}
 }

@@ -63,6 +63,9 @@ func Validate(c *Config) error {
 	if len(c.Discovery.Include) > 0 && len(c.Discovery.Exclude) > 0 {
 		return fmt.Errorf("discovery.include and discovery.exclude are mutually exclusive")
 	}
+	if c.Discovery.PostOpenSettleMs < 0 {
+		return fmt.Errorf("discovery.post_open_settle_ms must be >= 0 (got %d)", c.Discovery.PostOpenSettleMs)
+	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":
 	default:
