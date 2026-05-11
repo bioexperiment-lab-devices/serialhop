@@ -141,10 +141,15 @@ func (s *shipper) flushOnce(ctx context.Context) {
 // errors with exponential backoff (1→2→5→10s, capped at 10s). 4xx drops
 // the batch and returns false. Returns true on success, false on
 // ctx-cancellation or 4xx-drop.
+//
+// post() itself is intentionally not ctx-aware (see its godoc): a single
+// in-flight HTTP call completes (bounded by http.Client.Timeout) even
+// when ctx is cancelled, so records being POSTed at Shutdown time aren't
+// silently dropped. ctx still bounds whether we retry after a failure.
 func (s *shipper) postWithRetry(ctx context.Context, body []byte) bool {
 	delay := backoffStart
 	for {
-		err := s.post(ctx, body)
+		err := s.post(body)
 		if err == nil {
 			return true
 		}
@@ -169,8 +174,15 @@ func (s *shipper) postWithRetry(ctx context.Context, body []byte) bool {
 }
 
 // post performs one POST; no retry. Returns nil on 2xx, an error otherwise.
-func (s *shipper) post(ctx context.Context, body []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(body))
+//
+// Does not take a context. The http.Client's own Timeout (httpTimeout)
+// is the only bound on the request. This keeps an in-flight POST from
+// being aborted mid-flight when the shipper's outer ctx is cancelled
+// (e.g. during Manager.Shutdown) — otherwise records that were already
+// drained from the queue would be dropped, breaking the "Shutdown
+// drains pending records" contract.
+func (s *shipper) post(body []byte) error {
+	req, err := http.NewRequest(http.MethodPost, s.url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
