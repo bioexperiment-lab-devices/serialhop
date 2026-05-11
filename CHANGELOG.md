@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.9.0...v0.9.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **panel:** paint lamp dots via CustomWidget filled circle ([#57](https://github.com/bioexperiment-lab-devices/serialhop/issues/57)) ([dfb7d0e](https://github.com/bioexperiment-lab-devices/serialhop/commit/dfb7d0e06cff30eda9ef70323e1c078ff92cf61a))
+
 ## [0.9.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.8.0...v0.9.0) (2026-05-11)
 
 
