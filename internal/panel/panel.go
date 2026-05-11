@@ -19,6 +19,7 @@ import (
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
@@ -171,8 +172,9 @@ func Run() error {
 
 		repaintLamps()
 
-		serverLbl.SetText("Chisel server:    " + net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(cfg.Chisel.Port)))
-		remotePort.SetText(fmt.Sprintf("Remote port:      %d", cfg.Chisel.RemotePort))
+		serverDisplay, remoteDisplay := readCacheDisplay(cfg.LabBridge.Host, cfg.LabBridge.User)
+		serverLbl.SetText("Chisel server:    " + serverDisplay)
+		remotePort.SetText("Remote port:      " + remoteDisplay)
 		restPort.SetText(fmt.Sprintf("REST port:        %d", cfg.Rest.Port))
 		discoveryLbl.SetText(fmt.Sprintf("Discovery:        include=%v, exclude=%v", cfg.Discovery.Include, cfg.Discovery.Exclude))
 		rawSerialState := "disabled"
@@ -709,4 +711,20 @@ func cleanupStaleStagedFiles(installDir, keep string) {
 		}
 		_ = os.Remove(m)
 	}
+}
+
+// readCacheDisplay returns the strings used in the panel's
+// "Chisel server" and "Remote port" labels. When the bootstrap cache
+// exists and is anchored to user, the cached values are shown; otherwise
+// host:<…> and "…". Errors are swallowed silently (lamps already surface
+// connectivity problems).
+func readCacheDisplay(host, user string) (server, remote string) {
+	if host == "" {
+		return "—", "—"
+	}
+	c, err := bootstrap.ReadCache(paths.ServerInfoCachePath(), user)
+	if err != nil {
+		return net.JoinHostPort(host, "…"), "…"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(c.ServerInfo.ChiselListenPort)), strconv.Itoa(c.RemotePort)
 }
