@@ -6,9 +6,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/logship"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
@@ -58,17 +60,40 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 		return false, 1
 	}
 	h.manager.SetLevel(logship.ParseLogLevel(cfg.Log.Level))
-	h.manager.StartShipper(cfg.LabBridge.User)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Report Running before bootstrap so the SCM keeps the service alive
+	// even when the lab-bridge server is unreachable on first launch.
+	changes <- svc.Status{State: svc.Running, Accepts: accepts}
+
 	appDone := make(chan error, 1)
 	go func() {
-		appDone <- app.Run(ctx, cfg)
+		hc := &http.Client{Timeout: 30 * time.Second}
+		userAgent := "SerialHop/" + version.Base() + " (bootstrap)"
+		resolved, err := bootstrap.Resolve(ctx, bootstrap.Options{
+			HTTPClient: hc,
+			Base:       "https://" + cfg.LabBridge.Host,
+			User:       cfg.LabBridge.User,
+			Pass:       cfg.LabBridge.Pass,
+			CachePath:  paths.ServerInfoCachePath(),
+			UserAgent:  userAgent,
+		})
+		if err != nil {
+			// ctx.Err() means we're shutting down — exit cleanly without
+			// surfacing this as a service failure.
+			if ctx.Err() != nil {
+				appDone <- nil
+				return
+			}
+			appDone <- fmt.Errorf("bootstrap: %w", err)
+			return
+		}
+		h.manager.SetPushURL(resolved.ServerInfo.LokiPushURL)
+		h.manager.StartShipper(cfg.LabBridge.User)
+		appDone <- app.Run(ctx, cfg, resolved)
 	}()
-
-	changes <- svc.Status{State: svc.Running, Accepts: accepts}
 
 	for {
 		select {
