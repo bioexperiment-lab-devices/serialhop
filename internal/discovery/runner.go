@@ -6,10 +6,24 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
+
+// PostOpenSettle is the delay between opening a serial port and probing it.
+// Arduino-class boards (Uno, Nano, Mini and similar with a USB-to-serial
+// bridge) tie the host DTR line to the MCU reset pin through a capacitor;
+// the host driver asserts DTR at port open — pulsing reset and dropping
+// the board into its bootloader for ~1-2 s. Probes sent during that window
+// are consumed by the bootloader and never reach user code, so the device
+// appears silent even when it's running. The bug.st library's own docs
+// note that even setting DTR=false in InitialStatusBits can't suppress the
+// pulse on macOS/Linux, so we wait it out.
+//
+// Exposed as var so tests can set it to 0.
+var PostOpenSettle = 2 * time.Second
 
 // FilterPorts applies include / exclude filters per spec section 5.
 // include and exclude are mutually exclusive (validated upstream); this
@@ -87,6 +101,9 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*reg
 			if err != nil {
 				slog.Debug("discovery: open failed", "port", portName, "err", err)
 				return
+			}
+			if PostOpenSettle > 0 {
+				time.Sleep(PostOpenSettle)
 			}
 			reply, res, err := Probe(conn)
 			if err != nil {
