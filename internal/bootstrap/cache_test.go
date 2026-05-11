@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
@@ -99,6 +100,41 @@ func TestWriteCache_IsAtomic(t *testing.T) {
 	for _, e := range entries {
 		if e.Name() != "cache.json" {
 			t.Errorf("unexpected leftover file: %s", e.Name())
+		}
+	}
+}
+
+func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	if err := WriteCache(p, sampleCache()); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`"chisel_listen_port"`,
+		`"loki_push_url"`,
+		`"forward_tunnels"`,
+		`"server_info"`,
+		`"remote_port"`,
+		`"fetched_at"`,
+		`"user"`,
+		`"version"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("cache JSON missing key %s; body:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{
+		`"ChiselListenPort"`,
+		`"LokiPushURL"`,
+		`"ForwardTunnels"`,
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("cache JSON contains Go-CamelCase key %s; body:\n%s", unwanted, body)
 		}
 	}
 }

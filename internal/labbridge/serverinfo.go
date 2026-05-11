@@ -12,9 +12,9 @@ const serverInfoPath = "/api/public/server-info"
 
 // ForwardTunnel describes one chisel -L forward the agent should open.
 type ForwardTunnel struct {
-	Name   string
-	Local  string
-	Remote string
+	Name   string `json:"name"`
+	Local  string `json:"local"`
+	Remote string `json:"remote"`
 }
 
 // ServerInfo is the parsed result of GET /api/public/server-info.
@@ -22,9 +22,9 @@ type ForwardTunnel struct {
 // server to add new keys (e.g. agent metadata, chisel fingerprint)
 // without breaking older agents.
 type ServerInfo struct {
-	ChiselListenPort int
-	LokiPushURL      string
-	ForwardTunnels   []ForwardTunnel
+	ChiselListenPort int             `json:"chisel_listen_port"`
+	LokiPushURL      string          `json:"loki_push_url"`
+	ForwardTunnels   []ForwardTunnel `json:"forward_tunnels"`
 }
 
 type serverInfoBody struct {
