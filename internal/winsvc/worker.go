@@ -6,21 +6,18 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/logship"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 
 	"golang.org/x/sys/windows/svc"
 )
 
 const (
-	configFileName = "SerialHop_config.yaml"
-
 	workerStopGracePeriod = 30 * time.Second
 	logshipShutdown       = 2 * time.Second
 )
@@ -31,22 +28,19 @@ const (
 // on disk and (if a previous successful run cached chisel auth) in
 // Loki on the next push.
 func RunWorker() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate executable: %w", err)
+	if err := paths.EnsureDirs(); err != nil {
+		return fmt.Errorf("paths setup: %w", err)
 	}
-	dir := filepath.Dir(exePath)
 
-	manager, err := logship.Init(dir, version.Version, slog.LevelInfo)
+	manager, err := logship.Init(version.Version, slog.LevelInfo)
 	if err != nil {
 		return fmt.Errorf("logship init: %w", err)
 	}
 
-	return svc.Run(ServiceName, &handler{dir: dir, manager: manager})
+	return svc.Run(ServiceName, &handler{manager: manager})
 }
 
 type handler struct {
-	dir     string
 	manager *logship.Manager
 }
 
@@ -55,7 +49,7 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 
 	changes <- svc.Status{State: svc.StartPending}
 
-	cfgPath := filepath.Join(h.dir, configFileName)
+	cfgPath := paths.ConfigPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		slog.Error("config load failed", "path", cfgPath, "err", err)

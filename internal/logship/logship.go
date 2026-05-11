@@ -8,23 +8,23 @@ package logship
 
 import (
 	"context"
+	"errors"
 	"log/slog"
-	"path/filepath"
 	"sync"
 
 	"gopkg.in/natefinch/lumberjack.v2"
-)
 
-const LogFileName = "SerialHop.log"
-const StderrLogFileName = "SerialHop_stderr.log"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
+)
 
 // defaultPushURL is the local end of the chisel forward tunnel that
 // reaches the in-VPS Loki.
 const defaultPushURL = "http://127.0.0.1:3100/loki/api/v1/push"
 
+var errInitMissingPaths = errors.New("logship: paths.ServiceLogPath/StderrLogPath unavailable; call paths.EnsureDirs first")
+
 // Manager owns the capture taps, ring buffer, and shipper goroutine.
 type Manager struct {
-	dir     string
 	version string
 
 	levelVar *slog.LevelVar
@@ -44,11 +44,22 @@ type Manager struct {
 }
 
 // Init builds the on-disk log writers, allocates the ring buffer, and
-// installs the slog and stderr taps. The shipper is NOT started yet —
-// call StartShipper once the chisel user is known.
-func Init(dir, version string, level slog.Level) (*Manager, error) {
+// installs the slog and stderr taps. Log file paths come from the
+// internal/paths package — call paths.EnsureDirs() before Init.
+// The shipper is NOT started yet — call StartShipper once the chisel
+// user is known.
+func Init(version string, level slog.Level) (*Manager, error) {
+	if err := paths.EnsureDirs(); err != nil {
+		return nil, errInitMissingPaths
+	}
+
+	servicePath := paths.ServiceLogPath()
+	stderrPath := paths.StderrLogPath()
+	if servicePath == "" || stderrPath == "" {
+		return nil, errInitMissingPaths
+	}
+
 	m := &Manager{
-		dir:      dir,
 		version:  version,
 		levelVar: new(slog.LevelVar),
 		pushURL:  defaultPushURL,
@@ -57,13 +68,13 @@ func Init(dir, version string, level slog.Level) (*Manager, error) {
 	m.levelVar.Set(level)
 
 	m.slogDisk = &lumberjack.Logger{
-		Filename:   filepath.Join(dir, LogFileName),
+		Filename:   servicePath,
 		MaxSize:    10,
 		MaxBackups: 3,
 		LocalTime:  true,
 	}
 	m.stderrDisk = &lumberjack.Logger{
-		Filename:   filepath.Join(dir, StderrLogFileName),
+		Filename:   stderrPath,
 		MaxSize:    10,
 		MaxBackups: 3,
 		LocalTime:  true,
