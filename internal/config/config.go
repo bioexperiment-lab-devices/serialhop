@@ -6,11 +6,12 @@ import (
 )
 
 type Config struct {
-	Chisel    ChiselConfig    `yaml:"chisel"`
-	Rest      RestConfig      `yaml:"rest"`
-	Discovery DiscoveryConfig `yaml:"discovery"`
-	Log       LogConfig       `yaml:"log"`
-	RawSerial RawSerialConfig `yaml:"raw_serial"`
+	Chisel     ChiselConfig     `yaml:"chisel"`
+	Rest       RestConfig       `yaml:"rest"`
+	Discovery  DiscoveryConfig  `yaml:"discovery"`
+	Log        LogConfig        `yaml:"log"`
+	RawSerial  RawSerialConfig  `yaml:"raw_serial"`
+	AutoUpdate AutoUpdateConfig `yaml:"auto_update"`
 }
 
 type ChiselConfig struct {
@@ -38,6 +39,10 @@ type RawSerialConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+type AutoUpdateConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 func Default() Config {
 	return Config{
 		Chisel: ChiselConfig{
@@ -52,8 +57,9 @@ func Default() Config {
 			Exclude:          []string{},
 			PostOpenSettleMs: 2000,
 		},
-		Log:       LogConfig{Level: "info"},
-		RawSerial: RawSerialConfig{Enabled: false},
+		Log:        LogConfig{Level: "info"},
+		RawSerial:  RawSerialConfig{Enabled: false},
+		AutoUpdate: AutoUpdateConfig{Enabled: true},
 	}
 }
 
@@ -83,6 +89,11 @@ raw_serial:
   enabled: false                  # set true to allow GET /serial/ports and
                                   # POST /serial/ports/{port}/command. bypasses
                                   # device classification — leave off unless diagnosing.
+
+auto_update:
+  enabled: true                   # check GitHub Releases for newer versions
+                                  # and offer to install them from the panel.
+                                  # set to false on air-gapped lab boxes.
 `
 
 func WriteScaffold(w io.Writer) error {

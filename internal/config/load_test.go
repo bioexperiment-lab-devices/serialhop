@@ -221,3 +221,48 @@ func TestLoadPartial_MissingFile(t *testing.T) {
 		t.Errorf("on missing file, expected Default()-server %q, got %q", def.Chisel.Server, cfg.Chisel.Server)
 	}
 }
+
+func TestLoad_AutoUpdateDisabled(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+chisel:
+  server: "10.0.0.1:7000"
+  remote_port: 9000
+rest:
+  port: 0
+log:
+  level: "info"
+auto_update:
+  enabled: false
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.AutoUpdate.Enabled {
+		t.Errorf("auto_update.enabled: got true, want false")
+	}
+}
+
+func TestLoad_AutoUpdateDefaultsToTrue(t *testing.T) {
+	// A config file written by an older binary has no auto_update section.
+	dir := t.TempDir()
+	body := `
+chisel:
+  server: "10.0.0.1:7000"
+  remote_port: 9000
+rest:
+  port: 0
+log:
+  level: "info"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.AutoUpdate.Enabled {
+		t.Errorf("auto_update.enabled: got false, want true (default)")
+	}
+}
