@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -25,7 +27,7 @@ var errWaitTimeout = errors.New("wait deadline exceeded")
 // binary is launched with --admin-action=<name>. It connects to SCM, runs
 // the requested action, writes any error to errorFile (UTF-8), and returns
 // 0 on success or 1 on failure.
-func RunAdminAction(action, errorFile string) int {
+func RunAdminAction(action, errorFile, updateSrc string) int {
 	err := func() error {
 		scm, err := DialSCM()
 		if err != nil {
@@ -44,6 +46,8 @@ func RunAdminAction(action, errorFile string) int {
 			return uninstall(scm, productionStopTimeout, productionPollInterval)
 		case "restart":
 			return restart(scm, productionStartTimeout, productionPollInterval)
+		case "update":
+			return runUpdate(scm, updateSrc)
 		default:
 			return fmt.Errorf("unknown action %q", action)
 		}
@@ -53,6 +57,32 @@ func RunAdminAction(action, errorFile string) int {
 		return 1
 	}
 	return 0
+}
+
+// runUpdate validates updateSrc, derives the target install path from the
+// running exe, and dispatches to updateBinary.
+func runUpdate(scm SCMConn, updateSrc string) error {
+	if updateSrc == "" {
+		return fmt.Errorf("update action requires --update-src")
+	}
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate executable: %w", err)
+	}
+	installDir := filepath.Dir(exePath)
+	srcDir := filepath.Dir(updateSrc)
+	if !strings.EqualFold(filepath.Clean(srcDir), filepath.Clean(installDir)) {
+		return fmt.Errorf("update-src must live in install dir (%q); got %q", installDir, updateSrc)
+	}
+	base := filepath.Base(updateSrc)
+	if !strings.HasPrefix(base, "SerialHop-v") || !strings.HasSuffix(base, ".exe") {
+		return fmt.Errorf("update-src filename must match SerialHop-v*.exe (got %q)", base)
+	}
+	if _, err := os.Stat(updateSrc); err != nil {
+		return fmt.Errorf("update-src not accessible: %w", err)
+	}
+	return updateBinary(scm, realFS{}, updateSrc, exePath,
+		productionStartTimeout, productionPollInterval, 250*time.Millisecond)
 }
 
 func install(scm SCMConn, exePath string) error {
