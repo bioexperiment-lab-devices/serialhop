@@ -56,13 +56,31 @@ func Run() error {
 		}
 	}
 
+	// Per-lamp current color. Mutated by paintLamp; read by the per-lamp
+	// Paint closure registered with each CustomWidget.
+	serviceDotColor := walk.RGB(128, 128, 128)
+	serverDotColor := walk.RGB(128, 128, 128)
+	tunnelDotColor := walk.RGB(128, 128, 128)
+
+	makeCirclePaint := func(colorPtr *walk.Color) walk.PaintFunc {
+		return func(canvas *walk.Canvas, _ walk.Rectangle) error {
+			brush, err := walk.NewSolidColorBrush(*colorPtr)
+			if err != nil {
+				return err
+			}
+			defer brush.Dispose()
+			// Centered 12x12 circle inside the 16x16 widget.
+			return canvas.FillEllipsePixels(brush, walk.Rectangle{X: 2, Y: 2, Width: 12, Height: 12})
+		}
+	}
+
 	var (
 		mw           *walk.MainWindow
-		serviceDot   *walk.Label
+		serviceDot   *walk.CustomWidget
 		serviceLabel *walk.Label
-		serverDot    *walk.Label
+		serverDot    *walk.CustomWidget
 		serverState  *walk.Label // lamp state text — distinct from serverLbl which shows the configured host:port
-		tunnelDot    *walk.Label
+		tunnelDot    *walk.CustomWidget
 		tunnelLabel  *walk.Label
 		warnLabel    *walk.Label
 		statusBar    *walk.Label
@@ -112,29 +130,29 @@ func Run() error {
 		tunnel: netLamp{kind: lampChecking},
 	}
 
-	paintLamp := func(dot, label *walk.Label, color StatusColor, text string) {
+	paintLamp := func(dot *walk.CustomWidget, colorPtr *walk.Color, label *walk.Label, color StatusColor, text string) {
 		_ = label.SetText(text)
 		switch color {
 		case ColorGreen:
-			dot.SetTextColor(walk.RGB(0, 160, 0))
+			*colorPtr = walk.RGB(0, 160, 0)
 		case ColorYellow:
-			dot.SetTextColor(walk.RGB(200, 160, 0))
+			*colorPtr = walk.RGB(200, 160, 0)
 		case ColorRed:
-			dot.SetTextColor(walk.RGB(192, 0, 0))
+			*colorPtr = walk.RGB(192, 0, 0)
 		default:
-			dot.SetTextColor(walk.RGB(128, 128, 128))
+			*colorPtr = walk.RGB(128, 128, 128)
 		}
-		dot.Invalidate() // force the WM_PAINT that SetTextColor alone is not triggering.
+		dot.Invalidate()
 	}
 
 	repaintLamps := func() {
 		svc, srv, tun := state.snapshot()
 		sc, st := serviceLampPresentation(svc)
-		paintLamp(serviceDot, serviceLabel, sc, st)
+		paintLamp(serviceDot, &serviceDotColor, serviceLabel, sc, st)
 		sec, set := serverLampPresentation(srv)
-		paintLamp(serverDot, serverState, sec, set)
+		paintLamp(serverDot, &serverDotColor, serverState, sec, set)
 		tc, tt := tunnelLampPresentation(tun)
-		paintLamp(tunnelDot, tunnelLabel, tc, tt)
+		paintLamp(tunnelDot, &tunnelDotColor, tunnelLabel, tc, tt)
 	}
 
 	refresh := func() {
@@ -215,15 +233,33 @@ func Run() error {
 				Layout: Grid{Columns: 3},
 				Children: []Widget{
 					Label{Text: "Service:"},
-					Label{AssignTo: &serviceDot, Text: "●", MinSize: Size{Width: 16}},
+					CustomWidget{
+						AssignTo:         &serviceDot,
+						MinSize:          Size{Width: 16, Height: 16},
+						MaxSize:          Size{Width: 16, Height: 16},
+						ClearsBackground: true,
+						Paint:            makeCirclePaint(&serviceDotColor),
+					},
 					Label{AssignTo: &serviceLabel, Text: "…"},
 
 					Label{Text: "Server:"},
-					Label{AssignTo: &serverDot, Text: "●", MinSize: Size{Width: 16}},
+					CustomWidget{
+						AssignTo:         &serverDot,
+						MinSize:          Size{Width: 16, Height: 16},
+						MaxSize:          Size{Width: 16, Height: 16},
+						ClearsBackground: true,
+						Paint:            makeCirclePaint(&serverDotColor),
+					},
 					Label{AssignTo: &serverState, Text: "Checking…"},
 
 					Label{Text: "Tunnel:"},
-					Label{AssignTo: &tunnelDot, Text: "●", MinSize: Size{Width: 16}},
+					CustomWidget{
+						AssignTo:         &tunnelDot,
+						MinSize:          Size{Width: 16, Height: 16},
+						MaxSize:          Size{Width: 16, Height: 16},
+						ClearsBackground: true,
+						Paint:            makeCirclePaint(&tunnelDotColor),
+					},
 					Label{AssignTo: &tunnelLabel, Text: "Checking…"},
 				},
 			},
