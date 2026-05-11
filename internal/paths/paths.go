@@ -84,15 +84,17 @@ func PanelErrorLogPath() string {
 	return filepath.Join(d, PanelErrorLogFileName)
 }
 
-// EnsureDirs creates DataDir and LogsDir with os.MkdirAll (0o755).
+// EnsureDirs creates DataDir and LogsDir with os.MkdirAll (0o750).
 // Idempotent. Returns an error if DataDir() is empty or MkdirAll fails.
+// On Windows the Unix mode bits are advisory; the actual ACL inherits
+// from %ProgramData%.
 func EnsureDirs() error {
 	d := DataDir()
 	if d == "" {
 		return errors.New("paths: data directory unavailable (%ProgramData% not set)")
 	}
 	logs := filepath.Join(d, "logs")
-	if err := os.MkdirAll(logs, 0o755); err != nil {
+	if err := os.MkdirAll(logs, 0o750); err != nil {
 		return fmt.Errorf("paths: create %s: %w", logs, err)
 	}
 	return nil
