@@ -301,3 +301,32 @@ log:
 		t.Errorf("expected lab_bridge.host error, got %v", err)
 	}
 }
+
+func TestLoad_LegacyChiselBlockIgnoredWhenCredsValid(t *testing.T) {
+	// Migration path: an existing config file written by a pre-cleanup
+	// binary may still contain a `chisel:` block. yaml.v3 silently ignores
+	// unknown fields, so the file should still load cleanly as long as the
+	// new required fields (lab_bridge.user, lab_bridge.pass) are present.
+	dir := t.TempDir()
+	body := `
+lab_bridge:
+  host: "10.0.0.1"
+  user: "u"
+  pass: "p"
+chisel:
+  port: 7000
+  remote_port: 9000
+rest:
+  port: 0
+log:
+  level: "info"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.LabBridge.User != "u" || c.LabBridge.Pass != "p" {
+		t.Errorf("creds: got %+v", c.LabBridge)
+	}
+}
