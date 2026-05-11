@@ -64,7 +64,7 @@ func Run(ctx context.Context, cfg Config) error {
 		"remote_port", cfg.RemotePort,
 		"local_port", cfg.LocalPort,
 		"auth", cfg.User != "",
-		"forward_loki", cfg.User != "")
+		"forward_tunnels", len(cfg.ForwardTunnels))
 	if err := c.Start(ctx); err != nil {
 		return fmt.Errorf("start chisel client: %w", err)
 	}
