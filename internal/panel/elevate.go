@@ -129,7 +129,7 @@ func quoteFlagValue(token string) string {
 var ErrUserCancelled = errors.New("user cancelled UAC prompt")
 
 // OpenWithDefaultApp invokes ShellExecute with verb "open" on the given
-// path. Used by the panel's "Open config file" / "Open log file" buttons.
+// path. Used by the panel's "Open config file" / "Open logs folder" buttons.
 func OpenWithDefaultApp(path string) error {
 	verb, _ := windows.UTF16PtrFromString("open")
 	file, _ := windows.UTF16PtrFromString(path)
