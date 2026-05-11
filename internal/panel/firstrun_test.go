@@ -1,10 +1,14 @@
 package panel
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 )
@@ -100,5 +104,50 @@ func TestReadFirstRunState_MalformedYAMLSetsParseErr(t *testing.T) {
 	}
 	if s.ParseErr == nil {
 		t.Errorf("ParseErr: expected non-nil on malformed YAML")
+	}
+}
+
+func TestVerifyCredentials_OK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"port":8089,"connected":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	got := verifyCredentials(context.Background(), srv.Client(), srv.URL, "u", "p", "test/1")
+	if got.Kind != CredsOK {
+		t.Errorf("Kind: got %v, want CredsOK (detail=%q)", got.Kind, got.Detail)
+	}
+}
+
+func TestVerifyCredentials_401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unauthorized", 401)
+	}))
+	t.Cleanup(srv.Close)
+	got := verifyCredentials(context.Background(), srv.Client(), srv.URL, "u", "wrong", "test/1")
+	if got.Kind != CredsUnauthorized {
+		t.Errorf("Kind: got %v, want CredsUnauthorized", got.Kind)
+	}
+}
+
+func TestVerifyCredentials_500NeedsConfirm(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "roster broken", 500)
+	}))
+	t.Cleanup(srv.Close)
+	got := verifyCredentials(context.Background(), srv.Client(), srv.URL, "u", "p", "test/1")
+	if got.Kind != CredsNeedsConfirm {
+		t.Errorf("Kind: got %v, want CredsNeedsConfirm", got.Kind)
+	}
+	if got.Detail == "" {
+		t.Errorf("Detail should describe the error")
+	}
+}
+
+func TestVerifyCredentials_NetworkNeedsConfirm(t *testing.T) {
+	// Point at a closed port.
+	got := verifyCredentials(context.Background(), &http.Client{Timeout: 100 * time.Millisecond},
+		"http://127.0.0.1:1", "u", "p", "test/1")
+	if got.Kind != CredsNeedsConfirm {
+		t.Errorf("Kind: got %v, want CredsNeedsConfirm", got.Kind)
 	}
 }

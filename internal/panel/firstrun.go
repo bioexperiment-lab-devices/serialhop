@@ -1,12 +1,15 @@
 package panel
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"os"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
 )
 
 // FirstRunAction is the decision returned by decideFirstRun.
@@ -61,4 +64,33 @@ func decideFirstRun(s FirstRunState) FirstRunAction {
 		return FirstRunShowDialog
 	}
 	return FirstRunOpenPanel
+}
+
+// CredsCheckKind enumerates how the dialog should react to verifyCredentials.
+type CredsCheckKind int
+
+const (
+	CredsOK           CredsCheckKind = iota // 200 — save.
+	CredsUnauthorized                       // 401 — inline error, stay in dialog.
+	CredsNeedsConfirm                       // 5xx or network — prompt the user to "save anyway?".
+)
+
+// CredsCheckResult is the verdict of verifyCredentials.
+type CredsCheckResult struct {
+	Kind   CredsCheckKind
+	Detail string // human-readable reason for Confirm/Unauthorized; empty on OK.
+}
+
+// verifyCredentials makes one /api/public/clients/{user} call and
+// classifies the outcome. base must be the scheme+host (e.g. "https://x").
+func verifyCredentials(ctx context.Context, hc *http.Client, base, user, pass, userAgent string) CredsCheckResult {
+	_, err := labbridge.FetchClient(ctx, hc, base, user, pass, userAgent)
+	switch {
+	case err == nil:
+		return CredsCheckResult{Kind: CredsOK}
+	case errors.Is(err, labbridge.ErrUnauthorized):
+		return CredsCheckResult{Kind: CredsUnauthorized, Detail: "server rejected credentials"}
+	default:
+		return CredsCheckResult{Kind: CredsNeedsConfirm, Detail: err.Error()}
+	}
 }
