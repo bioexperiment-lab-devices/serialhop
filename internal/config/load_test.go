@@ -23,9 +23,6 @@ lab_bridge:
   host: "10.0.0.1"
   user: "u"
   pass: "p"
-chisel:
-  port: 7000
-  remote_port: 9000
 rest:
   port: 8080
 discovery:
@@ -43,12 +40,6 @@ log:
 	}
 	if c.LabBridge.User != "u" {
 		t.Errorf("lab_bridge.user: got %q", c.LabBridge.User)
-	}
-	if c.Chisel.Port != 7000 {
-		t.Errorf("chisel.port: got %d", c.Chisel.Port)
-	}
-	if c.Chisel.RemotePort != 9000 {
-		t.Errorf("remote_port: got %d", c.Chisel.RemotePort)
 	}
 	if len(c.Discovery.Include) != 1 || c.Discovery.Include[0] != "COM3" {
 		t.Errorf("include: got %v", c.Discovery.Include)
@@ -69,10 +60,8 @@ func TestValidate_Cases(t *testing.T) {
 		wantErr string
 	}{
 		{"host empty", func(c *Config) { c.LabBridge.Host = "" }, "lab_bridge.host"},
-		{"chisel.port low", func(c *Config) { c.Chisel.Port = 0 }, "chisel.port"},
-		{"chisel.port high", func(c *Config) { c.Chisel.Port = 70000 }, "chisel.port"},
-		{"remote_port low", func(c *Config) { c.Chisel.RemotePort = 0 }, "remote_port"},
-		{"remote_port high", func(c *Config) { c.Chisel.RemotePort = 70000 }, "remote_port"},
+		{"user empty", func(c *Config) { c.LabBridge.User = "" }, "lab_bridge.user"},
+		{"pass empty", func(c *Config) { c.LabBridge.Pass = "" }, "lab_bridge.pass"},
 		{"include+exclude both set", func(c *Config) {
 			c.Discovery.Include = []string{"COM1"}
 			c.Discovery.Exclude = []string{"COM2"}
@@ -85,6 +74,8 @@ func TestValidate_Cases(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := Default()
+			c.LabBridge.User = "u"
+			c.LabBridge.Pass = "p"
 			tc.mut(&c)
 			err := Validate(&c)
 			if err == nil {
@@ -97,10 +88,19 @@ func TestValidate_Cases(t *testing.T) {
 	}
 }
 
-func TestValidate_DefaultIsValid(t *testing.T) {
+func TestValidate_DefaultIsInvalidUntilCredsSet(t *testing.T) {
 	c := Default()
+	if err := Validate(&c); err == nil {
+		t.Fatalf("Default() should fail validation (empty user/pass)")
+	}
+}
+
+func TestValidate_DefaultWithCredsIsValid(t *testing.T) {
+	c := Default()
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
 	if err := Validate(&c); err != nil {
-		t.Errorf("default config should validate, got %v", err)
+		t.Fatalf("Default()+creds should validate, got %v", err)
 	}
 }
 
@@ -111,9 +111,6 @@ lab_bridge:
   host: "10.0.0.1"
   user: "u"
   pass: "p"
-chisel:
-  port: 7000
-  remote_port: 9001
 rest:
   port: 8080
 discovery:
@@ -129,9 +126,6 @@ log:
 	if cfg.LabBridge.Host != "10.0.0.1" {
 		t.Errorf("host: got %q", cfg.LabBridge.Host)
 	}
-	if cfg.Chisel.RemotePort != 9001 {
-		t.Errorf("remote_port: got %d", cfg.Chisel.RemotePort)
-	}
 	if cfg.Log.Level != "debug" {
 		t.Errorf("level: got %q", cfg.Log.Level)
 	}
@@ -142,9 +136,6 @@ func TestLoadPartial_InvalidValidationReturnsParsedFields(t *testing.T) {
 	body := `
 lab_bridge:
   host: ""
-chisel:
-  port: 7000
-  remote_port: 9001
 log:
   level: "info"
 `
@@ -155,9 +146,6 @@ log:
 	}
 	if !strings.Contains(err.Error(), "lab_bridge.host must be non-empty") {
 		t.Errorf("unexpected err: %v", err)
-	}
-	if cfg.Chisel.RemotePort != 9001 {
-		t.Errorf("remote_port should still be parsed: got %d", cfg.Chisel.RemotePort)
 	}
 	if cfg.Log.Level != "info" {
 		t.Errorf("log level should still be parsed: got %q", cfg.Log.Level)
@@ -182,9 +170,8 @@ func TestLoad_PostOpenSettleCustom(t *testing.T) {
 	body := `
 lab_bridge:
   host: "10.0.0.1"
-chisel:
-  port: 7000
-  remote_port: 9000
+  user: "u"
+  pass: "p"
 rest:
   port: 0
 discovery:
@@ -207,9 +194,8 @@ func TestLoad_RawSerialEnabled(t *testing.T) {
 	body := `
 lab_bridge:
   host: "10.0.0.1"
-chisel:
-  port: 7000
-  remote_port: 9000
+  user: "u"
+  pass: "p"
 rest:
   port: 0
 log:
@@ -244,9 +230,8 @@ func TestLoad_AutoUpdateDisabled(t *testing.T) {
 	body := `
 lab_bridge:
   host: "10.0.0.1"
-chisel:
-  port: 7000
-  remote_port: 9000
+  user: "u"
+  pass: "p"
 rest:
   port: 0
 log:
@@ -270,9 +255,8 @@ func TestLoad_AutoUpdateDefaultsToTrue(t *testing.T) {
 	body := `
 lab_bridge:
   host: "10.0.0.1"
-chisel:
-  port: 7000
-  remote_port: 9000
+  user: "u"
+  pass: "p"
 rest:
   port: 0
 log:
