@@ -109,8 +109,6 @@ func Run() error {
 			lastState = state
 		}
 		cfg, cfgErr := config.LoadPartial(cfgPath)
-		_, logStatErr := os.Stat(logPath)
-		logExists := logStatErr == nil
 
 		statusLabel.SetText(state.String())
 		statusDot.SetText("●")
@@ -144,11 +142,10 @@ func Run() error {
 			warnLabel.SetVisible(false)
 		}
 
-		btns := ComputeButtons(state, cfgErr == nil, logExists)
+		btns := ComputeButtons(state, cfgErr == nil)
 		btnInstall.SetEnabled(btns.Install)
 		btnUninstall.SetEnabled(btns.Uninstall)
 		btnRestart.SetEnabled(btns.Restart)
-		btnOpenLog.SetEnabled(btns.OpenLog)
 	}
 
 	performAdmin := func(action, successMsg string) {

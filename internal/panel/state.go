@@ -6,7 +6,6 @@ type ButtonState struct {
 	Install   bool
 	Uninstall bool
 	Restart   bool
-	OpenLog   bool
 }
 
 type StatusColor int
@@ -19,10 +18,12 @@ const (
 )
 
 // ComputeButtons returns which admin buttons should be enabled given the
-// current SCM state, whether the config validates, and whether the log
-// file exists on disk.
-func ComputeButtons(state winsvc.ServiceState, cfgValid, logExists bool) ButtonState {
-	bs := ButtonState{OpenLog: logExists}
+// current SCM state and whether the config validates. The file-action
+// buttons ("Open config file", "Open logs folder") are not gated through
+// this function — they're enabled whenever paths.EnsureDirs() succeeded
+// at panel startup.
+func ComputeButtons(state winsvc.ServiceState, cfgValid bool) ButtonState {
+	var bs ButtonState
 	switch state {
 	case winsvc.StateNotInstalled:
 		bs.Install = cfgValid
