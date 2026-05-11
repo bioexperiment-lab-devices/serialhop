@@ -104,6 +104,10 @@ func (m *Manager) StartShipper(clientLabel string) {
 		slog.Warn("log streaming disabled (no chisel user)")
 		return
 	}
+	if m.pushURL == "" {
+		slog.Warn("log streaming disabled (no push URL — SetPushURL not called?)")
+		return
+	}
 	labels := map[string]map[string]string{
 		"stdout": buildLabels(clientLabel, "stdout", m.version),
 		"stderr": buildLabels(clientLabel, "stderr", m.version),
@@ -162,13 +166,16 @@ func (m *Manager) Shutdown(ctx context.Context) {
 	}
 }
 
-// --- test-only helpers (lower-cased; only callable from logship_test.go) ---
-
-func (m *Manager) setPushURLForTest(url string) {
+// SetPushURL sets the Loki push URL. Must be called before StartShipper.
+// Safe to call again before StartShipper to change the URL; calling
+// after StartShipper has no effect on the running shipper.
+func (m *Manager) SetPushURL(url string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pushURL = url
 }
+
+// --- test-only helpers (lower-cased; only callable from logship_test.go) ---
 
 func (m *Manager) shipperCountForTest() int {
 	m.mu.Lock()
