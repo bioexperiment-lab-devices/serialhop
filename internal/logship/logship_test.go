@@ -14,16 +14,23 @@ import (
 	"time"
 )
 
-func TestManagerInitInstallsCaptureSoSlogReachesDisk(t *testing.T) {
+func setupTestEnv(t *testing.T) string {
+	t.Helper()
 	dir := t.TempDir()
+	t.Setenv("SERIALHOP_DATA_DIR", dir)
 	prevStderr := os.Stderr
 	prevSlog := slog.Default()
 	t.Cleanup(func() {
 		os.Stderr = prevStderr
 		slog.SetDefault(prevSlog)
 	})
+	return dir
+}
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+func TestManagerInitInstallsCaptureSoSlogReachesDisk(t *testing.T) {
+	dir := setupTestEnv(t)
+
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -36,7 +43,7 @@ func TestManagerInitInstallsCaptureSoSlogReachesDisk(t *testing.T) {
 	slog.Info("hello-from-init")
 
 	deadline := time.Now().Add(time.Second)
-	logPath := filepath.Join(dir, LogFileName)
+	logPath := filepath.Join(dir, "logs", "SerialHop.log")
 	for time.Now().Before(deadline) {
 		data, _ := os.ReadFile(logPath) //nolint:gosec // test reads temp file created by t.TempDir()
 		if strings.Contains(string(data), "hello-from-init") {
@@ -49,15 +56,9 @@ func TestManagerInitInstallsCaptureSoSlogReachesDisk(t *testing.T) {
 }
 
 func TestManagerSetLevelChangesFiltering(t *testing.T) {
-	dir := t.TempDir()
-	prevStderr := os.Stderr
-	prevSlog := slog.Default()
-	t.Cleanup(func() {
-		os.Stderr = prevStderr
-		slog.SetDefault(prevSlog)
-	})
+	dir := setupTestEnv(t)
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestManagerSetLevelChangesFiltering(t *testing.T) {
 	slog.Debug("debug-passes")
 
 	deadline := time.Now().Add(time.Second)
-	logPath := filepath.Join(dir, LogFileName)
+	logPath := filepath.Join(dir, "logs", "SerialHop.log")
 	for time.Now().Before(deadline) {
 		data, _ := os.ReadFile(logPath) //nolint:gosec // test reads temp file created by t.TempDir()
 		if strings.Contains(string(data), "debug-passes") {
@@ -90,15 +91,9 @@ func TestManagerSetLevelChangesFiltering(t *testing.T) {
 }
 
 func TestManagerStartShipperEmptyClientLabelIsNoOp(t *testing.T) {
-	dir := t.TempDir()
-	prevStderr := os.Stderr
-	prevSlog := slog.Default()
-	t.Cleanup(func() {
-		os.Stderr = prevStderr
-		slog.SetDefault(prevSlog)
-	})
+	setupTestEnv(t)
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -108,9 +103,7 @@ func TestManagerStartShipperEmptyClientLabelIsNoOp(t *testing.T) {
 		m.Shutdown(ctx)
 	})
 
-	m.StartShipper("") // must not start a goroutine, must not panic
-	// No assertion beyond "didn't crash"; further behavior is covered
-	// by TestManagerStartShipperPushes.
+	m.StartShipper("")
 	_ = m
 }
 
@@ -122,15 +115,9 @@ func TestManagerStartShipperPushes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	dir := t.TempDir()
-	prevStderr := os.Stderr
-	prevSlog := slog.Default()
-	t.Cleanup(func() {
-		os.Stderr = prevStderr
-		slog.SetDefault(prevSlog)
-	})
+	setupTestEnv(t)
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -140,7 +127,6 @@ func TestManagerStartShipperPushes(t *testing.T) {
 		m.Shutdown(ctx)
 	})
 
-	// Override the URL the manager hands the shipper.
 	m.setPushURLForTest(srv.URL)
 
 	m.StartShipper("lab-1")
@@ -159,15 +145,9 @@ func TestManagerStartShipperPushes(t *testing.T) {
 }
 
 func TestManagerStartShipperIsIdempotent(t *testing.T) {
-	dir := t.TempDir()
-	prevStderr := os.Stderr
-	prevSlog := slog.Default()
-	t.Cleanup(func() {
-		os.Stderr = prevStderr
-		slog.SetDefault(prevSlog)
-	})
+	setupTestEnv(t)
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -178,23 +158,16 @@ func TestManagerStartShipperIsIdempotent(t *testing.T) {
 	})
 
 	m.StartShipper("lab-1")
-	m.StartShipper("lab-1") // must not panic, must not start twice
+	m.StartShipper("lab-1")
 	if got := m.shipperCountForTest(); got != 1 {
 		t.Fatalf("shipper count = %d, want 1", got)
 	}
 }
 
-// Sanity: Shutdown is safe to call when StartShipper was never called.
 func TestManagerShutdownWithoutShipper(t *testing.T) {
-	dir := t.TempDir()
-	prevStderr := os.Stderr
-	prevSlog := slog.Default()
-	t.Cleanup(func() {
-		os.Stderr = prevStderr
-		slog.SetDefault(prevSlog)
-	})
+	setupTestEnv(t)
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -209,7 +182,6 @@ func TestManagerShutdownWithoutShipper(t *testing.T) {
 	}
 }
 
-// Verify Shutdown drains in-flight records before returning.
 func TestManagerShutdownDrainsBuffer(t *testing.T) {
 	var (
 		mu   sync.Mutex
@@ -223,15 +195,9 @@ func TestManagerShutdownDrainsBuffer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	dir := t.TempDir()
-	prevStderr := os.Stderr
-	prevSlog := slog.Default()
-	t.Cleanup(func() {
-		os.Stderr = prevStderr
-		slog.SetDefault(prevSlog)
-	})
+	setupTestEnv(t)
 
-	m, err := Init(dir, "1.4.2", slog.LevelInfo)
+	m, err := Init("1.4.2", slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -249,5 +215,13 @@ func TestManagerShutdownDrainsBuffer(t *testing.T) {
 	defer mu.Unlock()
 	if seen == 0 {
 		t.Fatal("Shutdown did not drain pending records")
+	}
+}
+
+func TestInitErrorsWhenDataDirUnavailable(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	if _, err := Init("1.4.2", slog.LevelInfo); err == nil {
+		t.Fatal("Init returned nil, want error when data dir unavailable")
 	}
 }

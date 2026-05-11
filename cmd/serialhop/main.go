@@ -18,6 +18,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/panel"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	internalversion "github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 
@@ -30,8 +31,6 @@ func init() {
 	// the lifetime of the process. main goroutine drives the UI in panel mode.
 	runtime.LockOSThread()
 }
-
-const configFileName = "SerialHop_config.yaml"
 
 var (
 	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart|update (used by the GUI)")
@@ -83,28 +82,42 @@ func main() {
 	}
 }
 
-// writePanelStartupError records a panel startup failure to a file next to the
-// .exe so the operator can see what went wrong. Stderr is `/dev/null` under
+// writePanelStartupError records a panel startup failure to a file so
+// the operator can see what went wrong. Stderr is `/dev/null` under
 // the windowsgui subsystem, so without this the failure is invisible.
+// Writes to %ProgramData%\SerialHop\logs\ when that path is reachable,
+// otherwise falls back to a file next to the .exe — the only place in
+// the codebase that still writes a log entry to the install directory,
+// and only when the new layout is unreachable.
 func writePanelStartupError(panelErr error) {
 	exePath, err := os.Executable()
 	if err != nil {
 		return
 	}
-	logPath := filepath.Join(filepath.Dir(exePath), "SerialHop_panel_error.log")
+	target := panelErrorPath(filepath.Dir(exePath))
 	line := fmt.Sprintf("%s panel startup failed: %v\n", time.Now().Format(time.RFC3339), panelErr)
-	_ = os.WriteFile(logPath, []byte(line), 0o600)
+	_ = os.WriteFile(target, []byte(line), 0o600)
+}
+
+// panelErrorPath returns the path for the panel-error log:
+// paths.PanelErrorLogPath() when DataDir is available, else
+// <exeDir>\SerialHop_panel_error.log as a last-resort breadcrumb.
+// Pure function — testable without touching the filesystem.
+func panelErrorPath(exeDir string) string {
+	if p := paths.PanelErrorLogPath(); p != "" {
+		return p
+	}
+	return filepath.Join(exeDir, paths.PanelErrorLogFileName)
 }
 
 func runForeground() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate executable: %w", err)
+	if err := paths.EnsureDirs(); err != nil {
+		return fmt.Errorf("paths setup: %w", err)
 	}
-	cfgPath := filepath.Join(filepath.Dir(exePath), configFileName)
+	cfgPath := paths.ConfigPath()
 
 	if _, err := os.Stat(cfgPath); errors.Is(err, os.ErrNotExist) {
-		f, err := os.Create(cfgPath)
+		f, err := os.Create(cfgPath) //nolint:gosec // cfgPath is paths.ConfigPath(), not user-controlled
 		if err != nil {
 			return fmt.Errorf("create scaffold: %w", err)
 		}

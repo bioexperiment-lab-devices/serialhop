@@ -46,7 +46,7 @@ gh attestation verify SerialHop-vX.Y.Z.exe --owner bioexperiment-lab-devices
 ## Install on a Windows lab machine
 
 1. Copy `SerialHop.exe` to an install location (e.g., `C:\Tools\SerialHop\`).
-2. Double-click the .exe. The control panel opens. On first launch it writes `SerialHop_config.yaml` next to the .exe and shows a validation warning if anything's wrong.
+2. Double-click the .exe. The control panel opens. On first launch it creates `%ProgramData%\SerialHop\` and writes a `SerialHop_config.yaml` scaffold there, then shows a validation warning if anything's wrong.
 3. Click **Open config file**, set `chisel.remote_port` and `chisel.user`/`chisel.pass` (and any other site-specific values), save.
 4. Click **Install**. UAC prompts; approve. The service is registered as `SerialHop` (auto-start at boot, runs as LocalSystem) and started immediately.
 
@@ -55,7 +55,8 @@ After install:
 - The service runs across reboots without the panel being open.
 - To apply config changes: edit the YAML file, then click **Restart** in the panel.
 - To remove: click **Uninstall** in the panel.
-- Logs go to `SerialHop.log` (slog JSON) and `SerialHop_stderr.log` (chisel state, panic traces) next to the .exe — both rotated at 10 MB with 3 backups. Click **Open log file** to view the main log.
+- Logs go to `%ProgramData%\SerialHop\logs\` (`SerialHop.log` for slog JSON, `SerialHop_stderr.log` for chisel state and panic traces, both rotated at 10 MB with 3 backups). Click **Open logs folder** to open the directory in Explorer.
+- Config lives at `%ProgramData%\SerialHop\SerialHop_config.yaml`. Click **Open config file** to edit.
 
 ### Auto-update
 

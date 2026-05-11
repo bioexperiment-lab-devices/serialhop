@@ -8,11 +8,10 @@ import (
 
 func TestComputeButtons(t *testing.T) {
 	cases := []struct {
-		name      string
-		state     winsvc.ServiceState
-		cfgValid  bool
-		logExists bool
-		want      ButtonState
+		name     string
+		state    winsvc.ServiceState
+		cfgValid bool
+		want     ButtonState
 	}{
 		{
 			name:     "not installed, valid config",
@@ -48,17 +47,10 @@ func TestComputeButtons(t *testing.T) {
 			state: winsvc.StateStopPending,
 			want:  ButtonState{},
 		},
-		{
-			name:      "log exists toggles OpenLog",
-			state:     winsvc.StateRunning,
-			cfgValid:  true,
-			logExists: true,
-			want:      ButtonState{Uninstall: true, Restart: true, OpenLog: true},
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ComputeButtons(tc.state, tc.cfgValid, tc.logExists)
+			got := ComputeButtons(tc.state, tc.cfgValid)
 			if got != tc.want {
 				t.Errorf("got %+v, want %+v", got, tc.want)
 			}
