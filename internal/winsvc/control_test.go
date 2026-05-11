@@ -2,6 +2,7 @@ package winsvc
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -231,5 +232,224 @@ func TestRestart_NotInstalled(t *testing.T) {
 	err := restart(scm, 100*time.Millisecond, time.Millisecond)
 	if !errors.Is(err, ErrServiceMissing) {
 		t.Errorf("err: %v", err)
+	}
+}
+
+// --- updateBinary ---------------------------------------------------------
+
+// fakeFS records calls and lets tests inject failures at specific steps.
+type fakeFS struct {
+	existing  map[string]bool     // file paths that "exist"
+	calls     []string            // ordered call log for assertions
+	renameErr map[[2]string]error // {from,to} → err to return
+	removeErr map[string]error
+}
+
+func newFakeFS(files ...string) *fakeFS {
+	f := &fakeFS{
+		existing:  map[string]bool{},
+		renameErr: map[[2]string]error{},
+		removeErr: map[string]error{},
+	}
+	for _, p := range files {
+		f.existing[p] = true
+	}
+	return f
+}
+
+func (f *fakeFS) Rename(from, to string) error {
+	f.calls = append(f.calls, "rename:"+from+"→"+to)
+	if err := f.renameErr[[2]string{from, to}]; err != nil {
+		return err
+	}
+	if !f.existing[from] {
+		return os.ErrNotExist
+	}
+	delete(f.existing, from)
+	f.existing[to] = true
+	return nil
+}
+
+func (f *fakeFS) Remove(path string) error {
+	f.calls = append(f.calls, "remove:"+path)
+	if err := f.removeErr[path]; err != nil {
+		return err
+	}
+	delete(f.existing, path)
+	return nil
+}
+
+func (f *fakeFS) Exists(path string) bool { return f.existing[path] }
+
+func TestUpdateBinary_HappyPath_ServiceRunning(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("updateBinary: %v", err)
+	}
+	if !fs.Exists("C:\\bin\\SerialHop.exe") {
+		t.Error("post-update SerialHop.exe missing")
+	}
+	if fs.Exists("C:\\bin\\SerialHop.exe.old") {
+		t.Error(".old should be cleaned up best-effort on success")
+	}
+	if !scm.services[ServiceName].started {
+		t.Error("service should be restarted")
+	}
+}
+
+func TestUpdateBinary_ServiceNotInstalled(t *testing.T) {
+	scm := newFakeSCM() // no services
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("updateBinary: %v", err)
+	}
+	if !fs.Exists("C:\\bin\\SerialHop.exe") {
+		t.Error("post-update SerialHop.exe missing")
+	}
+}
+
+func TestUpdateBinary_ServiceAlreadyStopped(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{state: StateStopped}
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("updateBinary: %v", err)
+	}
+	if scm.services[ServiceName].started {
+		t.Error("service was stopped before the update; should not be restarted")
+	}
+}
+
+func TestUpdateBinary_StaleOldGetsCleanedFirst(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	fs := newFakeFS(
+		"C:\\bin\\SerialHop.exe",
+		"C:\\bin\\SerialHop.exe.old",
+		"C:\\bin\\SerialHop-v0.7.0.exe",
+	)
+	if err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond); err != nil {
+		t.Fatalf("updateBinary: %v", err)
+	}
+}
+
+func TestUpdateBinary_RenameTargetToOldFails_ServiceRestored(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+	// Force every retry of the rename to fail.
+	fs.renameErr[[2]string{"C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop.exe.old"}] = errors.New("AV holding handle")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected rename error")
+	}
+	if !scm.services[ServiceName].started {
+		t.Error("service should be restarted on rollback")
+	}
+}
+
+func TestUpdateBinary_RenameSrcToTargetFails_FullRollback(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+	fs.renameErr[[2]string{"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe"}] = errors.New("cross-volume")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !fs.Exists("C:\\bin\\SerialHop.exe") {
+		t.Error("rollback should restore SerialHop.exe")
+	}
+	if !scm.services[ServiceName].started {
+		t.Error("service should be restarted on rollback")
+	}
+}
+
+func TestUpdateBinary_StartFails_FullRollback(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped},
+		startErr:         errors.New("new binary refuses to start"),
+	}
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	// After rollback: original exe back in place, new exe preserved under its versioned name.
+	if !fs.Exists("C:\\bin\\SerialHop.exe") {
+		t.Error("rollback should restore SerialHop.exe")
+	}
+	if !fs.Exists("C:\\bin\\SerialHop-v0.7.0.exe") {
+		t.Error("new exe should be preserved under its versioned name for inspection")
+	}
+}
+
+func TestUpdateBinary_StartTimesOut_FullRollback(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state: StateRunning,
+		stateProgression: []ServiceState{
+			StateRunning,      // initial query in updateBinary
+			StateStopped,      // after stop, waitForState succeeds
+			StateStartPending, // first wait-for-Running poll after start
+			StateStartPending, // never reaches Running; eventually times out
+		},
+	}
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		20*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("err should mention 'timed out': %v", err)
+	}
+	// After rollback: original exe back at target, new exe preserved under its versioned name.
+	if !fs.Exists("C:\\bin\\SerialHop.exe") {
+		t.Error("rollback should restore SerialHop.exe")
+	}
+	if !fs.Exists("C:\\bin\\SerialHop-v0.7.0.exe") {
+		t.Error("new exe should be preserved under its versioned name for inspection")
 	}
 }

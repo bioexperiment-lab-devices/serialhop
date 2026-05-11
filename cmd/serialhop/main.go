@@ -34,8 +34,9 @@ func init() {
 const configFileName = "SerialHop_config.yaml"
 
 var (
-	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart (used by the GUI)")
+	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart|update (used by the GUI)")
 	flagErrorFile   = flag.String("error-file", "", "internal: path the elevated child writes its error message to")
+	flagUpdateSrc   = flag.String("update-src", "", "internal: path to the staged update .exe (used by --admin-action=update)")
 	flagForeground  = flag.Bool("foreground", false, "run the device-client logic in the console (developer mode)")
 	flagVersion     = flag.Bool("version", false, "print version and exit")
 )
@@ -66,7 +67,7 @@ func main() {
 			os.Exit(1)
 		}
 	case *flagAdminAction != "":
-		os.Exit(winsvc.RunAdminAction(*flagAdminAction, *flagErrorFile))
+		os.Exit(winsvc.RunAdminAction(*flagAdminAction, *flagErrorFile, *flagUpdateSrc))
 	case *flagForeground:
 		attachParentConsole()
 		if err := runForeground(); err != nil {

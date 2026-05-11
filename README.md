@@ -57,6 +57,25 @@ After install:
 - To remove: click **Uninstall** in the panel.
 - Logs go to `SerialHop.log` (slog JSON) and `SerialHop_stderr.log` (chisel state, panic traces) next to the .exe — both rotated at 10 MB with 3 backups. Click **Open log file** to view the main log.
 
+### Auto-update
+
+The control panel checks GitHub Releases on open (and every 6 h while it stays open) and, if a newer version is available, surfaces a row above the buttons:
+
+```
+Update: v0.7.0 available  [Download]  [Release notes]
+```
+
+**Download** fetches `SerialHop-vX.Y.Z.exe` and `SHA256SUMS.txt` into the install directory, verifies the SHA-256, and changes the button to **Install update**. **Install update** triggers a UAC prompt; if approved, the service is stopped, the current `SerialHop.exe` is renamed to `SerialHop.exe.old`, the staged binary is moved into place, the service is restarted, and `.old` is best-effort deleted on the next panel launch. If the service fails to come back up, the install is automatically rolled back to the previous version.
+
+The panel process itself keeps running from the renamed `.old` until it's closed and reopened — the on-disk service binary swaps without taking down the panel window.
+
+To disable update checks entirely (e.g., on air-gapped lab machines):
+
+```yaml
+auto_update:
+  enabled: false
+```
+
 ## Windows Defender false positives
 
 The combination this binary uses — Go static link, `-H windowsgui`, embedded chisel reverse tunnel, Windows service worker — matches the heuristic shape of a RAT closely enough that Defender (and some other AV engines) sometimes quarantines the `.exe` on download or first run. Build flags already mitigate the most common triggers (`-trimpath`, no symbol stripping, populated version metadata), but unsigned binaries hit zero SmartScreen reputation on every new release, so flagging can recur.
