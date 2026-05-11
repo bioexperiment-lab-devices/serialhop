@@ -8,24 +8,32 @@ import (
 	"time"
 
 	chclient "github.com/jpillora/chisel/client"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
 )
 
 // Config is the subset of chisel client options this app exposes.
 type Config struct {
-	Server     string // host:port (no scheme)
-	User       string // empty = no auth
-	Pass       string
-	RemotePort int
-	LocalPort  int
+	Server         string // host:port (no scheme)
+	User           string // empty = no auth
+	Pass           string
+	RemotePort     int
+	LocalPort      int
+	ForwardTunnels []labbridge.ForwardTunnel
 }
 
 // buildRemotes returns the list of chisel route strings for cfg. The
-// reverse route exposes the local REST server. The forward route
-// (added only when User is set, since the server allowlist is
-// per-user) tunnels 127.0.0.1:3100 to the in-VPS Loki container.
+// reverse route exposes the local REST server; each ForwardTunnel is
+// rendered as <local>:<remote>. The legacy "127.0.0.1:3100:loki:3100"
+// fallback (gated on cfg.User != "") is kept so call sites that have
+// not yet been migrated to a populated ForwardTunnels list still work;
+// it will be removed once all callers pass ForwardTunnels explicitly.
 func buildRemotes(cfg Config) []string {
 	out := []string{fmt.Sprintf("R:%d:127.0.0.1:%d", cfg.RemotePort, cfg.LocalPort)}
-	if cfg.User != "" {
+	for _, t := range cfg.ForwardTunnels {
+		out = append(out, fmt.Sprintf("%s:%s", t.Local, t.Remote))
+	}
+	if len(cfg.ForwardTunnels) == 0 && cfg.User != "" {
 		out = append(out, "127.0.0.1:3100:loki:3100")
 	}
 	return out
