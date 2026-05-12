@@ -26,7 +26,7 @@ type Port interface {
 
 // Opener creates new Ports and lists available port names.
 type Opener interface {
-	Open(name string) (Port, error)                  // 9600 / 8N1, no flow control
+	Open(name string) (Port, error)                   // 9600 / 8N1, no flow control
 	OpenWithBaud(name string, baud int) (Port, error) // arbitrary baud, 8N1, no flow control
 	List() ([]string, error)
 	ListDetailed() ([]DetailedPort, error)
