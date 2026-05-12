@@ -184,6 +184,11 @@ func (f *FakeOptiboot) SetBaudRate(rate int) error {
 		return labserial.ErrClosed
 	}
 	f.baudSeq = append(f.baudSeq, rate)
+	// If baud changes back to BootloaderBaud after sketch mode was armed,
+	// disarm sketch mode so STK commands work again for rollback.
+	if f.sketchArmed && rate == avr.BootloaderBaud {
+		f.sketchArmed = false
+	}
 	return nil
 }
 

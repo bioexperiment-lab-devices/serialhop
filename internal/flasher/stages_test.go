@@ -210,3 +210,60 @@ func TestFlash_RolledBackTestFailed_WhenMismatch(t *testing.T) {
 		t.Errorf("Received: got % X, want [99]", res.TestResult.Received)
 	}
 }
+
+func TestFlash_RolledBackVerifyFailed(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	prev := make([]byte, avr.PageSize)
+	for i := range prev {
+		prev[i] = 0xA5
+	}
+	op.fake.PreloadFlash(prev)
+	op.fake.AckButDontPersistNextProgPage()
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:  make([]byte, avr.PageSize),
+		Timeout:   500 * time.Millisecond,
+		InterByte: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeRolledBackVerifyFailed {
+		t.Fatalf("Outcome: got %s, want rolled_back_verify_failed", res.Outcome)
+	}
+	if res.Stages["rollback"].Status != "ok" {
+		t.Errorf("rollback stage: %q", res.Stages["rollback"].Status)
+	}
+	if res.Stages["rollback"].VerifyStatus != "ok" {
+		t.Errorf("rollback.verify_status: %q", res.Stages["rollback"].VerifyStatus)
+	}
+}
+
+func TestFlash_RolledBackTestFailed_RealRollback(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	prev := make([]byte, avr.PageSize)
+	for i := range prev {
+		prev[i] = 0x5A
+	}
+	op.fake.PreloadFlash(prev)
+	op.fake.SetSketchResponse([]byte{0x99})
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:         make([]byte, avr.PageSize),
+		TestCommand:      []byte{0x10},
+		ExpectedResponse: []byte{0xAA},
+		Timeout:          200 * time.Millisecond,
+		InterByte:        20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeRolledBackTestFailed {
+		t.Fatalf("Outcome: got %s, want rolled_back_test_failed", res.Outcome)
+	}
+	if res.Stages["rollback"].Status != "ok" {
+		t.Errorf("rollback stage: %q", res.Stages["rollback"].Status)
+	}
+}

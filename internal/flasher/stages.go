@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher/avr"
+	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 // runState carries mutable state between stages of a single Flash run.
@@ -165,32 +166,115 @@ func runVerify(s *runState, c *stkClient) bool {
 	return true
 }
 
-// runRollback is replaced in Task 16. This stub keeps the package compiling.
-func runRollback(s *runState, c *stkClient, p labserialPort) (*Result, error) {
-	s.res.Stages["rollback"] = StageResult{Status: "failed", Error: "rollback not implemented yet"}
-	s.res.Outcome = OutcomeFailedNoRecovery
-	s.res.RecoveryHint = "rollback path not yet wired (Task 16)"
+// runRollback re-flashes the device with the backup image read in stage 2
+// and verifies the rollback by reading the flash back. On success returns
+// (res, nil) with outcome rolled_back_verify_failed OR rolled_back_test_failed
+// depending on which upstream stage triggered the rollback. On failure of any
+// step inside rollback, outcome is failed_no_recovery and the backup file is
+// locked (renamed with -LOCKED-).
+func runRollback(s *runState, c *stkClient, p labserial.Port) (*Result, error) {
+	start := time.Now()
+	st := StageResult{Status: "ok", VerifyStatus: "ok"}
+
+	trigger := "verify"
+	for _, name := range []string{"erase", "program", "verify", "test"} {
+		if r, ok := s.res.Stages[name]; ok && r.Status == "failed" {
+			trigger = name
+			break
+		}
+	}
+
+	// If the test phase ran (and left the port at TargetBaud), switch back to
+	// BootloaderBaud so STK commands are routed correctly again.
+	_ = p.SetBaudRate(avr.BootloaderBaud)
+
+	if err := c.ChipErase(s.req.Timeout); err != nil {
+		return rollbackFailed(s, st, start, "chip_erase: "+err.Error())
+	}
+	prog := s.backupBytes
+	for off := 0; off < len(prog); off += avr.PageSize {
+		end := off + avr.PageSize
+		if end > len(prog) {
+			end = len(prog)
+		}
+		page := prog[off:end]
+		if len(page) < avr.PageSize {
+			padded := make([]byte, avr.PageSize)
+			for i := range padded {
+				padded[i] = 0xFF
+			}
+			copy(padded, page)
+			page = padded
+		}
+		if err := c.LoadAddress(s.req.Timeout, uint16(off/2)); err != nil {
+			return rollbackFailed(s, st, start, "load_address: "+err.Error())
+		}
+		if err := c.ProgPage(s.req.Timeout, page); err != nil {
+			return rollbackFailed(s, st, start, "prog_page: "+err.Error())
+		}
+	}
+	for off := 0; off < len(prog); off += avr.PageSize {
+		if err := c.LoadAddress(s.req.Timeout, uint16(off/2)); err != nil {
+			return rollbackFailed(s, st, start, "verify load_address: "+err.Error())
+		}
+		page, err := c.ReadPage(s.req.Timeout, avr.PageSize)
+		if err != nil {
+			return rollbackFailed(s, st, start, "verify read_page: "+err.Error())
+		}
+		end := off + avr.PageSize
+		if end > len(prog) {
+			end = len(prog)
+		}
+		for i := off; i < end; i++ {
+			if page[i-off] != prog[i] {
+				st.VerifyStatus = "failed"
+				return rollbackFailed(s, st, start,
+					fmt.Sprintf("verify mismatch at 0x%04X (got %02X, want %02X)", i, page[i-off], prog[i]))
+			}
+		}
+	}
+
+	st.Duration = time.Since(start)
+	s.res.Stages["rollback"] = st
+	switch trigger {
+	case "test":
+		s.res.Outcome = OutcomeRolledBackTestFailed
+	default:
+		s.res.Outcome = OutcomeRolledBackVerifyFailed
+	}
 	return s.res, nil
 }
 
-// labserialPort is a local alias to avoid leaking the import in this signature.
-// Replaced with labserial.Port directly in Task 16.
-type labserialPort = interface {
-	SetDTR(bool) error
-	SetBaudRate(int) error
+func rollbackFailed(s *runState, st StageResult, start time.Time, errMsg string) (*Result, error) {
+	st.Status = "failed"
+	st.Error = errMsg
+	st.Duration = time.Since(start)
+	s.res.Stages["rollback"] = st
+	s.res.Outcome = OutcomeFailedNoRecovery
+	if s.res.Backup.Path != "" {
+		locked, err := LockBackup(s.res.Backup.Path)
+		if err == nil {
+			s.res.Backup.Path = locked
+		}
+		s.res.RecoveryHint = fmt.Sprintf(
+			"Rollback failed: %s. The device may need ISP-level recovery (e.g. AVRISP mkII). The saved backup at %s is the last known good image.",
+			errMsg, s.res.Backup.Path)
+	} else {
+		s.res.RecoveryHint = "Rollback failed: " + errMsg
+	}
+	return s.res, nil
 }
 
 // runTest exits programming mode, switches the open port to TargetBaud,
 // waits PostOpenSettle, drains, sends TestCommand, and reads exactly
 // len(ExpectedResponse) bytes. Compares exact-match. Returns true on match,
 // false on any failure (read error, mismatch, length mismatch).
-func runTest(s *runState, c *stkClient, p labserialPort) bool {
+func runTest(s *runState, c *stkClient, p labserial.Port) bool {
 	start := time.Now()
 	if len(s.req.TestCommand) == 0 {
 		s.res.Stages["test"] = StageResult{Status: "skipped"}
 		return true
 	}
-
 	if err := c.LeaveProgMode(s.req.Timeout); err != nil {
 		s.recordStage("test", "failed", "leave_progmode: "+err.Error(), time.Since(start))
 		return false
@@ -200,36 +284,23 @@ func runTest(s *runState, c *stkClient, p labserialPort) bool {
 		return false
 	}
 	time.Sleep(s.req.PostOpenSettle)
-	if drainer, ok := p.(interface {
-		Drain(time.Duration) error
-	}); ok {
-		_ = drainer.Drain(50 * time.Millisecond)
-	}
+	_ = p.Drain(50 * time.Millisecond)
 
-	rw, ok := p.(interface {
-		Write([]byte) (int, error)
-		Read([]byte) (int, error)
-		SetReadTimeout(time.Duration) error
-	})
-	if !ok {
-		s.recordStage("test", "failed", "port does not support write+read", time.Since(start))
-		return false
-	}
-	if _, err := rw.Write(s.req.TestCommand); err != nil {
+	if _, err := p.Write(s.req.TestCommand); err != nil {
 		s.recordStage("test", "failed", "write: "+err.Error(), time.Since(start))
 		return false
 	}
 
 	expected := s.req.ExpectedResponse
 	received := make([]byte, 0, len(expected))
-	if err := rw.SetReadTimeout(s.req.Timeout); err != nil {
+	if err := p.SetReadTimeout(s.req.Timeout); err != nil {
 		s.recordStage("test", "failed", "set_read_timeout: "+err.Error(), time.Since(start))
 		return false
 	}
 	deadline := time.Now().Add(s.req.Timeout)
 	buf := make([]byte, len(expected))
 	for len(received) < len(expected) {
-		n, err := rw.Read(buf[:len(expected)-len(received)])
+		n, err := p.Read(buf[:len(expected)-len(received)])
 		if err != nil {
 			s.res.TestResult = &TestResult{
 				Sent: s.req.TestCommand, Expected: expected, Received: received, Match: false,
