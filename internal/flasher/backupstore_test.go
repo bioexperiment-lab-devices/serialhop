@@ -1,6 +1,7 @@
 package flasher
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,7 +56,7 @@ func TestPruneBackups_KeepsNNewest(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 6; i++ {
 		name := filepath.Join(dir, "COM3-2026-05-12T14-22-"+padTwo(i)+"Z.hex")
-		if err := os.WriteFile(name, []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(name, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -68,7 +69,7 @@ func TestPruneBackups_KeepsNNewest(t *testing.T) {
 	}
 	for _, e := range entries {
 		suffix := e.Name()
-		if !(strings.Contains(suffix, "-03Z") || strings.Contains(suffix, "-04Z") || strings.Contains(suffix, "-05Z")) {
+		if !strings.Contains(suffix, "-03Z") && !strings.Contains(suffix, "-04Z") && !strings.Contains(suffix, "-05Z") {
 			t.Errorf("kept unexpected file: %s", suffix)
 		}
 	}
@@ -78,7 +79,7 @@ func TestPruneBackups_SkipsLockedFiles(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 4; i++ {
 		name := filepath.Join(dir, "COM3-2026-05-12T14-22-"+padTwo(i)+"Z.hex")
-		if err := os.WriteFile(name, []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(name, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -98,7 +99,7 @@ func TestPruneBackups_KeepN_Zero_DoesNothing(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 3; i++ {
 		name := filepath.Join(dir, "COM3-2026-05-12T14-22-"+padTwo(i)+"Z.hex")
-		_ = os.WriteFile(name, []byte("x"), 0o644)
+		_ = os.WriteFile(name, []byte("x"), 0o600)
 	}
 	if err := PruneBackups(dir, "COM3", 0); err != nil {
 		t.Fatal(err)
@@ -110,8 +111,5 @@ func TestPruneBackups_KeepN_Zero_DoesNothing(t *testing.T) {
 }
 
 func padTwo(i int) string {
-	if i < 10 {
-		return "0" + string(rune('0'+i))
-	}
-	return string(rune('0'+i/10)) + string(rune('0'+i%10))
+	return fmt.Sprintf("%02d", i)
 }

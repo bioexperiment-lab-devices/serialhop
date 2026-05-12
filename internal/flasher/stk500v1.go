@@ -81,7 +81,7 @@ func (c *stkClient) LoadAddress(timeout time.Duration, wordAddr uint16) error {
 // The bootloader advances the word address by len(page)/2 after a successful write.
 func (c *stkClient) ProgPage(timeout time.Duration, page []byte) error {
 	n := len(page)
-	header := []byte{stkProgPage, byte(n >> 8), byte(n & 0xFF), 'F'}
+	header := []byte{stkProgPage, byte((n >> 8) & 0xFF), byte(n & 0xFF), 'F'}
 	msg := make([]byte, 0, len(header)+n+1)
 	msg = append(msg, header...)
 	msg = append(msg, page...)
@@ -98,7 +98,7 @@ func (c *stkClient) ProgPage(timeout time.Duration, page []byte) error {
 // ReadPage reads n bytes from flash at the current word address.
 // The bootloader advances the word address by n/2 after a successful read.
 func (c *stkClient) ReadPage(timeout time.Duration, n int) ([]byte, error) {
-	msg := []byte{stkReadPage, byte(n >> 8), byte(n & 0xFF), 'F', stkCrcEop}
+	msg := []byte{stkReadPage, byte((n >> 8) & 0xFF), byte(n & 0xFF), 'F', stkCrcEop}
 	if err := c.p.SetReadTimeout(timeout); err != nil {
 		return nil, fmt.Errorf("read_page: set read timeout: %w", err)
 	}

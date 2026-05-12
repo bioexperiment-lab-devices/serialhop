@@ -374,7 +374,7 @@ func (f *FakeOptiboot) dispatch(cmd []byte) []byte {
 			copy(f.flash[byteAddr:], data)
 		}
 		f.ackButDontPersist = false
-		f.wordAddr += uint16(n / 2)
+		f.wordAddr += uint16((n / 2) & 0xFFFF)
 		return []byte{stkInSync, stkOK}
 
 	case stkReadPage:
@@ -397,7 +397,7 @@ func (f *FakeOptiboot) dispatch(cmd []byte) []byte {
 			}
 			f.corruptNextRead = false
 		}
-		f.wordAddr += uint16(n / 2)
+		f.wordAddr += uint16((n / 2) & 0xFFFF)
 		reply := append([]byte{stkInSync}, page...)
 		return append(reply, stkOK)
 

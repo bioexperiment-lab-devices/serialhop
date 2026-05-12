@@ -23,13 +23,13 @@ type BackupInfo struct {
 // component because colons are illegal in Windows filenames; the format
 // remains lexicographically sortable.
 func SaveBackup(dir, port, hexText string) (BackupInfo, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return BackupInfo{}, fmt.Errorf("backup: mkdir %s: %w", dir, err)
 	}
 	stamp := time.Now().UTC().Format("2006-01-02T15-04-05Z")
 	name := fmt.Sprintf("%s-%s.hex", port, stamp)
 	full := filepath.Join(dir, name)
-	if err := os.WriteFile(full, []byte(hexText), 0o644); err != nil {
+	if err := os.WriteFile(full, []byte(hexText), 0o600); err != nil {
 		return BackupInfo{}, fmt.Errorf("backup: write %s: %w", full, err)
 	}
 	sum := sha256.Sum256([]byte(hexText))

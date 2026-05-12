@@ -103,7 +103,7 @@ func RenderIntelHex(img []byte) string {
 		if off+n > len(img) {
 			n = len(img) - off
 		}
-		hdr := []byte{byte(n), byte(off >> 8), byte(off & 0xFF), 0x00}
+		hdr := []byte{byte(n & 0xFF), byte((off >> 8) & 0xFF), byte(off & 0xFF), 0x00}
 		var sum byte
 		for _, b := range hdr {
 			sum += b
