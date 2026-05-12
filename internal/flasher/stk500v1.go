@@ -193,3 +193,28 @@ func (c *stkClient) GetSignOn(timeout time.Duration) (string, error) {
 		}
 	}
 }
+
+// ChipErase clears the entire flash to 0xFF. Optiboot auto-erases per page on
+// ProgPage, but we still send the explicit erase to fail-fast on a wedged chip.
+func (c *stkClient) ChipErase(timeout time.Duration) error {
+	if err := c.p.SetReadTimeout(timeout); err != nil {
+		return fmt.Errorf("chip_erase: set read timeout: %w", err)
+	}
+	if _, err := c.p.Write([]byte{stkChipErase, stkCrcEop}); err != nil {
+		return fmt.Errorf("chip_erase: write: %w", err)
+	}
+	return c.expectInSyncOK(timeout, "chip_erase")
+}
+
+// LeaveProgMode tells optiboot to hand control to the user sketch.
+// Optiboot does NOT reset the chip; the user code starts running and the
+// UART hardware switches to whatever baud the sketch configures.
+func (c *stkClient) LeaveProgMode(timeout time.Duration) error {
+	if err := c.p.SetReadTimeout(timeout); err != nil {
+		return fmt.Errorf("leave_progmode: set read timeout: %w", err)
+	}
+	if _, err := c.p.Write([]byte{stkLeaveProgMode, stkCrcEop}); err != nil {
+		return fmt.Errorf("leave_progmode: write: %w", err)
+	}
+	return c.expectInSyncOK(timeout, "leave_progmode")
+}

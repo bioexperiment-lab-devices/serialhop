@@ -113,3 +113,46 @@ func TestSTK_ReadPage_ReadsFakeFlash(t *testing.T) {
 		}
 	}
 }
+
+func TestSTK_ChipErase_ZeroesFlash(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	src := []byte{0xAA, 0xBB, 0xCC}
+	f.PreloadFlash(src)
+
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ChipErase(500 * time.Millisecond); err != nil {
+		t.Fatalf("ChipErase: %v", err)
+	}
+	got := f.FlashImage()[:3]
+	for i, b := range got {
+		if b != 0xFF {
+			t.Errorf("flash[%d] after erase: got %02X, want FF", i, b)
+		}
+	}
+}
+
+func TestSTK_LeaveProgMode(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.LeaveProgMode(150 * time.Millisecond); err != nil {
+		t.Errorf("LeaveProgMode: %v", err)
+	}
+}
+
+func TestSTK_ChipErase_FailureReportsError(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	f.FailNextChipErase()
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ChipErase(150 * time.Millisecond); err == nil {
+		t.Fatal("expected error from ChipErase, got nil")
+	}
+}
