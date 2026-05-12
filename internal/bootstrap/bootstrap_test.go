@@ -93,7 +93,7 @@ func TestResolve_401_BypassesCacheAndRetries(t *testing.T) {
 	srv := newServer(t, okServerInfo, func(w http.ResponseWriter, _ *http.Request) {
 		n := clientCalls.Add(1)
 		if n < 3 {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		_, _ = w.Write([]byte(`{"port":8089,"connected":true}`))

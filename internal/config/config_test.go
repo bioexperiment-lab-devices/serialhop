@@ -50,7 +50,7 @@ func TestWriteScaffold_GoldenSnapshot(t *testing.T) {
 	got := buf.String()
 
 	wantPath := filepath.Join("testdata", "scaffold.golden.yaml")
-	want, err := os.ReadFile(wantPath)
+	want, err := os.ReadFile(wantPath) //nolint:gosec // wantPath is a literal under testdata/
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}

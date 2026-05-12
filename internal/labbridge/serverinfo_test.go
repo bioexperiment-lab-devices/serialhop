@@ -84,7 +84,7 @@ func TestFetchServerInfo_NullForwardTunnels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchServerInfo: %v", err)
 	}
-	if got.ForwardTunnels != nil && len(got.ForwardTunnels) != 0 {
+	if len(got.ForwardTunnels) != 0 {
 		t.Errorf("ForwardTunnels: got %v, want empty/nil", got.ForwardTunnels)
 	}
 }

@@ -109,7 +109,7 @@ func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
 	if err := WriteCache(p, sampleCache()); err != nil {
 		t.Fatalf("WriteCache: %v", err)
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}

@@ -123,7 +123,7 @@ func TestVerifyCredentials_OK(t *testing.T) {
 
 func TestVerifyCredentials_401(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	}))
 	t.Cleanup(srv.Close)
 	got := verifyCredentials(context.Background(), srv.Client(), srv.URL, "u", "wrong", "test/1")
@@ -270,7 +270,7 @@ func TestWriteOrPatchCreds_CreatesScaffoldWhenAbsent(t *testing.T) {
 	if err := writeOrPatchCreds(p, "alice", "s3cret"); err != nil {
 		t.Fatalf("writeOrPatchCreds: %v", err)
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
