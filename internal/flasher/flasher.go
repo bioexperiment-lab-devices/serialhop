@@ -193,8 +193,10 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		return runRollback(s, c, p)
 	}
 
-	// Test phase + success transition are added in Task 15.
-	s.res.Stages["test"] = StageResult{Status: "skipped"}
+	if !runTest(s, c, p) {
+		return runRollback(s, c, p)
+	}
+
 	s.res.Stages["rollback"] = StageResult{Status: "n/a"}
 	s.res.Outcome = OutcomeSuccess
 

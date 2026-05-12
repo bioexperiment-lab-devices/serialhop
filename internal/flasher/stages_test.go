@@ -149,3 +149,64 @@ func TestFlash_Success_HappyPath(t *testing.T) {
 		t.Error("Backup.Path empty")
 	}
 }
+
+func TestFlash_Success_WithTestPair(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	op.fake.SetSketchResponse([]byte{0xAA, 0xBB, 0xCC})
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:         []byte{0x00, 0x01, 0x02},
+		TestCommand:      []byte{0x10, 0x20},
+		ExpectedResponse: []byte{0xAA, 0xBB, 0xCC},
+		Timeout:          200 * time.Millisecond,
+		InterByte:        20 * time.Millisecond,
+		PostOpenSettle:   0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeSuccess {
+		t.Errorf("Outcome: got %s, want success", res.Outcome)
+	}
+	if res.TestResult == nil {
+		t.Fatal("TestResult nil")
+	}
+	if !res.TestResult.Match {
+		t.Errorf("TestResult.Match: got false, want true; received=% X", res.TestResult.Received)
+	}
+	if res.Stages["test"].Status != "ok" {
+		t.Errorf("stage test: %q", res.Stages["test"].Status)
+	}
+}
+
+func TestFlash_RolledBackTestFailed_WhenMismatch(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	op.fake.SetSketchResponse([]byte{0x99})
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:         []byte{0x00, 0x01, 0x02},
+		TestCommand:      []byte{0x10},
+		ExpectedResponse: []byte{0xAA},
+		Timeout:          100 * time.Millisecond,
+		InterByte:        20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Note: rollback impl is still the stub in this task; accept either failed_no_recovery (stub)
+	// or rolled_back_test_failed (after Task 16).
+	if res.Outcome != OutcomeRolledBackTestFailed && res.Outcome != OutcomeFailedNoRecovery {
+		t.Errorf("Outcome: got %s, want rolled_back_test_failed or failed_no_recovery (stub)", res.Outcome)
+	}
+	if res.TestResult == nil {
+		t.Fatal("TestResult nil after test_failed")
+	}
+	if res.TestResult.Match {
+		t.Errorf("Match: got true, want false")
+	}
+	if len(res.TestResult.Received) == 0 || res.TestResult.Received[0] != 0x99 {
+		t.Errorf("Received: got % X, want [99]", res.TestResult.Received)
+	}
+}

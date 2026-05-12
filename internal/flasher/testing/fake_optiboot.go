@@ -27,6 +27,11 @@ const (
 	stkNoSync byte = 0x15
 )
 
+type sketchMode struct {
+	enabled  bool
+	response []byte
+}
+
 // FakeOptiboot is the in-memory bootloader. The zero value is unusable; use NewFakeOptiboot.
 type FakeOptiboot struct {
 	mu sync.Mutex
@@ -52,6 +57,9 @@ type FakeOptiboot struct {
 
 	dtrSeq  []bool
 	baudSeq []int
+
+	sketch      sketchMode
+	sketchArmed bool
 }
 
 // NewFakeOptiboot returns a FakeOptiboot with all flash bytes 0xFF (the AVR
@@ -128,6 +136,16 @@ func (f *FakeOptiboot) PreloadFlash(data []byte) {
 	copy(f.flash[:], data)
 }
 
+// SetSketchResponse enables sketch mode and configures the canned reply the
+// fake will emit on the first Write that arrives after the bootloader has
+// left programming mode.
+func (f *FakeOptiboot) SetSketchResponse(reply []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sketch.enabled = true
+	f.sketch.response = append([]byte(nil), reply...)
+}
+
 // --- serial.Port surface --------------------------------------------------
 
 func (f *FakeOptiboot) Name() string { return "fake-optiboot" }
@@ -189,6 +207,15 @@ func (f *FakeOptiboot) Write(p []byte) (int, error) {
 	if f.closed {
 		f.mu.Unlock()
 		return 0, labserial.ErrClosed
+	}
+	if f.sketchArmed && len(p) > 0 {
+		f.tx = append(f.tx, f.sketch.response...)
+		select {
+		case f.txSignal <- struct{}{}:
+		default:
+		}
+		f.mu.Unlock()
+		return len(p), nil
 	}
 	in := p
 	if f.dropWriteBytes > 0 {
@@ -370,6 +397,7 @@ func (f *FakeOptiboot) dispatch(cmd []byte) []byte {
 		return []byte{stkInSync, stkOK}
 
 	case stkLeaveProgMode:
+		f.sketchArmed = f.sketch.enabled
 		return []byte{stkInSync, stkOK}
 	}
 	return []byte{stkNoSync}

@@ -179,3 +179,92 @@ type labserialPort = interface {
 	SetDTR(bool) error
 	SetBaudRate(int) error
 }
+
+// runTest exits programming mode, switches the open port to TargetBaud,
+// waits PostOpenSettle, drains, sends TestCommand, and reads exactly
+// len(ExpectedResponse) bytes. Compares exact-match. Returns true on match,
+// false on any failure (read error, mismatch, length mismatch).
+func runTest(s *runState, c *stkClient, p labserialPort) bool {
+	start := time.Now()
+	if len(s.req.TestCommand) == 0 {
+		s.res.Stages["test"] = StageResult{Status: "skipped"}
+		return true
+	}
+
+	if err := c.LeaveProgMode(s.req.Timeout); err != nil {
+		s.recordStage("test", "failed", "leave_progmode: "+err.Error(), time.Since(start))
+		return false
+	}
+	if err := p.SetBaudRate(avr.TargetBaud); err != nil {
+		s.recordStage("test", "failed", "set_baud: "+err.Error(), time.Since(start))
+		return false
+	}
+	time.Sleep(s.req.PostOpenSettle)
+	if drainer, ok := p.(interface {
+		Drain(time.Duration) error
+	}); ok {
+		_ = drainer.Drain(50 * time.Millisecond)
+	}
+
+	rw, ok := p.(interface {
+		Write([]byte) (int, error)
+		Read([]byte) (int, error)
+		SetReadTimeout(time.Duration) error
+	})
+	if !ok {
+		s.recordStage("test", "failed", "port does not support write+read", time.Since(start))
+		return false
+	}
+	if _, err := rw.Write(s.req.TestCommand); err != nil {
+		s.recordStage("test", "failed", "write: "+err.Error(), time.Since(start))
+		return false
+	}
+
+	expected := s.req.ExpectedResponse
+	received := make([]byte, 0, len(expected))
+	if err := rw.SetReadTimeout(s.req.Timeout); err != nil {
+		s.recordStage("test", "failed", "set_read_timeout: "+err.Error(), time.Since(start))
+		return false
+	}
+	deadline := time.Now().Add(s.req.Timeout)
+	buf := make([]byte, len(expected))
+	for len(received) < len(expected) {
+		n, err := rw.Read(buf[:len(expected)-len(received)])
+		if err != nil {
+			s.res.TestResult = &TestResult{
+				Sent: s.req.TestCommand, Expected: expected, Received: received, Match: false,
+			}
+			s.recordStage("test", "failed", "read: "+err.Error(), time.Since(start))
+			return false
+		}
+		received = append(received, buf[:n]...)
+		if time.Now().After(deadline) {
+			break
+		}
+	}
+
+	match := bytesEqual(received, expected)
+	s.res.TestResult = &TestResult{
+		Sent: s.req.TestCommand, Expected: expected, Received: received, Match: match,
+	}
+	if !match {
+		s.recordStage("test", "failed",
+			fmt.Sprintf("test response mismatch (got %d bytes, want %d)", len(received), len(expected)),
+			time.Since(start))
+		return false
+	}
+	s.recordStage("test", "ok", "", time.Since(start))
+	return true
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
