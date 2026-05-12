@@ -333,15 +333,15 @@ func TestValidate_FlashingRejectsNegativeKeepN(t *testing.T) {
 	}
 }
 
-func TestValidate_FlashingAcceptsEmptyBackupDirWhenDisabled(t *testing.T) {
+func TestValidate_FlashingAcceptsRelativeBackupDirWhenDisabled(t *testing.T) {
 	c := Default()
 	c.LabBridge.Host = "h"
 	c.LabBridge.User = "u"
 	c.LabBridge.Pass = "p"
 	c.Flashing.Enabled = false
-	c.Flashing.BackupDir = "" // empty + disabled = fine
+	c.Flashing.BackupDir = "relative/path" // not validated when disabled
 	if err := Validate(&c); err != nil {
-		t.Errorf("Validate: %v", err)
+		t.Errorf("Validate: unexpected error %v", err)
 	}
 }
 
@@ -371,5 +371,37 @@ log:
 	}
 	if c.LabBridge.User != "u" || c.LabBridge.Pass != "p" {
 		t.Errorf("creds: got %+v", c.LabBridge)
+	}
+}
+
+func TestLoad_FlashingEnabled(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+lab_bridge:
+  host: "10.0.0.1"
+  user: "u"
+  pass: "p"
+rest:
+  port: 0
+log:
+  level: "info"
+flashing:
+  enabled: true
+  backup_dir: "/tmp/backups"
+  keep_n: 5
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.Flashing.Enabled {
+		t.Errorf("flashing.enabled: got false, want true")
+	}
+	if c.Flashing.BackupDir != "/tmp/backups" {
+		t.Errorf("flashing.backup_dir: got %q, want /tmp/backups", c.Flashing.BackupDir)
+	}
+	if c.Flashing.KeepN != 5 {
+		t.Errorf("flashing.keep_n: got %d, want 5", c.Flashing.KeepN)
 	}
 }
