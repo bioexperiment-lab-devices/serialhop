@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
@@ -212,5 +213,137 @@ func TestFlash_409_FlashInFlight(t *testing.T) {
 	s.Handler().ServeHTTP(rr, req)
 	if rr.Code != 409 {
 		t.Errorf("status: got %d", rr.Code)
+	}
+}
+
+func TestFlash_200_SuccessShape(t *testing.T) {
+	stub := &stubFlasher{
+		res: &flasher.Result{
+			Outcome: flasher.OutcomeSuccess,
+			Port:    "COM3",
+			Stages: map[string]flasher.StageResult{
+				"preflight": {Status: "ok", Duration: 12 * time.Millisecond},
+				"backup":    {Status: "ok", Duration: 8000 * time.Millisecond},
+				"erase":     {Status: "ok", Duration: 90 * time.Millisecond},
+				"program":   {Status: "ok", Duration: 7900 * time.Millisecond},
+				"verify":    {Status: "ok", Duration: 3100 * time.Millisecond},
+				"test":      {Status: "skipped"},
+				"rollback":  {Status: "n/a"},
+			},
+			Backup:    flasher.BackupInfo{Path: "/tmp/x.hex", SHA256: "abc", SizeBytes: 32},
+			BackupHex: ":00000001FF\n",
+		},
+	}
+	s, _, op := newTestServerWithFlash(t, stub, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	body2 := rr.Body.String()
+	for _, want := range []string{
+		`"outcome":"success"`,
+		`"port":"COM3"`,
+		`"hex":":00000001FF\n"`,
+		`"sha256":"abc"`,
+		`"scope":"flash_only"`,
+		`"status":"ok"`,
+		`"status":"skipped"`,
+		`"status":"n/a"`,
+	} {
+		if !strings.Contains(body2, want) {
+			t.Errorf("body missing %q\nbody: %s", want, body2)
+		}
+	}
+	if strings.Contains(body2, `"test_result"`) {
+		t.Errorf("test_result must be omitted when nil: %s", body2)
+	}
+}
+
+func TestFlash_200_RolledBackShape_WithTestResult(t *testing.T) {
+	stub := &stubFlasher{
+		res: &flasher.Result{
+			Outcome: flasher.OutcomeRolledBackTestFailed,
+			Port:    "COM3",
+			Stages: map[string]flasher.StageResult{
+				"preflight": {Status: "ok"},
+				"backup":    {Status: "ok"},
+				"erase":     {Status: "ok"},
+				"program":   {Status: "ok"},
+				"verify":    {Status: "ok"},
+				"test":      {Status: "failed", Error: "mismatch"},
+				"rollback":  {Status: "ok", VerifyStatus: "ok"},
+			},
+			Backup:    flasher.BackupInfo{Path: "/tmp/x.hex"},
+			BackupHex: ":00000001FF\n",
+			TestResult: &flasher.TestResult{
+				Sent: []byte{0x01}, Expected: []byte{0xAA}, Received: []byte{0xBB}, Match: false,
+			},
+		},
+	}
+	s, _, op := newTestServerWithFlash(t, stub, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF","test_command":"01","expected_response":"AA"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status: %d", rr.Code)
+	}
+	body2 := rr.Body.String()
+	for _, want := range []string{
+		`"outcome":"rolled_back_test_failed"`,
+		`"sent":"01"`,
+		`"expected":"aa"`,
+		`"received":"bb"`,
+		`"match":false`,
+		`"verify_status":"ok"`,
+	} {
+		if !strings.Contains(body2, want) {
+			t.Errorf("body missing %q\nbody: %s", want, body2)
+		}
+	}
+}
+
+func TestFlash_200_FailedNoRecoveryShape(t *testing.T) {
+	stub := &stubFlasher{
+		res: &flasher.Result{
+			Outcome:      flasher.OutcomeFailedNoRecovery,
+			Port:         "COM3",
+			RecoveryHint: "ISP recovery required",
+			Stages: map[string]flasher.StageResult{
+				"preflight": {Status: "ok"},
+				"backup":    {Status: "ok"},
+				"erase":     {Status: "ok"},
+				"program":   {Status: "ok"},
+				"verify":    {Status: "failed"},
+				"test":      {Status: "skipped"},
+				"rollback":  {Status: "failed", Error: "chip erase: NOSYNC"},
+			},
+		},
+	}
+	s, _, op := newTestServerWithFlash(t, stub, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status: %d", rr.Code)
+	}
+	body2 := rr.Body.String()
+	for _, want := range []string{
+		`"outcome":"failed_no_recovery"`,
+		`"recovery_hint":"ISP recovery required"`,
+	} {
+		if !strings.Contains(body2, want) {
+			t.Errorf("body missing %q\nbody: %s", want, body2)
+		}
 	}
 }

@@ -169,10 +169,41 @@ func decodeHexField(name, value string) ([]byte, error) {
 	return out, nil
 }
 
-// mapFlashResult is replaced in Task 21B. Placeholder.
 func mapFlashResult(res *flasher.Result, port string) FlashResponse {
-	return FlashResponse{
-		Outcome: res.Outcome.String(),
-		Port:    port,
+	out := FlashResponse{
+		Outcome:      res.Outcome.String(),
+		Port:         port,
+		Stages:       map[string]StageDTO{},
+		RecoveryHint: res.RecoveryHint,
 	}
+	for name, st := range res.Stages {
+		dto := StageDTO{
+			Status:     st.Status,
+			DurationMs: st.Duration.Milliseconds(),
+			Error:      st.Error,
+		}
+		if st.FirstMismatchOffset != nil {
+			dto.FirstMismatchOffset = fmt.Sprintf("0x%04X", *st.FirstMismatchOffset)
+		}
+		if st.VerifyStatus != "" {
+			dto.VerifyStatus = st.VerifyStatus
+		}
+		out.Stages[name] = dto
+	}
+	out.Backup = BackupDTO{
+		Hex:       res.BackupHex,
+		SavedPath: res.Backup.Path,
+		SHA256:    res.Backup.SHA256,
+		SizeBytes: res.Backup.SizeBytes,
+		Scope:     "flash_only",
+	}
+	if res.TestResult != nil {
+		out.TestResult = &TestResultDTO{
+			Sent:     hex.EncodeToString(res.TestResult.Sent),
+			Expected: hex.EncodeToString(res.TestResult.Expected),
+			Received: hex.EncodeToString(res.TestResult.Received),
+			Match:    res.TestResult.Match,
+		}
+	}
+	return out
 }
