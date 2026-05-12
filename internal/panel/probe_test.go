@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,7 +135,7 @@ func TestProbeLoop_RunsImmediatelyAndOnTick(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		probeLoop(ctx, 20*time.Millisecond, func(context.Context) {
+		probeLoop(ctx, 20*time.Millisecond, nil, func(context.Context) {
 			calls.inc()
 		})
 		close(done)
@@ -190,4 +191,51 @@ func TestTrySend_DropsWhenBufferFull(t *testing.T) {
 		t.Fatal("trySend queued more than one item in a buffer=1 channel")
 	default:
 	}
+}
+
+func TestProbeLoop_TriggerFiresCallback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Int32
+	trigger := make(chan struct{}, 1)
+
+	// Use a very long tick interval so any callback invocation we see
+	// can only have come from the trigger (or the initial priming call).
+	done := make(chan struct{})
+	go func() {
+		probeLoop(ctx, time.Hour, trigger, func(context.Context) {
+			calls.Add(1)
+		})
+		close(done)
+	}()
+
+	// Wait for the priming call (probeLoop runs fn once before entering
+	// the ticker select).
+	waitFor(t, func() bool { return calls.Load() >= 1 }, time.Second)
+
+	// Send a trigger; expect a second invocation.
+	trigger <- struct{}{}
+	waitFor(t, func() bool { return calls.Load() >= 2 }, time.Second)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("probeLoop did not return after ctx cancel")
+	}
+}
+
+// waitFor polls cond until it returns true or timeout elapses.
+// Test helper kept private to this file.
+func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("condition not satisfied within %v", timeout)
 }

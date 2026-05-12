@@ -346,7 +346,7 @@ func Run() error {
 
 	probeHC := &http.Client{Timeout: 30 * time.Second} // fallback; per-call 5s ctx in probe.go still primary
 
-	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
+	go probeLoop(probeCtx, 10*time.Second, nil, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
 		base := ""
 		if c.LabBridge.Host != "" {
@@ -355,7 +355,7 @@ func Run() error {
 		runServerProbe(ctx, probeHC, base, userAgent, state)
 		mw.Synchronize(repaintLamps)
 	})
-	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
+	go probeLoop(probeCtx, 10*time.Second, nil, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
 		base := ""
 		if c.LabBridge.Host != "" {
