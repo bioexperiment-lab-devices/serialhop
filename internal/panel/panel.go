@@ -29,6 +29,14 @@ import (
 
 const pollInterval = 1 * time.Second
 
+// probeInterval is the periodic-tick cadence for the Server and Tunnel
+// probe goroutines. Slow (30 s) because explicit triggers from action
+// handlers now cover the responsive cases — the periodic tick exists
+// only to detect drift the UI can't observe (server going down, etc.).
+// Lives here (Windows-only) rather than in probe.go because the only
+// callers are the probeLoop launches inside Run().
+const probeInterval = 30 * time.Second
+
 // updateCtl holds the state machine and current release info for the update
 // row. All fields are guarded by mu except where noted.
 type updateCtl struct {
@@ -204,11 +212,34 @@ func Run() error {
 		btnOpenLogs.SetEnabled(pathsErr == nil)
 	}
 
+	// Must be created early so kickProbes can reference them.
+	probeCtx, probeCancel := context.WithCancel(context.Background())
+	defer probeCancel()
+	serverTrigger := make(chan struct{}, 1)
+	tunnelTrigger := make(chan struct{}, 1)
+
+	// kickProbes flips the affected lamps to "Checking…" and wakes their
+	// probe goroutines. Must be called from the UI thread (it mutates
+	// lamp state and repaints). Non-blocking — safe to call from button
+	// handlers and from inside performAdmin.
+	kickProbes := func(server, tunnel bool) {
+		if server {
+			state.setServer(netLamp{kind: lampChecking})
+			trySend(serverTrigger)
+		}
+		if tunnel {
+			state.setTunnel(netLamp{kind: lampChecking})
+			trySend(tunnelTrigger)
+		}
+		repaintLamps()
+	}
+
 	performAdmin := func(action, successMsg string) {
 		btnInstall.SetEnabled(false)
 		btnUninstall.SetEnabled(false)
 		btnRestart.SetEnabled(false)
 		statusBar.SetText("Working…")
+		kickProbes(true, true) // gray the lamps before the UAC subprocess starts
 
 		errMsg, err := RunElevatedAdminAction(action)
 		switch {
@@ -224,6 +255,7 @@ func Run() error {
 			statusBar.SetText(successMsg + " at " + time.Now().Format("15:04:05"))
 		}
 		refresh()
+		kickProbes(true, true) // re-probe to settle to the new actual state
 	}
 
 	if err := (MainWindow{
@@ -288,7 +320,8 @@ func Run() error {
 					}},
 					PushButton{AssignTo: &btnInstall2, Text: "Install update", Visible: false, OnClicked: func() {
 						go ctlInstall(mw, ctl, statusBar,
-							applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
+							applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL),
+							kickProbes)
 					}},
 					PushButton{AssignTo: &btnRelease, Text: "Release notes", Visible: false, OnClicked: func() {
 						ctl.mu.Lock()
@@ -340,13 +373,11 @@ func Run() error {
 		return err
 	}
 
-	probeCtx, probeCancel := context.WithCancel(context.Background())
-	defer probeCancel()
 	mw.Closing().Attach(func(_ *bool, _ walk.CloseReason) { probeCancel() })
 
 	probeHC := &http.Client{Timeout: 30 * time.Second} // fallback; per-call 5s ctx in probe.go still primary
 
-	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
+	go probeLoop(probeCtx, probeInterval, serverTrigger, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
 		base := ""
 		if c.LabBridge.Host != "" {
@@ -355,7 +386,7 @@ func Run() error {
 		runServerProbe(ctx, probeHC, base, userAgent, state)
 		mw.Synchronize(repaintLamps)
 	})
-	go probeLoop(probeCtx, 10*time.Second, func(ctx context.Context) {
+	go probeLoop(probeCtx, probeInterval, tunnelTrigger, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
 		base := ""
 		if c.LabBridge.Host != "" {
@@ -648,6 +679,7 @@ func ctlInstall(
 	ctl *updateCtl,
 	statusBar *walk.Label,
 	apply func(UpdateEvent),
+	kickProbes func(server, tunnel bool),
 ) {
 	ctl.mu.Lock()
 	src := ctl.exeFile
@@ -656,25 +688,40 @@ func ctlInstall(
 		return
 	}
 	apply(EvInstallStart)
-	mw.Synchronize(func() { _ = statusBar.SetText("Installing update…") })
+	mw.Synchronize(func() {
+		_ = statusBar.SetText("Installing update…")
+		kickProbes(true, true) // gray lamps before the UAC subprocess
+	})
 
 	errMsg, err := RunElevatedAdminAction("update", "--update-src="+src)
 	switch {
 	case errors.Is(err, ErrUserCancelled):
-		mw.Synchronize(func() { _ = statusBar.SetText("Cancelled.") })
+		mw.Synchronize(func() {
+			_ = statusBar.SetText("Cancelled.")
+			kickProbes(true, true) // re-probe even on cancel — the elevated child may have partial side effects
+		})
 		apply(EvCancel)
 		return
 	case err != nil:
-		mw.Synchronize(func() { _ = statusBar.SetText("Failed: " + err.Error()) })
+		mw.Synchronize(func() {
+			_ = statusBar.SetText("Failed: " + err.Error())
+			kickProbes(true, true)
+		})
 		apply(EvInstallFail)
 		return
 	case errMsg != "":
-		mw.Synchronize(func() { _ = statusBar.SetText("Failed: " + errMsg) })
+		mw.Synchronize(func() {
+			_ = statusBar.SetText("Failed: " + errMsg)
+			kickProbes(true, true)
+		})
 		apply(EvInstallFail)
 		return
 	}
 
-	mw.Synchronize(func() { _ = statusBar.SetText("Update applied at " + time.Now().Format("15:04:05")) })
+	mw.Synchronize(func() {
+		_ = statusBar.SetText("Update applied at " + time.Now().Format("15:04:05"))
+		kickProbes(true, true) // re-probe to settle to post-update state
+	})
 	apply(EvInstallOK)
 }
 

@@ -82,7 +82,11 @@ func runTunnelProbe(ctx context.Context, hc *http.Client, base, user, pass, user
 // outlasts a tick, the next tick simply waits — no concurrent invocations.
 // A defer/recover wraps each call so a panic in net/http or JSON parsing
 // doesn't kill the panel; panics are reported via writePanelDebugLog.
-func probeLoop(ctx context.Context, interval time.Duration, fn func(context.Context)) {
+//
+// A receive on trigger also invokes fn — used by UI-thread callers
+// (action handlers) to refresh a lamp without waiting for the next tick.
+// trigger may be nil, in which case the trigger case never selects.
+func probeLoop(ctx context.Context, interval time.Duration, trigger <-chan struct{}, fn func(context.Context)) {
 	call := func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -100,6 +104,8 @@ func probeLoop(ctx context.Context, interval time.Duration, fn func(context.Cont
 			return
 		case <-t.C:
 			call()
+		case <-trigger:
+			call()
 		}
 	}
 }
@@ -112,5 +118,16 @@ func panicString(r any) string {
 		return v.Error()
 	default:
 		return "non-string, non-error panic"
+	}
+}
+
+// trySend delivers one signal to ch if its buffer has room; otherwise
+// drops the signal. Used by UI-thread callers to wake a probe goroutine
+// without ever blocking. Pair with a chan struct{} of buffer=1 — that
+// combination naturally coalesces bursts to at most one extra run.
+func trySend(ch chan<- struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
 	}
 }
