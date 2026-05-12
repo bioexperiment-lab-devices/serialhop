@@ -302,6 +302,49 @@ log:
 	}
 }
 
+func TestValidate_FlashingRejectsRelativeBackupDir(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.Flashing.Enabled = true
+	c.Flashing.BackupDir = "relative/path"
+	err := Validate(&c)
+	if err == nil {
+		t.Fatal("expected error for relative backup_dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "backup_dir") {
+		t.Errorf("error message %q must mention backup_dir", err)
+	}
+}
+
+func TestValidate_FlashingRejectsNegativeKeepN(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.Flashing.KeepN = -1
+	err := Validate(&c)
+	if err == nil {
+		t.Fatal("expected error for negative keep_n, got nil")
+	}
+	if !strings.Contains(err.Error(), "keep_n") {
+		t.Errorf("error message %q must mention keep_n", err)
+	}
+}
+
+func TestValidate_FlashingAcceptsRelativeBackupDirWhenDisabled(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.Flashing.Enabled = false
+	c.Flashing.BackupDir = "relative/path" // not validated when disabled
+	if err := Validate(&c); err != nil {
+		t.Errorf("Validate: unexpected error %v", err)
+	}
+}
+
 func TestLoad_LegacyChiselBlockIgnoredWhenCredsValid(t *testing.T) {
 	// Migration path: an existing config file written by a pre-cleanup
 	// binary may still contain a `chisel:` block. yaml.v3 silently ignores
@@ -328,5 +371,37 @@ log:
 	}
 	if c.LabBridge.User != "u" || c.LabBridge.Pass != "p" {
 		t.Errorf("creds: got %+v", c.LabBridge)
+	}
+}
+
+func TestLoad_FlashingEnabled(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+lab_bridge:
+  host: "10.0.0.1"
+  user: "u"
+  pass: "p"
+rest:
+  port: 0
+log:
+  level: "info"
+flashing:
+  enabled: true
+  backup_dir: "/tmp/backups"
+  keep_n: 5
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.Flashing.Enabled {
+		t.Errorf("flashing.enabled: got false, want true")
+	}
+	if c.Flashing.BackupDir != "/tmp/backups" {
+		t.Errorf("flashing.backup_dir: got %q, want /tmp/backups", c.Flashing.BackupDir)
+	}
+	if c.Flashing.KeepN != 5 {
+		t.Errorf("flashing.keep_n: got %d, want 5", c.Flashing.KeepN)
 	}
 }

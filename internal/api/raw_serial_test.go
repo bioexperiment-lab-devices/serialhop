@@ -26,7 +26,7 @@ func init() {
 // raw_serial.enabled flag. Used by every test in this file.
 func rawSrv(t *testing.T, reg *registry.Registry, opener serial.Opener, enabled bool) http.Handler {
 	t.Helper()
-	return New(reg, fakeDiscoverFn(nil, nil), opener, enabled).Handler()
+	return New(reg, fakeDiscoverFn(nil, nil), opener, enabled, nil, false).Handler()
 }
 
 func TestGetSerialPorts_DisabledReturns403(t *testing.T) {
@@ -443,6 +443,12 @@ func (o *alreadyClosedOpener) Open(name string) (serial.Port, error) {
 		return o.port, nil
 	}
 	return o.inner.Open(name)
+}
+func (o *alreadyClosedOpener) OpenWithBaud(name string, baud int) (serial.Port, error) {
+	return o.inner.OpenWithBaud(name, baud)
+}
+func (o *alreadyClosedOpener) ListDetailed() ([]serial.DetailedPort, error) {
+	return o.inner.ListDetailed()
 }
 
 // listOnlyOpener wraps FakeOpener and adds names that List returns but Open

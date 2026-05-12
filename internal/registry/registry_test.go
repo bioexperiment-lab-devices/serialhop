@@ -191,3 +191,32 @@ func TestRegistry_HasPort(t *testing.T) {
 		t.Errorf("HasPort(COM99): got (%q, %v), want (\"\", false)", id, ok)
 	}
 }
+
+func TestDisconnectAll_EmptyRegistry(t *testing.T) {
+	r := New()
+	got := r.DisconnectAll()
+	if got != 0 {
+		t.Errorf("DisconnectAll on empty: got %d, want 0", got)
+	}
+	if len(r.List()) != 0 {
+		t.Errorf("registry not empty after DisconnectAll")
+	}
+}
+
+func TestDisconnectAll_PopulatedRegistry(t *testing.T) {
+	r := New()
+	devs := []*Device{
+		{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: serial.NewFakePort("COM3")},
+		{ID: "b", Type: "valve", TypeCode: 30, Port: "COM4", Conn: serial.NewFakePort("COM4")},
+		{ID: "c", Type: "densitometer", TypeCode: 70, Port: "COM5", Conn: serial.NewFakePort("COM5")},
+	}
+	r.Replace(devs)
+
+	got := r.DisconnectAll()
+	if got != 3 {
+		t.Errorf("DisconnectAll: got %d, want 3", got)
+	}
+	if len(r.List()) != 0 {
+		t.Errorf("registry not empty after DisconnectAll")
+	}
+}

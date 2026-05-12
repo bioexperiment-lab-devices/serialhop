@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -64,6 +65,12 @@ func Validate(c *Config) error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("log.level must be one of debug|info|warn|error (got %q)", c.Log.Level)
+	}
+	if c.Flashing.KeepN < 0 {
+		return fmt.Errorf("flashing.keep_n must be >= 0 (got %d)", c.Flashing.KeepN)
+	}
+	if c.Flashing.Enabled && c.Flashing.BackupDir != "" && !filepath.IsAbs(c.Flashing.BackupDir) {
+		return fmt.Errorf("flashing.backup_dir must be absolute when flashing.enabled (got %q)", c.Flashing.BackupDir)
 	}
 	return nil
 }

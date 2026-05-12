@@ -95,6 +95,24 @@ func (r *Registry) CloseAll() {
 	}
 }
 
+// DisconnectAll closes every device port in the registry, empties the map,
+// and returns the count of devices that were removed. Safe on an empty
+// registry. Used by POST /devices/disconnect before a flash operation.
+func (r *Registry) DisconnectAll() int {
+	r.mu.Lock()
+	n := len(r.devices)
+	old := r.devices
+	r.devices = map[string]*Device{}
+	r.mu.Unlock()
+
+	for _, d := range old {
+		if d.Conn != nil {
+			_ = d.Conn.Close()
+		}
+	}
+	return n
+}
+
 // Get looks up a device by ID.
 func (r *Registry) Get(id string) (*Device, bool) {
 	r.mu.RLock()

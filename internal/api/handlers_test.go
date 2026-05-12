@@ -28,7 +28,7 @@ func newTestServer(t *testing.T, reg *registry.Registry, disc DiscoverFn) http.H
 	if disc == nil {
 		disc = fakeDiscoverFn(nil, nil)
 	}
-	return New(reg, disc, serial.NewFakeOpener(), false).Handler()
+	return New(reg, disc, serial.NewFakeOpener(), false, nil, false).Handler()
 }
 
 func decode(t *testing.T, body io.Reader, into any) {
@@ -131,7 +131,7 @@ func TestPostDiscover_ClosesOldPortsBeforeProbing(t *testing.T) {
 		return []*registry.Device{}, nil
 	}
 
-	srv := New(reg, discoverFn, serial.NewFakeOpener(), false).Handler()
+	srv := New(reg, discoverFn, serial.NewFakeOpener(), false, nil, false).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/discover", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)

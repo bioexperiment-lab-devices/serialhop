@@ -128,3 +128,21 @@ func TestServerInfoCachePath_EmptyWhenDataDirUnavailable(t *testing.T) {
 		t.Errorf("ServerInfoCachePath: got %q, want empty", got)
 	}
 }
+
+func TestBackupsDir_UnderDataDir(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "/tmp/sh")
+	got := BackupsDir()
+	want := filepath.Join("/tmp/sh", "backups")
+	if got != want {
+		t.Errorf("BackupsDir: got %q, want %q", got, want)
+	}
+}
+
+func TestBackupsDir_EmptyWhenNoDataDir(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	got := BackupsDir()
+	if got != "" {
+		t.Errorf("BackupsDir: got %q, want \"\"", got)
+	}
+}

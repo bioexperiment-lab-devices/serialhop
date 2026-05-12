@@ -48,6 +48,15 @@ func LogsDir() string {
 	return filepath.Join(d, "logs")
 }
 
+// BackupsDir returns <DataDir>/backups, or "" if DataDir is empty.
+func BackupsDir() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "backups")
+}
+
 // ConfigPath returns <DataDir>/SerialHop_config.yaml, or "" if DataDir is empty.
 func ConfigPath() string {
 	d := DataDir()

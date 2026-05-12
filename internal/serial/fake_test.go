@@ -2,6 +2,7 @@ package serial
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -115,5 +116,70 @@ func TestFakeOpener_List(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("List len: got %d, want 2 (%v)", len(got), got)
+	}
+}
+
+func TestFakePort_SetDTR_Records(t *testing.T) {
+	p := NewFakePort("COM3")
+	if err := p.SetDTR(false); err != nil {
+		t.Fatalf("SetDTR(false): %v", err)
+	}
+	if err := p.SetDTR(true); err != nil {
+		t.Fatalf("SetDTR(true): %v", err)
+	}
+	got := p.DTRSequence()
+	want := []bool{false, true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("DTRSequence: got %v, want %v", got, want)
+	}
+}
+
+func TestFakePort_SetBaudRate_Records(t *testing.T) {
+	p := NewFakePort("COM3")
+	if err := p.SetBaudRate(115200); err != nil {
+		t.Fatalf("SetBaudRate(115200): %v", err)
+	}
+	if err := p.SetBaudRate(9600); err != nil {
+		t.Fatalf("SetBaudRate(9600): %v", err)
+	}
+	got := p.BaudSequence()
+	want := []int{115200, 9600}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("BaudSequence: got %v, want %v", got, want)
+	}
+}
+
+func TestFakeOpener_OpenWithBaud(t *testing.T) {
+	o := NewFakeOpener()
+	o.Add(NewFakePort("COM3"))
+	p, err := o.OpenWithBaud("COM3", 115200)
+	if err != nil {
+		t.Fatalf("OpenWithBaud: %v", err)
+	}
+	fp, ok := p.(*FakePort)
+	if !ok {
+		t.Fatalf("returned port is not *FakePort")
+	}
+	if got := fp.BaudSequence(); len(got) != 1 || got[0] != 115200 {
+		t.Errorf("BaudSequence after OpenWithBaud: got %v, want [115200]", got)
+	}
+}
+
+func TestFakeOpener_ListDetailed(t *testing.T) {
+	o := NewFakeOpener()
+	o.Add(NewFakePort("COM3"))
+	o.SetDetail("COM3", DetailedPort{
+		Name: "COM3", IsUSB: true, VID: "2341", PID: "0043",
+		SerialNumber: "ABC123", Product: "Arduino Uno",
+	})
+	got, err := o.ListDetailed()
+	if err != nil {
+		t.Fatalf("ListDetailed: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(ListDetailed): got %d, want 1", len(got))
+	}
+	if got[0].Product != "Arduino Uno" || got[0].VID != "2341" {
+		t.Errorf("ListDetailed[0]: got %+v", got[0])
 	}
 }

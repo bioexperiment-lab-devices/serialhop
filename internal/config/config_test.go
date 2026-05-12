@@ -42,6 +42,19 @@ func TestDefaultConfig_PostOpenSettle(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_FlashingDefaults(t *testing.T) {
+	c := Default()
+	if c.Flashing.Enabled {
+		t.Errorf("flashing.enabled: got true, want false")
+	}
+	if c.Flashing.BackupDir != "" {
+		t.Errorf("flashing.backup_dir: got %q, want \"\"", c.Flashing.BackupDir)
+	}
+	if c.Flashing.KeepN != 10 {
+		t.Errorf("flashing.keep_n: got %d, want 10", c.Flashing.KeepN)
+	}
+}
+
 func TestWriteScaffold_GoldenSnapshot(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteScaffold(&buf); err != nil {
@@ -68,5 +81,14 @@ func TestWriteScaffold_GoldenSnapshot(t *testing.T) {
 	parsed.LabBridge.Pass = "p"
 	if err := Validate(&parsed); err != nil {
 		t.Errorf("scaffold + creds should validate, got %v", err)
+	}
+	if parsed.Flashing.Enabled {
+		t.Errorf("round-trip flashing.enabled: got true, want false (default)")
+	}
+	if parsed.Flashing.BackupDir != "" {
+		t.Errorf("round-trip flashing.backup_dir: got %q, want \"\"", parsed.Flashing.BackupDir)
+	}
+	if parsed.Flashing.KeepN != 10 {
+		t.Errorf("round-trip flashing.keep_n: got %d, want 10", parsed.Flashing.KeepN)
 	}
 }

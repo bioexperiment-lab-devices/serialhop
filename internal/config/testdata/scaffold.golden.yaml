@@ -33,3 +33,14 @@ auto_update:
   enabled: true            # check GitHub Releases for newer versions
                            # and offer to install them from the panel.
                            # set to false on air-gapped lab boxes.
+
+flashing:
+  enabled: false                  # allow POST /flash/{port}. higher risk than
+                                  # raw_serial — a bad .hex bricks the board
+                                  # (ISP recovery required). independent of
+                                  # raw_serial.enabled.
+  backup_dir: ""                  # absolute path for pre-flash backups.
+                                  # empty -> %ProgramData%\SerialHop\backups
+  keep_n: 10                      # retain this many backups per COM port;
+                                  # oldest pruned after each completed flash.
+                                  # 0 = keep all.

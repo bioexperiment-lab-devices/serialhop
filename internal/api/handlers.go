@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -22,14 +23,25 @@ type Server struct {
 	discover         DiscoverFn
 	opener           labserial.Opener
 	rawSerialEnabled bool
+	flasher          flasher.Flasher
+	flashingEnabled  bool
 }
 
-func New(reg *registry.Registry, discover DiscoverFn, opener labserial.Opener, rawSerialEnabled bool) *Server {
+func New(
+	reg *registry.Registry,
+	discover DiscoverFn,
+	opener labserial.Opener,
+	rawSerialEnabled bool,
+	fl flasher.Flasher,
+	flashingEnabled bool,
+) *Server {
 	return &Server{
 		reg:              reg,
 		discover:         discover,
 		opener:           opener,
 		rawSerialEnabled: rawSerialEnabled,
+		flasher:          fl,
+		flashingEnabled:  flashingEnabled,
 	}
 }
 
@@ -40,6 +52,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /devices/{id}/command", s.handlePostCommand)
 	mux.HandleFunc("GET /serial/ports", s.handleGetSerialPorts)
 	mux.HandleFunc("POST /serial/ports/{port}/command", s.handlePostSerialCommand)
+	mux.HandleFunc("POST /devices/disconnect", s.handlePostDevicesDisconnect)
+	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
+	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
 	return mux
 }
 
