@@ -444,6 +444,12 @@ func (o *alreadyClosedOpener) Open(name string) (serial.Port, error) {
 	}
 	return o.inner.Open(name)
 }
+func (o *alreadyClosedOpener) OpenWithBaud(name string, baud int) (serial.Port, error) {
+	return o.inner.OpenWithBaud(name, baud)
+}
+func (o *alreadyClosedOpener) ListDetailed() ([]serial.DetailedPort, error) {
+	return o.inner.ListDetailed()
+}
 
 // listOnlyOpener wraps FakeOpener and adds names that List returns but Open
 // rejects. Used to simulate the OS-level race where a port disappears between
