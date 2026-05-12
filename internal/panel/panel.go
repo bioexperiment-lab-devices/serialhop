@@ -29,6 +29,14 @@ import (
 
 const pollInterval = 1 * time.Second
 
+// probeInterval is the periodic-tick cadence for the Server and Tunnel
+// probe goroutines. Slow (30 s) because explicit triggers from action
+// handlers now cover the responsive cases — the periodic tick exists
+// only to detect drift the UI can't observe (server going down, etc.).
+// Lives here (Windows-only) rather than in probe.go because the only
+// callers are the probeLoop launches inside Run().
+const probeInterval = 30 * time.Second
+
 // updateCtl holds the state machine and current release info for the update
 // row. All fields are guarded by mu except where noted.
 type updateCtl struct {
