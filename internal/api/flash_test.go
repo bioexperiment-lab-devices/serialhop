@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -81,5 +83,134 @@ func TestDetailedPorts_ReturnsAnnotatedPorts(t *testing.T) {
 	}
 	if !strings.Contains(body, `"device_id":"pump_1"`) {
 		t.Errorf("expected device_id pump_1: %s", body)
+	}
+}
+
+// stubFlasher records the latest Flash call and returns a canned Result.
+type stubFlasher struct {
+	res  *flasher.Result
+	err  error
+	last struct {
+		Port string
+		Req  flasher.Request
+	}
+}
+
+func (s *stubFlasher) Flash(_ context.Context, port string, req flasher.Request) (*flasher.Result, error) {
+	s.last.Port = port
+	s.last.Req = req
+	return s.res, s.err
+}
+
+func newTestServerWithFlash(t *testing.T, fl flasher.Flasher, enabled bool) (*Server, *registry.Registry, *labserial.FakeOpener) {
+	t.Helper()
+	reg := registry.New()
+	op := labserial.NewFakeOpener()
+	s := New(reg, nil, op, true, fl, enabled)
+	return s, reg, op
+}
+
+func TestFlash_403_FlashingDisabled(t *testing.T) {
+	s, _, op := newTestServerWithFlash(t, &stubFlasher{}, false)
+	op.Add(labserial.NewFakePort("COM3"))
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(`{"firmware":":00000001FF"}`))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 403 {
+		t.Errorf("status: got %d, want 403", rr.Code)
+	}
+}
+
+func TestFlash_404_UnknownPort(t *testing.T) {
+	s, _, _ := newTestServerWithFlash(t, &stubFlasher{}, true)
+	req := httptest.NewRequest(http.MethodPost, "/flash/COMNOPE", strings.NewReader(`{"firmware":":00000001FF"}`))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 404 {
+		t.Errorf("status: got %d", rr.Code)
+	}
+}
+
+func TestFlash_409_RegistryNotEmpty(t *testing.T) {
+	s, reg, op := newTestServerWithFlash(t, &stubFlasher{}, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	reg.Replace([]*registry.Device{
+		{ID: "x", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(`{"firmware":":00000001FF"}`))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 409 {
+		t.Errorf("status: got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "/devices/disconnect") {
+		t.Errorf("expected hint about /devices/disconnect in body: %s", rr.Body.String())
+	}
+}
+
+func TestFlash_409_DiscoveryInProgress(t *testing.T) {
+	s, reg, op := newTestServerWithFlash(t, &stubFlasher{}, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	if !reg.LockDiscovery() {
+		t.Fatal("could not acquire discovery gate")
+	}
+	defer reg.UnlockDiscovery()
+
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(`{"firmware":":00000001FF"}`))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 409 {
+		t.Errorf("status: got %d", rr.Code)
+	}
+}
+
+func TestFlash_400_BadJSON(t *testing.T) {
+	s, _, op := newTestServerWithFlash(t, &stubFlasher{}, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(`not json`))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 400 {
+		t.Errorf("status: got %d", rr.Code)
+	}
+}
+
+func TestFlash_400_TestPairAsymmetric(t *testing.T) {
+	s, _, op := newTestServerWithFlash(t, &stubFlasher{}, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF","test_command":"010203"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 400 {
+		t.Errorf("status: got %d, body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "both or neither") {
+		t.Errorf("expected 'both or neither' in body: %s", rr.Body.String())
+	}
+}
+
+func TestFlash_400_BadHex(t *testing.T) {
+	s, _, op := newTestServerWithFlash(t, &stubFlasher{}, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF","test_command":"GGGG","expected_response":"AABB"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 400 {
+		t.Errorf("status: got %d, body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFlash_409_FlashInFlight(t *testing.T) {
+	stub := &stubFlasher{err: flasher.ErrBusy}
+	s, _, op := newTestServerWithFlash(t, stub, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 409 {
+		t.Errorf("status: got %d", rr.Code)
 	}
 }
