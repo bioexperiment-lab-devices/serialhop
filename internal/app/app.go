@@ -13,6 +13,8 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/chisel"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -55,7 +57,23 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		return discovery.Run(ctx, opener, ports)
 	}
 
-	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, nil, false)
+	backupDir := cfg.Flashing.BackupDir
+	if backupDir == "" {
+		backupDir = paths.BackupsDir()
+	}
+	if backupDir == "" {
+		slog.Warn("flashing: no backup dir available; flashing forced off")
+	}
+	var fl flasher.Flasher
+	if backupDir != "" {
+		var err error
+		fl, err = flasher.New(opener, backupDir, cfg.Flashing.KeepN, discovery.PostOpenSettle)
+		if err != nil {
+			return fmt.Errorf("flasher init: %w", err)
+		}
+	}
+	flashingEnabled := cfg.Flashing.Enabled && fl != nil
+	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, fl, flashingEnabled)
 
 	chiselDone := make(chan error, 1)
 	go func() {
