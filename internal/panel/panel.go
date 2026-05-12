@@ -204,11 +204,34 @@ func Run() error {
 		btnOpenLogs.SetEnabled(pathsErr == nil)
 	}
 
+	// Must be created early so kickProbes can reference them.
+	probeCtx, probeCancel := context.WithCancel(context.Background())
+	defer probeCancel()
+	serverTrigger := make(chan struct{}, 1)
+	tunnelTrigger := make(chan struct{}, 1)
+
+	// kickProbes flips the affected lamps to "Checking…" and wakes their
+	// probe goroutines. Must be called from the UI thread (it mutates
+	// lamp state and repaints). Non-blocking — safe to call from button
+	// handlers and from inside performAdmin.
+	kickProbes := func(server, tunnel bool) {
+		if server {
+			state.setServer(netLamp{kind: lampChecking})
+			trySend(serverTrigger)
+		}
+		if tunnel {
+			state.setTunnel(netLamp{kind: lampChecking})
+			trySend(tunnelTrigger)
+		}
+		repaintLamps()
+	}
+
 	performAdmin := func(action, successMsg string) {
 		btnInstall.SetEnabled(false)
 		btnUninstall.SetEnabled(false)
 		btnRestart.SetEnabled(false)
 		statusBar.SetText("Working…")
+		kickProbes(true, true) // gray the lamps before the UAC subprocess starts
 
 		errMsg, err := RunElevatedAdminAction(action)
 		switch {
@@ -224,6 +247,7 @@ func Run() error {
 			statusBar.SetText(successMsg + " at " + time.Now().Format("15:04:05"))
 		}
 		refresh()
+		kickProbes(true, true) // re-probe to settle to the new actual state
 	}
 
 	if err := (MainWindow{
@@ -340,31 +364,9 @@ func Run() error {
 		return err
 	}
 
-	probeCtx, probeCancel := context.WithCancel(context.Background())
-	defer probeCancel()
 	mw.Closing().Attach(func(_ *bool, _ walk.CloseReason) { probeCancel() })
 
 	probeHC := &http.Client{Timeout: 30 * time.Second} // fallback; per-call 5s ctx in probe.go still primary
-
-	serverTrigger := make(chan struct{}, 1)
-	tunnelTrigger := make(chan struct{}, 1)
-
-	// kickProbes flips the affected lamps to "Checking…" and wakes their
-	// probe goroutines. Must be called from the UI thread (it mutates
-	// lamp state and repaints). Non-blocking — safe to call from button
-	// handlers and from inside performAdmin.
-	kickProbes := func(server, tunnel bool) {
-		if server {
-			state.setServer(netLamp{kind: lampChecking})
-			trySend(serverTrigger)
-		}
-		if tunnel {
-			state.setTunnel(netLamp{kind: lampChecking})
-			trySend(tunnelTrigger)
-		}
-		repaintLamps()
-	}
-	_ = kickProbes // Silenced until Task 5 wires the first call site.
 
 	go probeLoop(probeCtx, probeInterval, serverTrigger, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
