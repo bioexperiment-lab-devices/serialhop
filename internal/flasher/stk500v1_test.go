@@ -52,3 +52,64 @@ func TestSTK_GetSignOn_ReturnsVendorString(t *testing.T) {
 		t.Error("expected non-empty sign-on")
 	}
 }
+
+func TestSTK_LoadAddress_RoundTrip(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.LoadAddress(150*time.Millisecond, 0x0040); err != nil {
+		t.Errorf("LoadAddress: %v", err)
+	}
+}
+
+func TestSTK_ProgPage_WritesToFakeFlash(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	page := make([]byte, 128)
+	for i := range page {
+		page[i] = byte(i)
+	}
+	if err := c.LoadAddress(150*time.Millisecond, 0x0000); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ProgPage(500*time.Millisecond, page); err != nil {
+		t.Fatalf("ProgPage: %v", err)
+	}
+	got := f.FlashImage()[:128]
+	for i, b := range got {
+		if b != byte(i) {
+			t.Fatalf("flash[%d]: got %02X, want %02X", i, b, byte(i))
+		}
+	}
+}
+
+func TestSTK_ReadPage_ReadsFakeFlash(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	src := make([]byte, 128)
+	for i := range src {
+		src[i] = byte(255 - i)
+	}
+	f.PreloadFlash(src)
+
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.LoadAddress(150*time.Millisecond, 0x0000); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.ReadPage(500*time.Millisecond, 128)
+	if err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+	for i, b := range got {
+		if b != src[i] {
+			t.Fatalf("read[%d]: got %02X, want %02X", i, b, src[i])
+		}
+	}
+}

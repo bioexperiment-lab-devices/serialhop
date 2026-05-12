@@ -238,6 +238,8 @@ func (f *FakeOptiboot) currentTimeout() time.Duration {
 }
 
 // processRX consumes whole STK500v1 commands from f.rx and appends replies to f.tx.
+// For variable-length commands (stkProgPage, stkReadPage) it uses the embedded
+// length field instead of searching for stkCrcEop, since page data may contain 0x20.
 func (f *FakeOptiboot) processRX() {
 	for {
 		f.mu.Lock()
@@ -245,13 +247,31 @@ func (f *FakeOptiboot) processRX() {
 			f.mu.Unlock()
 			return
 		}
-		eop := indexByte(f.rx, stkCrcEop)
-		if eop < 0 {
+
+		var cmdLen int
+		switch {
+		case f.rx[0] == stkProgPage && len(f.rx) >= 3:
+			// [op, sizeH, sizeL, type, ...data..., CrcEop]
+			n := int(f.rx[1])<<8 | int(f.rx[2])
+			cmdLen = 1 + 2 + 1 + n + 1 // op + sizeH + sizeL + type + data + EOP
+		case f.rx[0] == stkReadPage && len(f.rx) >= 3:
+			// [op, sizeH, sizeL, type, CrcEop]
+			cmdLen = 5
+		default:
+			eop := indexByte(f.rx, stkCrcEop)
+			if eop < 0 {
+				f.mu.Unlock()
+				return
+			}
+			cmdLen = eop + 1
+		}
+
+		if len(f.rx) < cmdLen {
 			f.mu.Unlock()
 			return
 		}
-		cmd := append([]byte(nil), f.rx[:eop+1]...)
-		f.rx = f.rx[eop+1:]
+		cmd := append([]byte(nil), f.rx[:cmdLen]...)
+		f.rx = f.rx[cmdLen:]
 
 		reply := f.dispatch(cmd)
 		if len(reply) > 0 {

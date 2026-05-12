@@ -64,6 +64,93 @@ func (c *stkClient) Sync(totalBudget time.Duration) error {
 	return errBootloaderUnresponsive
 }
 
+// LoadAddress sets the bootloader's word-address pointer for the next ProgPage / ReadPage.
+// wordAddr is the byte address divided by 2 — that's the STK500v1 convention.
+func (c *stkClient) LoadAddress(timeout time.Duration, wordAddr uint16) error {
+	if err := c.p.SetReadTimeout(timeout); err != nil {
+		return fmt.Errorf("load_address: set read timeout: %w", err)
+	}
+	msg := []byte{stkLoadAddress, byte(wordAddr & 0xFF), byte(wordAddr >> 8), stkCrcEop}
+	if _, err := c.p.Write(msg); err != nil {
+		return fmt.Errorf("load_address: write: %w", err)
+	}
+	return c.expectInSyncOK(timeout, "load_address")
+}
+
+// ProgPage writes the page (flash memory type) at the current word address.
+// The bootloader advances the word address by len(page)/2 after a successful write.
+func (c *stkClient) ProgPage(timeout time.Duration, page []byte) error {
+	n := len(page)
+	header := []byte{stkProgPage, byte(n >> 8), byte(n & 0xFF), 'F'}
+	msg := make([]byte, 0, len(header)+n+1)
+	msg = append(msg, header...)
+	msg = append(msg, page...)
+	msg = append(msg, stkCrcEop)
+	if err := c.p.SetReadTimeout(timeout); err != nil {
+		return fmt.Errorf("prog_page: set read timeout: %w", err)
+	}
+	if _, err := c.p.Write(msg); err != nil {
+		return fmt.Errorf("prog_page: write: %w", err)
+	}
+	return c.expectInSyncOK(timeout, "prog_page")
+}
+
+// ReadPage reads n bytes from flash at the current word address.
+// The bootloader advances the word address by n/2 after a successful read.
+func (c *stkClient) ReadPage(timeout time.Duration, n int) ([]byte, error) {
+	msg := []byte{stkReadPage, byte(n >> 8), byte(n & 0xFF), 'F', stkCrcEop}
+	if err := c.p.SetReadTimeout(timeout); err != nil {
+		return nil, fmt.Errorf("read_page: set read timeout: %w", err)
+	}
+	if _, err := c.p.Write(msg); err != nil {
+		return nil, fmt.Errorf("read_page: write: %w", err)
+	}
+	out := make([]byte, 0, n+2)
+	buf := make([]byte, 256)
+	deadline := time.Now().Add(timeout)
+	for len(out) < n+2 {
+		got, err := c.p.Read(buf)
+		if err != nil {
+			return nil, fmt.Errorf("read_page: read: %w", err)
+		}
+		out = append(out, buf[:got]...)
+		if time.Now().After(deadline) && len(out) < n+2 {
+			return nil, fmt.Errorf("read_page: timeout (got %d of %d bytes)", len(out), n+2)
+		}
+	}
+	if out[0] != stkInSync {
+		return nil, fmt.Errorf("read_page: expected INSYNC, got 0x%02X", out[0])
+	}
+	if out[n+1] != stkOK {
+		return nil, fmt.Errorf("read_page: expected OK, got 0x%02X", out[n+1])
+	}
+	return out[1 : n+1], nil
+}
+
+// expectInSyncOK reads two bytes and verifies they are INSYNC and OK.
+func (c *stkClient) expectInSyncOK(timeout time.Duration, op string) error {
+	buf := make([]byte, 2)
+	out := make([]byte, 0, 2)
+	deadline := time.Now().Add(timeout)
+	for len(out) < 2 {
+		n, err := c.p.Read(buf[:2-len(out)])
+		if err != nil {
+			return fmt.Errorf("%s: read: %w", op, err)
+		}
+		out = append(out, buf[:n]...)
+		if time.Now().After(deadline) && len(out) < 2 {
+			return fmt.Errorf("%s: timeout waiting for INSYNC/OK (got %d bytes)", op, len(out))
+		}
+	}
+	if out[0] != stkInSync {
+		return fmt.Errorf("%s: expected INSYNC, got 0x%02X", op, out[0])
+	}
+	if out[1] != stkOK {
+		return fmt.Errorf("%s: expected OK, got 0x%02X", op, out[1])
+	}
+	return nil
+}
+
 // GetSignOn returns the bootloader's vendor string. Optiboot replies "AVR ISP";
 // tolerate any vendor that returns a non-empty string between INSYNC and OK.
 func (c *stkClient) GetSignOn(timeout time.Duration) (string, error) {
