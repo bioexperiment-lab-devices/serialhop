@@ -167,3 +167,27 @@ func (c *atomicCounter) load() int {
 	defer c.mu.Unlock()
 	return c.n
 }
+
+func TestTrySend_DeliversToEmptyBuffer(t *testing.T) {
+	ch := make(chan struct{}, 1)
+	trySend(ch)
+	select {
+	case <-ch:
+		// got it
+	default:
+		t.Fatal("trySend did not deliver to empty buffered channel")
+	}
+}
+
+func TestTrySend_DropsWhenBufferFull(t *testing.T) {
+	ch := make(chan struct{}, 1)
+	trySend(ch) // fills the buffer
+	trySend(ch) // must not block; must not panic
+	// Buffer should still hold exactly one item.
+	<-ch
+	select {
+	case <-ch:
+		t.Fatal("trySend queued more than one item in a buffer=1 channel")
+	default:
+	}
+}

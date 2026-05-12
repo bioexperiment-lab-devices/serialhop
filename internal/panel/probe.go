@@ -114,3 +114,14 @@ func panicString(r any) string {
 		return "non-string, non-error panic"
 	}
 }
+
+// trySend delivers one signal to ch if its buffer has room; otherwise
+// drops the signal. Used by UI-thread callers to wake a probe goroutine
+// without ever blocking. Pair with a chan struct{} of buffer=1 — that
+// combination naturally coalesces bursts to at most one extra run.
+func trySend(ch chan<- struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
