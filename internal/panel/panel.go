@@ -312,7 +312,8 @@ func Run() error {
 					}},
 					PushButton{AssignTo: &btnInstall2, Text: "Install update", Visible: false, OnClicked: func() {
 						go ctlInstall(mw, ctl, statusBar,
-							applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL))
+							applyUpdateRow(mw, ctl, updateRow, updateLabel, btnDownload, btnInstall2, btnRelease, btnRetry, btnCancelDL),
+							kickProbes)
 					}},
 					PushButton{AssignTo: &btnRelease, Text: "Release notes", Visible: false, OnClicked: func() {
 						ctl.mu.Lock()
@@ -670,6 +671,7 @@ func ctlInstall(
 	ctl *updateCtl,
 	statusBar *walk.Label,
 	apply func(UpdateEvent),
+	kickProbes func(server, tunnel bool),
 ) {
 	ctl.mu.Lock()
 	src := ctl.exeFile
@@ -678,25 +680,40 @@ func ctlInstall(
 		return
 	}
 	apply(EvInstallStart)
-	mw.Synchronize(func() { _ = statusBar.SetText("Installing update…") })
+	mw.Synchronize(func() {
+		_ = statusBar.SetText("Installing update…")
+		kickProbes(true, true) // gray lamps before the UAC subprocess
+	})
 
 	errMsg, err := RunElevatedAdminAction("update", "--update-src="+src)
 	switch {
 	case errors.Is(err, ErrUserCancelled):
-		mw.Synchronize(func() { _ = statusBar.SetText("Cancelled.") })
+		mw.Synchronize(func() {
+			_ = statusBar.SetText("Cancelled.")
+			kickProbes(true, true) // re-probe even on cancel — the elevated child may have partial side effects
+		})
 		apply(EvCancel)
 		return
 	case err != nil:
-		mw.Synchronize(func() { _ = statusBar.SetText("Failed: " + err.Error()) })
+		mw.Synchronize(func() {
+			_ = statusBar.SetText("Failed: " + err.Error())
+			kickProbes(true, true)
+		})
 		apply(EvInstallFail)
 		return
 	case errMsg != "":
-		mw.Synchronize(func() { _ = statusBar.SetText("Failed: " + errMsg) })
+		mw.Synchronize(func() {
+			_ = statusBar.SetText("Failed: " + errMsg)
+			kickProbes(true, true)
+		})
 		apply(EvInstallFail)
 		return
 	}
 
-	mw.Synchronize(func() { _ = statusBar.SetText("Update applied at " + time.Now().Format("15:04:05")) })
+	mw.Synchronize(func() {
+		_ = statusBar.SetText("Update applied at " + time.Now().Format("15:04:05"))
+		kickProbes(true, true) // re-probe to settle to post-update state
+	})
 	apply(EvInstallOK)
 }
 
