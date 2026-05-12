@@ -2,8 +2,11 @@ package flasher
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -139,6 +142,7 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 	}
 
 	if !runPreflight(s) {
+		logFlashSummary(s, port)
 		return s.res, nil
 	}
 
@@ -148,6 +152,7 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		s.res.Stages["backup"] = StageResult{Status: "failed", Error: "open: " + err.Error()}
 		s.skipDownstream("erase", "program", "verify", "test", "rollback")
 		s.res.Outcome = OutcomeFailedBackup
+		logFlashSummary(s, port)
 		return s.res, nil
 	}
 	defer func() { _ = p.Close() }()
@@ -162,10 +167,12 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		s.res.Stages["backup"] = StageResult{Status: "failed", Error: "sync: " + err.Error()}
 		s.skipDownstream("erase", "program", "verify", "test", "rollback")
 		s.res.Outcome = OutcomeFailedBackup
+		logFlashSummary(s, port)
 		return s.res, nil
 	}
 
 	if !runBackup(s, c) {
+		logFlashSummary(s, port)
 		return s.res, nil
 	}
 
@@ -179,27 +186,52 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		s.res.Stages["backup"] = st
 		s.skipDownstream("erase", "program", "verify", "test", "rollback")
 		s.res.Outcome = OutcomeFailedBackup
+		logFlashSummary(s, port)
 		return s.res, nil
 	}
 	s.res.Backup = info
 
 	if !runErase(s, c) {
-		return runRollback(s, c, p)
+		res, rollbackErr := runRollback(s, c, p)
+		logFlashSummary(s, port)
+		return res, rollbackErr
 	}
 	if !runProgram(s, c) {
-		return runRollback(s, c, p)
+		res, rollbackErr := runRollback(s, c, p)
+		logFlashSummary(s, port)
+		return res, rollbackErr
 	}
 	if !runVerify(s, c) {
-		return runRollback(s, c, p)
+		res, rollbackErr := runRollback(s, c, p)
+		logFlashSummary(s, port)
+		return res, rollbackErr
 	}
 
 	if !runTest(s, c, p) {
-		return runRollback(s, c, p)
+		res, rollbackErr := runRollback(s, c, p)
+		logFlashSummary(s, port)
+		return res, rollbackErr
 	}
 
 	s.res.Stages["rollback"] = StageResult{Status: "n/a"}
 	s.res.Outcome = OutcomeSuccess
 
 	_ = PruneBackups(f.backupDir, port, f.keepN)
+	logFlashSummary(s, port)
 	return s.res, nil
+}
+
+func logFlashSummary(s *runState, port string) {
+	fwSum := sha256.Sum256(s.req.Firmware)
+	totalMs := int64(0)
+	for _, st := range s.res.Stages {
+		totalMs += st.Duration.Milliseconds()
+	}
+	slog.Info("flash_summary",
+		"port", port,
+		"outcome", s.res.Outcome.String(),
+		"firmware_sha256", hex.EncodeToString(fwSum[:]),
+		"backup_sha256", s.res.Backup.SHA256,
+		"total_duration_ms", totalMs,
+	)
 }
