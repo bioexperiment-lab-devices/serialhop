@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.10.0...v0.11.0) (2026-05-12)
+
+
+### Features
+
+* **panel:** refresh status lamps on user actions ([#61](https://github.com/bioexperiment-lab-devices/serialhop/issues/61)) ([628dd1f](https://github.com/bioexperiment-lab-devices/serialhop/commit/628dd1f6be43c609577f33a9c073cd1d3b2e9f17))
+
 ## [0.10.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.9.1...v0.10.0) (2026-05-12)
 
 
