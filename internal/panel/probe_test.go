@@ -239,3 +239,81 @@ func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
 	}
 	t.Fatalf("condition not satisfied within %v", timeout)
 }
+
+func TestProbeLoop_TriggerCoalescesViaBufferOne(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gate := make(chan struct{})
+	var calls atomic.Int32
+	trigger := make(chan struct{}, 1)
+
+	done := make(chan struct{})
+	go func() {
+		probeLoop(ctx, time.Hour, trigger, func(context.Context) {
+			calls.Add(1)
+			<-gate // block until the test releases
+		})
+		close(done)
+	}()
+
+	// Wait for the priming call to enter and block on the gate.
+	waitFor(t, func() bool { return calls.Load() == 1 }, time.Second)
+
+	// Fire 5 trySends rapidly. The buffer=1 + non-blocking send means
+	// at most one signal is queued.
+	for i := 0; i < 5; i++ {
+		trySend(trigger)
+	}
+
+	// Release the gate once. probeLoop returns from the in-flight call,
+	// enters the select, sees one queued trigger, runs fn a second time
+	// (which will block on gate again).
+	gate <- struct{}{}
+	waitFor(t, func() bool { return calls.Load() == 2 }, time.Second)
+
+	// Release the gate again. probeLoop returns, enters select. The
+	// trigger channel is empty (coalesced), the ticker is at 1h, and
+	// ctx is still live — so no further calls happen.
+	gate <- struct{}{}
+	time.Sleep(50 * time.Millisecond)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("trigger spam did not coalesce: got %d calls, want 2", got)
+	}
+
+	cancel()
+	// Drain a final gate release in case the goroutine is between calls.
+	select {
+	case gate <- struct{}{}:
+	default:
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("probeLoop did not return after ctx cancel")
+	}
+}
+
+func TestProbeLoop_TickerKeepsFiring(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		probeLoop(ctx, 20*time.Millisecond, nil, func(context.Context) {
+			calls.Add(1)
+		})
+		close(done)
+	}()
+
+	// Initial priming call + at least two ticker-driven calls within 200 ms.
+	waitFor(t, func() bool { return calls.Load() >= 3 }, 500*time.Millisecond)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("probeLoop did not return after ctx cancel")
+	}
+}
