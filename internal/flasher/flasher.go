@@ -165,14 +165,39 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		return s.res, nil
 	}
 
-	// Stages backup/erase/program/verify are added in Task 14.
-	// For now, declare success after a successful sync.
-	s.res.Stages["backup"] = StageResult{Status: "skipped"}
-	s.res.Stages["erase"] = StageResult{Status: "skipped"}
-	s.res.Stages["program"] = StageResult{Status: "skipped"}
-	s.res.Stages["verify"] = StageResult{Status: "skipped"}
+	if !runBackup(s, c) {
+		return s.res, nil
+	}
+
+	hexText := RenderIntelHex(s.backupBytes)
+	s.res.BackupHex = hexText
+	info, saveErr := SaveBackup(f.backupDir, port, hexText)
+	if saveErr != nil {
+		st := s.res.Stages["backup"]
+		st.Status = "failed"
+		st.Error = "save: " + saveErr.Error()
+		s.res.Stages["backup"] = st
+		s.skipDownstream("erase", "program", "verify", "test", "rollback")
+		s.res.Outcome = OutcomeFailedBackup
+		return s.res, nil
+	}
+	s.res.Backup = info
+
+	if !runErase(s, c) {
+		return runRollback(s, c, p)
+	}
+	if !runProgram(s, c) {
+		return runRollback(s, c, p)
+	}
+	if !runVerify(s, c) {
+		return runRollback(s, c, p)
+	}
+
+	// Test phase + success transition are added in Task 15.
 	s.res.Stages["test"] = StageResult{Status: "skipped"}
 	s.res.Stages["rollback"] = StageResult{Status: "n/a"}
 	s.res.Outcome = OutcomeSuccess
+
+	_ = PruneBackups(f.backupDir, port, f.keepN)
 	return s.res, nil
 }

@@ -257,6 +257,10 @@ func (f *FakeOptiboot) processRX() {
 		case f.rx[0] == stkReadPage && len(f.rx) >= 3:
 			// [op, sizeH, sizeL, type, CrcEop]
 			cmdLen = 5
+		case f.rx[0] == stkLoadAddress:
+			// [op, addrLo, addrHi, CrcEop] — fixed 4-byte frame; the address bytes
+			// may contain 0x20 (stkCrcEop) so we cannot use indexByte to find EOP.
+			cmdLen = 4
 		default:
 			eop := indexByte(f.rx, stkCrcEop)
 			if eop < 0 {
