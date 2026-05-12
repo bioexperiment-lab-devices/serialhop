@@ -109,10 +109,15 @@ The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from ou
 | `POST` | `/discover` | Run a fresh discovery and return the device list |
 | `GET`  | `/devices`  | Return the cached device list |
 | `POST` | `/devices/{id}/command` | Send raw bytes to a discovered device; optionally read a reply |
+| `POST` | `/devices/disconnect` | Close every serial handle in the registry. Always available. |
 | `GET`  | `/serial/ports` | List enumerated serial ports, annotated with discovery state (gated by `raw_serial.enabled`) |
+| `GET`  | `/serial/ports/detailed` | List ports with USB descriptors (VID/PID/SerialNumber/Product). Always available. |
 | `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device (gated by `raw_serial.enabled`) |
+| `POST` | `/flash/{port}` | Pre-backup, flash, byte-verify, optional test, auto-rollback (gated by `flashing.enabled`) |
 
 Discovered device types: `pump` (type code 10), `valve` (30), `densitometer` (70). See [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md) for full request/response shapes and behavior.
+
+**Remote firmware flashing.** With `flashing.enabled: true`, the operator can POST an Intel HEX firmware image to `POST /flash/{port}` and receive a complete stage-by-stage outcome including a pre-flash backup (saved on the lab machine *and* returned inline). On any post-backup failure, SerialHop attempts to roll back to the backup automatically. AVR / optiboot only (Arduino Uno R3). Off by default. See `docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md` for the full design.
 
 ## Log streaming to Loki
 

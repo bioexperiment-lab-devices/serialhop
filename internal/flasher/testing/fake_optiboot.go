@@ -46,15 +46,15 @@ type FakeOptiboot struct {
 	closed      bool
 
 	// error-injection knobs
-	failSync          int
-	corruptNextRead   bool
-	corruptOffset     int
-	dropWriteBytes    int
-	ackButDontPersist bool
-	failChipErase     bool
+	failSync            int
+	corruptNextRead     bool
+	corruptOffset       int
+	dropWriteBytes      int
+	ackButDontPersist   bool
+	failChipErase       bool
 	failChipEraseAfterN int // -1 disabled; >=0 fail after this many successes
-	failNextProgPage  bool
-	failNextReadPage  bool
+	failNextProgPage    bool
+	failNextReadPage    bool
 
 	dtrSeq  []bool
 	baudSeq []int
