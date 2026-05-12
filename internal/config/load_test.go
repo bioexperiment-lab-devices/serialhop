@@ -302,6 +302,49 @@ log:
 	}
 }
 
+func TestValidate_FlashingRejectsRelativeBackupDir(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.Flashing.Enabled = true
+	c.Flashing.BackupDir = "relative/path"
+	err := Validate(&c)
+	if err == nil {
+		t.Fatal("expected error for relative backup_dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "backup_dir") {
+		t.Errorf("error message %q must mention backup_dir", err)
+	}
+}
+
+func TestValidate_FlashingRejectsNegativeKeepN(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.Flashing.KeepN = -1
+	err := Validate(&c)
+	if err == nil {
+		t.Fatal("expected error for negative keep_n, got nil")
+	}
+	if !strings.Contains(err.Error(), "keep_n") {
+		t.Errorf("error message %q must mention keep_n", err)
+	}
+}
+
+func TestValidate_FlashingAcceptsEmptyBackupDirWhenDisabled(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.Flashing.Enabled = false
+	c.Flashing.BackupDir = "" // empty + disabled = fine
+	if err := Validate(&c); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
 func TestLoad_LegacyChiselBlockIgnoredWhenCredsValid(t *testing.T) {
 	// Migration path: an existing config file written by a pre-cleanup
 	// binary may still contain a `chisel:` block. yaml.v3 silently ignores

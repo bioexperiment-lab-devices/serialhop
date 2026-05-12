@@ -12,6 +12,7 @@ type Config struct {
 	Log        LogConfig        `yaml:"log"`
 	RawSerial  RawSerialConfig  `yaml:"raw_serial"`
 	AutoUpdate AutoUpdateConfig `yaml:"auto_update"`
+	Flashing   FlashingConfig   `yaml:"flashing"`
 }
 
 type LabBridgeConfig struct {
@@ -42,6 +43,12 @@ type AutoUpdateConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+type FlashingConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	BackupDir string `yaml:"backup_dir"`
+	KeepN     int    `yaml:"keep_n"`
+}
+
 func Default() Config {
 	return Config{
 		LabBridge: LabBridgeConfig{
@@ -58,6 +65,7 @@ func Default() Config {
 		Log:        LogConfig{Level: "info"},
 		RawSerial:  RawSerialConfig{Enabled: false},
 		AutoUpdate: AutoUpdateConfig{Enabled: true},
+		Flashing:   FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
 	}
 }
 
@@ -96,6 +104,17 @@ auto_update:
   enabled: true            # check GitHub Releases for newer versions
                            # and offer to install them from the panel.
                            # set to false on air-gapped lab boxes.
+
+flashing:
+  enabled: false                  # allow POST /flash/{port}. higher risk than
+                                  # raw_serial — a bad .hex bricks the board
+                                  # (ISP recovery required). independent of
+                                  # raw_serial.enabled.
+  backup_dir: ""                  # absolute path for pre-flash backups.
+                                  # empty -> %ProgramData%\SerialHop\backups
+  keep_n: 10                      # retain this many backups per COM port;
+                                  # oldest pruned after each completed flash.
+                                  # 0 = keep all.
 `
 
 func WriteScaffold(w io.Writer) error {
