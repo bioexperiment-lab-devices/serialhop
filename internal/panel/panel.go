@@ -346,7 +346,27 @@ func Run() error {
 
 	probeHC := &http.Client{Timeout: 30 * time.Second} // fallback; per-call 5s ctx in probe.go still primary
 
-	go probeLoop(probeCtx, 10*time.Second, nil, func(ctx context.Context) {
+	serverTrigger := make(chan struct{}, 1)
+	tunnelTrigger := make(chan struct{}, 1)
+
+	// kickProbes flips the affected lamps to "Checking…" and wakes their
+	// probe goroutines. Must be called from the UI thread (it mutates
+	// lamp state and repaints). Non-blocking — safe to call from button
+	// handlers and from inside performAdmin.
+	kickProbes := func(server, tunnel bool) {
+		if server {
+			state.setServer(netLamp{kind: lampChecking})
+			trySend(serverTrigger)
+		}
+		if tunnel {
+			state.setTunnel(netLamp{kind: lampChecking})
+			trySend(tunnelTrigger)
+		}
+		repaintLamps()
+	}
+	_ = kickProbes // Silenced until Task 5 wires the first call site.
+
+	go probeLoop(probeCtx, probeInterval, serverTrigger, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
 		base := ""
 		if c.LabBridge.Host != "" {
@@ -355,7 +375,7 @@ func Run() error {
 		runServerProbe(ctx, probeHC, base, userAgent, state)
 		mw.Synchronize(repaintLamps)
 	})
-	go probeLoop(probeCtx, 10*time.Second, nil, func(ctx context.Context) {
+	go probeLoop(probeCtx, probeInterval, tunnelTrigger, func(ctx context.Context) {
 		c, _ := config.LoadPartial(cfgPath)
 		base := ""
 		if c.LabBridge.Host != "" {

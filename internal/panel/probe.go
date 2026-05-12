@@ -13,6 +13,12 @@ import (
 // runTunnelProbe. Independent of the probe-loop tick interval.
 const probeTimeout = 5 * time.Second
 
+// probeInterval is the periodic-tick cadence for runServerProbe /
+// runTunnelProbe. Slow (30 s) because explicit triggers from action
+// handlers now cover the responsive cases — the periodic tick exists
+// only to detect drift the UI can't observe (server going down, etc.).
+const probeInterval = 30 * time.Second
+
 // mapServerResult turns a (Health, error) pair from labbridge.FetchHealth
 // into a netLamp for the Server row.
 func mapServerResult(h labbridge.Health, err error) netLamp {
