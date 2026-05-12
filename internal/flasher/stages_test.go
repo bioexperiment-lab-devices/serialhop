@@ -3,6 +3,7 @@ package flasher
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -266,4 +267,82 @@ func TestFlash_RolledBackTestFailed_RealRollback(t *testing.T) {
 	if res.Stages["rollback"].Status != "ok" {
 		t.Errorf("rollback stage: %q", res.Stages["rollback"].Status)
 	}
+}
+
+func TestFlash_FailedNoRecovery_RollbackChipEraseFails(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	op.fake.AckButDontPersistNextProgPage() // triggers verify failure -> rollback
+	op.fake.FailChipEraseAfterN(1)          // let runErase succeed; fail rollback's chip erase
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:  make([]byte, avr.PageSize),
+		Timeout:   500 * time.Millisecond,
+		InterByte: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeFailedNoRecovery {
+		t.Errorf("Outcome: got %s, want failed_no_recovery", res.Outcome)
+	}
+	if res.RecoveryHint == "" {
+		t.Error("RecoveryHint empty for failed_no_recovery")
+	}
+	if res.Backup.Path == "" {
+		t.Fatal("Backup.Path empty")
+	}
+	if !contains(res.Backup.Path, "-LOCKED-") {
+		t.Errorf("backup path %q should contain -LOCKED-", res.Backup.Path)
+	}
+}
+
+func TestFlash_FailedBackup_SyncTimeout(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	op.fake.FailSyncTimes(1000)
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:  []byte{0x00, 0x01, 0x02},
+		Timeout:   100 * time.Millisecond,
+		InterByte: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeFailedBackup {
+		t.Errorf("Outcome: got %s, want failed_backup", res.Outcome)
+	}
+}
+
+func TestFlash_BackupPruning_KeepsN(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	dir := t.TempDir()
+	fl, _ := New(op, dir, 3, 0)
+
+	for i := 0; i < 5; i++ {
+		time.Sleep(1100 * time.Millisecond)
+		op.fake = ft.NewFakeOptiboot()
+		_, err := fl.Flash(context.Background(), "COM3", Request{
+			Firmware:  []byte{byte(i)},
+			Timeout:   500 * time.Millisecond,
+			InterByte: 10 * time.Millisecond,
+		})
+		if err != nil {
+			t.Fatalf("Flash %d: %v", i, err)
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 3 {
+		t.Errorf("after 5 flashes with keep_n=3: got %d files, want 3", len(entries))
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

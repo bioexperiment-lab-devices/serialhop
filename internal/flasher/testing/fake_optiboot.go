@@ -52,6 +52,7 @@ type FakeOptiboot struct {
 	dropWriteBytes    int
 	ackButDontPersist bool
 	failChipErase     bool
+	failChipEraseAfterN int // -1 disabled; >=0 fail after this many successes
 	failNextProgPage  bool
 	failNextReadPage  bool
 
@@ -66,9 +67,10 @@ type FakeOptiboot struct {
 // erased state).
 func NewFakeOptiboot() *FakeOptiboot {
 	f := &FakeOptiboot{
-		rxSignal:    make(chan struct{}, 1),
-		txSignal:    make(chan struct{}, 1),
-		readTimeout: 100 * time.Millisecond,
+		rxSignal:            make(chan struct{}, 1),
+		txSignal:            make(chan struct{}, 1),
+		readTimeout:         100 * time.Millisecond,
+		failChipEraseAfterN: -1, // disabled
 	}
 	for i := range f.flash {
 		f.flash[i] = 0xFF
@@ -104,6 +106,14 @@ func (f *FakeOptiboot) FailNextChipErase() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failChipErase = true
+}
+
+// FailChipEraseAfterN makes the fake let n chip-erases succeed, then fail the
+// (n+1)-th. n=0 is equivalent to FailNextChipErase.
+func (f *FakeOptiboot) FailChipEraseAfterN(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failChipEraseAfterN = n
 }
 
 // FailNextProgPage makes the next STK_PROG_PAGE respond NOSYNC.
@@ -395,6 +405,13 @@ func (f *FakeOptiboot) dispatch(cmd []byte) []byte {
 		if f.failChipErase {
 			f.failChipErase = false
 			return []byte{stkNoSync}
+		}
+		if f.failChipEraseAfterN == 0 {
+			f.failChipEraseAfterN = -1
+			return []byte{stkNoSync}
+		}
+		if f.failChipEraseAfterN > 0 {
+			f.failChipEraseAfterN--
 		}
 		for i := range f.flash {
 			f.flash[i] = 0xFF
