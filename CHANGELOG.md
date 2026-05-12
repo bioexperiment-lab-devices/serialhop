@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.9.1...v0.10.0) (2026-05-12)
+
+
+### Features
+
+* server-info bootstrap and first-run credentials dialog ([#59](https://github.com/bioexperiment-lab-devices/serialhop/issues/59)) ([d6c5d20](https://github.com/bioexperiment-lab-devices/serialhop/commit/d6c5d20ae323d2d39fa59f56a85bbb6e3c21ef1b))
+
 ## [0.9.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.9.0...v0.9.1) (2026-05-11)
 
 
