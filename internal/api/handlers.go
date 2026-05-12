@@ -53,6 +53,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /serial/ports", s.handleGetSerialPorts)
 	mux.HandleFunc("POST /serial/ports/{port}/command", s.handlePostSerialCommand)
 	mux.HandleFunc("POST /devices/disconnect", s.handlePostDevicesDisconnect)
+	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
 	return mux
 }
 

@@ -231,14 +231,21 @@ func (o *FakeOpener) SetDetail(name string, d DetailedPort) {
 	o.details[name] = d
 }
 
-// ListDetailed returns detailed port info for all registered ports that have
-// detail records set via SetDetail.
+// ListDetailed returns detailed port info for all registered ports. Ports that
+// have had detail records set via SetDetail carry USB descriptor fields;
+// ports added only via Add are returned with a minimal record (name only,
+// IsUSB=false). This mirrors the behaviour of the real OS enumerator which
+// always lists every port regardless of whether USB descriptors are available.
 func (o *FakeOpener) ListDetailed() ([]DetailedPort, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	out := make([]DetailedPort, 0, len(o.details))
-	for _, d := range o.details {
-		out = append(out, d)
+	out := make([]DetailedPort, 0, len(o.ports))
+	for name := range o.ports {
+		if d, ok := o.details[name]; ok {
+			out = append(out, d)
+		} else {
+			out = append(out, DetailedPort{Name: name})
+		}
 	}
 	return out, nil
 }

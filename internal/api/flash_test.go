@@ -50,3 +50,36 @@ func TestDisconnect_PopulatedRegistry(t *testing.T) {
 		t.Errorf("registry not empty after disconnect")
 	}
 }
+
+func TestDetailedPorts_ReturnsAnnotatedPorts(t *testing.T) {
+	s, reg, op := newTestServerForFlash(t)
+	op.Add(labserial.NewFakePort("COM3"))
+	op.Add(labserial.NewFakePort("COM4"))
+	op.SetDetail("COM3", labserial.DetailedPort{
+		Name: "COM3", IsUSB: true, VID: "2341", PID: "0043", Product: "Arduino Uno",
+	})
+	reg.Replace([]*registry.Device{
+		{ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/serial/ports/detailed", nil)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status: %d, body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"name":"COM3"`) {
+		t.Errorf("missing COM3 in body: %s", body)
+	}
+	if !strings.Contains(body, `"name":"COM4"`) {
+		t.Errorf("missing COM4 in body: %s", body)
+	}
+	if !strings.Contains(body, `"discovered":true`) {
+		t.Errorf("expected discovered:true for COM3: %s", body)
+	}
+	if !strings.Contains(body, `"device_id":"pump_1"`) {
+		t.Errorf("expected device_id pump_1: %s", body)
+	}
+}
