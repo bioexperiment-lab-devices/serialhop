@@ -111,3 +111,20 @@ func TestEnsureDirsErrorsWhenDataDirEmpty(t *testing.T) {
 		t.Fatal("EnsureDirs returned nil, want error")
 	}
 }
+
+func TestServerInfoCachePath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SERIALHOP_DATA_DIR", dir)
+	want := filepath.Join(dir, "server-info.cache.json")
+	if got := ServerInfoCachePath(); got != want {
+		t.Errorf("ServerInfoCachePath: got %q, want %q", got, want)
+	}
+}
+
+func TestServerInfoCachePath_EmptyWhenDataDirUnavailable(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	if got := ServerInfoCachePath(); got != "" {
+		t.Errorf("ServerInfoCachePath: got %q, want empty", got)
+	}
+}

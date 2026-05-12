@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/chisel"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
@@ -16,18 +17,19 @@ import (
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
-func Run(ctx context.Context, cfg config.Config) error {
+func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	slog.Info("serialhop starting",
 		"chisel_host", cfg.LabBridge.Host,
-		"chisel_port", cfg.Chisel.Port,
-		"remote_port", cfg.Chisel.RemotePort,
+		"chisel_port", resolved.ServerInfo.ChiselListenPort,
+		"remote_port", resolved.RemotePort,
 		"rest_port", cfg.Rest.Port,
 		"discovery_include", cfg.Discovery.Include,
 		"discovery_exclude", cfg.Discovery.Exclude,
 		"discovery_post_open_settle_ms", cfg.Discovery.PostOpenSettleMs,
+		"forward_tunnels", len(resolved.ServerInfo.ForwardTunnels),
 	)
 
 	listener, localPort, err := api.Listen(cfg.Rest.Port)
@@ -58,11 +60,12 @@ func Run(ctx context.Context, cfg config.Config) error {
 	chiselDone := make(chan error, 1)
 	go func() {
 		chiselDone <- chisel.Run(ctx, chisel.Config{
-			Server:     net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(cfg.Chisel.Port)),
-			User:       cfg.LabBridge.User,
-			Pass:       cfg.LabBridge.Pass,
-			RemotePort: cfg.Chisel.RemotePort,
-			LocalPort:  localPort,
+			Server:         net.JoinHostPort(cfg.LabBridge.Host, strconv.Itoa(resolved.ServerInfo.ChiselListenPort)),
+			User:           cfg.LabBridge.User,
+			Pass:           cfg.LabBridge.Pass,
+			RemotePort:     resolved.RemotePort,
+			LocalPort:      localPort,
+			ForwardTunnels: resolved.ServerInfo.ForwardTunnels,
 		})
 	}()
 

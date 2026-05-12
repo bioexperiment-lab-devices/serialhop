@@ -46,8 +46,8 @@ gh attestation verify SerialHop-vX.Y.Z.exe --owner bioexperiment-lab-devices
 ## Install on a Windows lab machine
 
 1. Copy `SerialHop.exe` to an install location (e.g., `C:\Tools\SerialHop\`).
-2. Double-click the .exe. The control panel opens. On first launch it creates `%ProgramData%\SerialHop\` and writes a `SerialHop_config.yaml` scaffold there, then shows a validation warning if anything's wrong.
-3. Click **Open config file**, set `chisel.remote_port`, `lab_bridge.user`, and `lab_bridge.pass` (and any other site-specific values), save.
+2. Double-click the .exe. The control panel opens. On first launch it creates `%ProgramData%\SerialHop\`.
+3. The panel pops up a **Set credentials** dialog. Enter your `lab_bridge.user` and `lab_bridge.pass`; the panel verifies them against the lab-bridge server and writes them to the config file. The chisel listen port, Loki push URL, and forward tunnels are fetched from the server automatically — no further config editing is required for a standard install.
 4. Click **Install**. UAC prompts; approve. The service is registered as `SerialHop` (auto-start at boot, runs as LocalSystem) and started immediately.
 
 After install:

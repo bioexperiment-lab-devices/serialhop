@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	ConfigFileName        = "SerialHop_config.yaml"
-	ServiceLogFileName    = "SerialHop.log"
-	StderrLogFileName     = "SerialHop_stderr.log"
-	PanelErrorLogFileName = "SerialHop_panel_error.log"
+	ConfigFileName          = "SerialHop_config.yaml"
+	ServiceLogFileName      = "SerialHop.log"
+	StderrLogFileName       = "SerialHop_stderr.log"
+	PanelErrorLogFileName   = "SerialHop_panel_error.log"
+	ServerInfoCacheFileName = "server-info.cache.json"
 )
 
 // DataDir returns the SerialHop root data directory.
@@ -82,6 +83,16 @@ func PanelErrorLogPath() string {
 		return ""
 	}
 	return filepath.Join(d, PanelErrorLogFileName)
+}
+
+// ServerInfoCachePath returns <DataDir>/server-info.cache.json, or ""
+// if DataDir is empty.
+func ServerInfoCachePath() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, ServerInfoCacheFileName)
 }
 
 // EnsureDirs creates DataDir and LogsDir with os.MkdirAll (0o750).

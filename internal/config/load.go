@@ -45,11 +45,11 @@ func Validate(c *Config) error {
 	if c.LabBridge.Host == "" {
 		return fmt.Errorf("lab_bridge.host must be non-empty")
 	}
-	if c.Chisel.Port < 1 || c.Chisel.Port > 65535 {
-		return fmt.Errorf("chisel.port must be in 1..65535 (got %d)", c.Chisel.Port)
+	if c.LabBridge.User == "" {
+		return fmt.Errorf("lab_bridge.user must be non-empty")
 	}
-	if c.Chisel.RemotePort < 1 || c.Chisel.RemotePort > 65535 {
-		return fmt.Errorf("chisel.remote_port must be in 1..65535 (got %d)", c.Chisel.RemotePort)
+	if c.LabBridge.Pass == "" {
+		return fmt.Errorf("lab_bridge.pass must be non-empty")
 	}
 	if c.Rest.Port < 0 || c.Rest.Port > 65535 {
 		return fmt.Errorf("rest.port must be in 0..65535 (got %d)", c.Rest.Port)

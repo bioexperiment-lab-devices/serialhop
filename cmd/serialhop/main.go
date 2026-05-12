@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/panel"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
@@ -140,7 +142,21 @@ func runForeground() error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	return app.Run(ctx, cfg)
+
+	hc := &http.Client{Timeout: 30 * time.Second}
+	resolved, err := bootstrap.Resolve(ctx, bootstrap.Options{
+		HTTPClient: hc,
+		Base:       "https://" + cfg.LabBridge.Host,
+		User:       cfg.LabBridge.User,
+		Pass:       cfg.LabBridge.Pass,
+		CachePath:  paths.ServerInfoCachePath(),
+		UserAgent:  "SerialHop/" + internalversion.Base() + " (foreground)",
+	})
+	if err != nil {
+		return fmt.Errorf("bootstrap: %w", err)
+	}
+
+	return app.Run(ctx, cfg, resolved)
 }
 
 func attachParentConsole() {

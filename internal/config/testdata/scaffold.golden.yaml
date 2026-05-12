@@ -1,67 +1,4 @@
-package config
-
-import (
-	"fmt"
-	"io"
-)
-
-type Config struct {
-	LabBridge  LabBridgeConfig  `yaml:"lab_bridge"`
-	Rest       RestConfig       `yaml:"rest"`
-	Discovery  DiscoveryConfig  `yaml:"discovery"`
-	Log        LogConfig        `yaml:"log"`
-	RawSerial  RawSerialConfig  `yaml:"raw_serial"`
-	AutoUpdate AutoUpdateConfig `yaml:"auto_update"`
-}
-
-type LabBridgeConfig struct {
-	Host string `yaml:"host"`
-	User string `yaml:"user"`
-	Pass string `yaml:"pass"`
-}
-
-type RestConfig struct {
-	Port int `yaml:"port"`
-}
-
-type DiscoveryConfig struct {
-	Include          []string `yaml:"include"`
-	Exclude          []string `yaml:"exclude"`
-	PostOpenSettleMs int      `yaml:"post_open_settle_ms"`
-}
-
-type LogConfig struct {
-	Level string `yaml:"level"`
-}
-
-type RawSerialConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-type AutoUpdateConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-func Default() Config {
-	return Config{
-		LabBridge: LabBridgeConfig{
-			Host: "111.88.145.138",
-			User: "",
-			Pass: "",
-		},
-		Rest: RestConfig{Port: 0},
-		Discovery: DiscoveryConfig{
-			Include:          []string{},
-			Exclude:          []string{},
-			PostOpenSettleMs: 2000,
-		},
-		Log:        LogConfig{Level: "info"},
-		RawSerial:  RawSerialConfig{Enabled: false},
-		AutoUpdate: AutoUpdateConfig{Enabled: true},
-	}
-}
-
-const scaffoldTemplate = `# SerialHop_config.yaml
+# SerialHop_config.yaml
 # Auto-generated scaffold. Site values are filled in via the panel's
 # first-run dialog (username + password). Other fields are optional —
 # edit only if you need to change defaults.
@@ -96,11 +33,3 @@ auto_update:
   enabled: true            # check GitHub Releases for newer versions
                            # and offer to install them from the panel.
                            # set to false on air-gapped lab boxes.
-`
-
-func WriteScaffold(w io.Writer) error {
-	if _, err := fmt.Fprint(w, scaffoldTemplate); err != nil {
-		return fmt.Errorf("write scaffold: %w", err)
-	}
-	return nil
-}

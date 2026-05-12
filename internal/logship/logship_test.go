@@ -127,7 +127,7 @@ func TestManagerStartShipperPushes(t *testing.T) {
 		m.Shutdown(ctx)
 	})
 
-	m.setPushURLForTest(srv.URL)
+	m.SetPushURL(srv.URL)
 
 	m.StartShipper("lab-1")
 	for i := 0; i < 10; i++ {
@@ -157,6 +157,7 @@ func TestManagerStartShipperIsIdempotent(t *testing.T) {
 		m.Shutdown(ctx)
 	})
 
+	m.SetPushURL("http://localhost:3100/loki/api/v1/push")
 	m.StartShipper("lab-1")
 	m.StartShipper("lab-1")
 	if got := m.shipperCountForTest(); got != 1 {
@@ -201,7 +202,7 @@ func TestManagerShutdownDrainsBuffer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	m.setPushURLForTest(srv.URL)
+	m.SetPushURL(srv.URL)
 	m.StartShipper("lab-1")
 
 	for i := 0; i < 5; i++ {
@@ -223,5 +224,24 @@ func TestInitErrorsWhenDataDirUnavailable(t *testing.T) {
 	t.Setenv("ProgramData", "")
 	if _, err := Init("1.4.2", slog.LevelInfo); err == nil {
 		t.Fatal("Init returned nil, want error when data dir unavailable")
+	}
+}
+
+func TestManagerStartShipperWithEmptyPushURLIsNoOp(t *testing.T) {
+	setupTestEnv(t)
+	m, err := Init("1.4.2", slog.LevelInfo)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		m.Shutdown(ctx)
+	})
+
+	m.SetPushURL("") // explicit empty
+	m.StartShipper("lab-1")
+	if got := m.shipperCountForTest(); got != 0 {
+		t.Fatalf("shipper started with empty push URL; count = %d", got)
 	}
 }

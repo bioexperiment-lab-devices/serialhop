@@ -17,10 +17,6 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 )
 
-// defaultPushURL is the local end of the chisel forward tunnel that
-// reaches the in-VPS Loki.
-const defaultPushURL = "http://127.0.0.1:3100/loki/api/v1/push"
-
 var errInitMissingPaths = errors.New("logship: paths.ServiceLogPath/StderrLogPath unavailable; call paths.EnsureDirs first")
 
 // Manager owns the capture taps, ring buffer, and shipper goroutine.
@@ -58,7 +54,6 @@ func Init(version string, level slog.Level) (*Manager, error) {
 	m := &Manager{
 		version:  version,
 		levelVar: new(slog.LevelVar),
-		pushURL:  defaultPushURL,
 		q:        newQueue(10_000),
 	}
 	m.levelVar.Set(level)
@@ -102,6 +97,10 @@ func (m *Manager) StartShipper(clientLabel string) {
 	}
 	if clientLabel == "" {
 		slog.Warn("log streaming disabled (no chisel user)")
+		return
+	}
+	if m.pushURL == "" {
+		slog.Warn("log streaming disabled (no push URL — SetPushURL not called?)")
 		return
 	}
 	labels := map[string]map[string]string{
@@ -162,13 +161,16 @@ func (m *Manager) Shutdown(ctx context.Context) {
 	}
 }
 
-// --- test-only helpers (lower-cased; only callable from logship_test.go) ---
-
-func (m *Manager) setPushURLForTest(url string) {
+// SetPushURL sets the Loki push URL. Must be called before StartShipper.
+// Safe to call again before StartShipper to change the URL; calling
+// after StartShipper has no effect on the running shipper.
+func (m *Manager) SetPushURL(url string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pushURL = url
 }
+
+// --- test-only helpers (lower-cased; only callable from logship_test.go) ---
 
 func (m *Manager) shipperCountForTest() int {
 	m.mu.Lock()
