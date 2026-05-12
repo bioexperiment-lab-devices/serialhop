@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher/avr"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
@@ -119,7 +120,59 @@ func New(opener labserial.Opener, backupDir string, keepN int, settleAfterOpen t
 	}, nil
 }
 
-// Flash is a stub implementation that will be replaced in Task 13.
+// Flash runs the full state machine. Returns (nil, ErrBusy) if another
+// Flash is in flight; otherwise returns a populated *Result (and nil
+// error) describing every stage that ran.
 func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Result, error) {
-	return nil, errors.New("not implemented")
+	if !f.mu.TryLock() {
+		return nil, ErrBusy
+	}
+	defer f.mu.Unlock()
+
+	s := &runState{
+		port: port,
+		req:  req,
+		res: &Result{
+			Port:   port,
+			Stages: map[string]StageResult{},
+		},
+	}
+
+	if !runPreflight(s) {
+		return s.res, nil
+	}
+
+	// Open port at bootloader baud, pulse DTR, sync.
+	p, err := f.opener.OpenWithBaud(port, avr.BootloaderBaud)
+	if err != nil {
+		s.res.Stages["backup"] = StageResult{Status: "failed", Error: "open: " + err.Error()}
+		s.skipDownstream("erase", "program", "verify", "test", "rollback")
+		s.res.Outcome = OutcomeFailedBackup
+		return s.res, nil
+	}
+	defer func() { _ = p.Close() }()
+
+	_ = p.SetDTR(false)
+	time.Sleep(50 * time.Millisecond)
+	_ = p.SetDTR(true)
+	time.Sleep(50 * time.Millisecond)
+
+	c := newSTKClient(p)
+	if err := c.Sync(bootloaderSyncRetries * syncAttemptGap); err != nil {
+		s.res.Stages["backup"] = StageResult{Status: "failed", Error: "sync: " + err.Error()}
+		s.skipDownstream("erase", "program", "verify", "test", "rollback")
+		s.res.Outcome = OutcomeFailedBackup
+		return s.res, nil
+	}
+
+	// Stages backup/erase/program/verify are added in Task 14.
+	// For now, declare success after a successful sync.
+	s.res.Stages["backup"] = StageResult{Status: "skipped"}
+	s.res.Stages["erase"] = StageResult{Status: "skipped"}
+	s.res.Stages["program"] = StageResult{Status: "skipped"}
+	s.res.Stages["verify"] = StageResult{Status: "skipped"}
+	s.res.Stages["test"] = StageResult{Status: "skipped"}
+	s.res.Stages["rollback"] = StageResult{Status: "n/a"}
+	s.res.Outcome = OutcomeSuccess
+	return s.res, nil
 }
