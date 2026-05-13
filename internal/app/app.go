@@ -39,6 +39,9 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		return fmt.Errorf("bind rest: %w", err)
 	}
 	slog.Info("rest listening", "addr", listener.Addr().String())
+	if err := writeActualRestPort(paths.ServerInfoCachePath(), cfg.LabBridge.User, localPort); err != nil {
+		slog.Warn("failed to write actual rest port to cache", "err", err)
+	}
 
 	discovery.PostOpenSettle = time.Duration(cfg.Discovery.PostOpenSettleMs) * time.Millisecond
 
@@ -116,4 +119,18 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 	reg.Replace(nil)
 	slog.Info("shutdown complete")
 	return runErr
+}
+
+// writeActualRestPort updates the bootstrap cache with the port the local
+// REST listener actually bound to. Called once after api.Listen returns.
+// Silently no-ops if the cache is missing or anchored to a different user;
+// the panel falls back to its "service unreachable" empty state in that case.
+func writeActualRestPort(cachePath, user string, port int) error {
+	c, err := bootstrap.ReadCache(cachePath, user)
+	if err != nil {
+		// ErrCacheMissing or anchored-to-other-user: silently skip.
+		return nil
+	}
+	c.ActualRestPort = port
+	return bootstrap.WriteCache(cachePath, c)
 }
