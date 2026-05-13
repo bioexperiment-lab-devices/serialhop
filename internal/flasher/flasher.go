@@ -26,6 +26,13 @@ type Flasher interface {
 // Request is the input to Flash. Firmware is the parsed flash image (parsed
 // from Intel HEX by the API layer before invoking Flash). An empty TestCommand
 // means "skip the test phase".
+//
+// SkipBackup, when true, omits the pre-flash flash-memory backup. The device
+// is flashed without first reading its current image. The trade-off: ~8 s
+// faster on a 32 KB sketch, but any post-erase failure becomes
+// failed_no_recovery — there is no image to roll back to. Use only when the
+// caller does not need post-failure recovery (e.g. blank/new boards, or when
+// the operator already has a known-good image archived elsewhere).
 type Request struct {
 	Firmware         []byte
 	TestCommand      []byte
@@ -33,6 +40,7 @@ type Request struct {
 	Timeout          time.Duration
 	InterByte        time.Duration
 	PostOpenSettle   time.Duration
+	SkipBackup       bool
 }
 
 // Outcome is one of the six terminal states described in the spec.
@@ -171,46 +179,62 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		return s.res, nil
 	}
 
-	if !runBackup(s, c) {
-		logFlashSummary(s, port)
-		return s.res, nil
+	if req.SkipBackup {
+		s.res.Stages["backup"] = StageResult{Status: "skipped"}
+		slog.Info("flash_stage", "port", port, "stage", "backup", "status", "skipped")
+	} else {
+		if !runBackup(s, c) {
+			logFlashSummary(s, port)
+			return s.res, nil
+		}
+
+		hexText := RenderIntelHex(s.backupBytes)
+		s.res.BackupHex = hexText
+		info, saveErr := SaveBackup(f.backupDir, port, hexText)
+		if saveErr != nil {
+			st := s.res.Stages["backup"]
+			st.Status = "failed"
+			st.Error = "save: " + saveErr.Error()
+			s.res.Stages["backup"] = st
+			s.skipDownstream("erase", "program", "verify", "test", "rollback")
+			s.res.Outcome = OutcomeFailedBackup
+			logFlashSummary(s, port)
+			return s.res, nil
+		}
+		s.res.Backup = info
 	}
 
-	hexText := RenderIntelHex(s.backupBytes)
-	s.res.BackupHex = hexText
-	info, saveErr := SaveBackup(f.backupDir, port, hexText)
-	if saveErr != nil {
-		st := s.res.Stages["backup"]
-		st.Status = "failed"
-		st.Error = "save: " + saveErr.Error()
-		s.res.Stages["backup"] = st
-		s.skipDownstream("erase", "program", "verify", "test", "rollback")
-		s.res.Outcome = OutcomeFailedBackup
+	// handleStageFailure dispatches a failure into either rollback (if a
+	// backup is on hand) or directly into failed_no_recovery (if SkipBackup
+	// was requested and there is no backup to restore from).
+	handleStageFailure := func(stageName string) (*Result, error) {
+		if s.backupBytes == nil {
+			s.res.Stages["rollback"] = StageResult{Status: "skipped"}
+			s.res.Outcome = OutcomeFailedNoRecovery
+			s.res.RecoveryHint = fmt.Sprintf(
+				"%s failed and skip_backup was requested, so no rollback was attempted. "+
+					"The device may need ISP-level recovery (e.g. AVRISP mkII).",
+				stageName)
+			slog.Info("flash_stage", "port", port, "stage", "rollback", "status", "skipped")
+			logFlashSummary(s, port)
+			return s.res, nil
+		}
+		res, rollbackErr := runRollback(s, c, p)
 		logFlashSummary(s, port)
-		return s.res, nil
+		return res, rollbackErr
 	}
-	s.res.Backup = info
 
 	if !runErase(s, c) {
-		res, rollbackErr := runRollback(s, c, p)
-		logFlashSummary(s, port)
-		return res, rollbackErr
+		return handleStageFailure("erase")
 	}
 	if !runProgram(s, c) {
-		res, rollbackErr := runRollback(s, c, p)
-		logFlashSummary(s, port)
-		return res, rollbackErr
+		return handleStageFailure("program")
 	}
 	if !runVerify(s, c) {
-		res, rollbackErr := runRollback(s, c, p)
-		logFlashSummary(s, port)
-		return res, rollbackErr
+		return handleStageFailure("verify")
 	}
-
 	if !runTest(s, c, p) {
-		res, rollbackErr := runRollback(s, c, p)
-		logFlashSummary(s, port)
-		return res, rollbackErr
+		return handleStageFailure("test")
 	}
 
 	s.res.Stages["rollback"] = StageResult{Status: "n/a"}

@@ -117,7 +117,7 @@ The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from ou
 
 Discovered device types: `pump` (type code 10), `valve` (30), `densitometer` (70). See [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md) for full request/response shapes and behavior.
 
-**Remote firmware flashing.** With `flashing.enabled: true`, the operator can POST an Intel HEX firmware image to `POST /flash/{port}` and receive a complete stage-by-stage outcome including a pre-flash backup (saved on the lab machine *and* returned inline). On any post-backup failure, SerialHop attempts to roll back to the backup automatically. AVR / optiboot only (Arduino Uno R3). Off by default. See `docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md` for the full design.
+**Remote firmware flashing.** With `flashing.enabled: true`, the operator can POST an Intel HEX firmware image to `POST /flash/{port}` and receive a complete stage-by-stage outcome including a pre-flash backup (saved on the lab machine *and* returned inline). On any post-backup failure, SerialHop attempts to roll back to the backup automatically. Pass `skip_backup: true` in the request body to omit the backup phase (~8 s faster on a 32 KB sketch, but post-erase failures become unrecoverable — no rollback target). AVR / optiboot only (Arduino Uno R3). Off by default. See `docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md` for the full design.
 
 ## Log streaming to Loki
 

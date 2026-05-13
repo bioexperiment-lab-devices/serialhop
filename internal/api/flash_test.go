@@ -347,3 +347,83 @@ func TestFlash_200_FailedNoRecoveryShape(t *testing.T) {
 		}
 	}
 }
+
+func TestFlash_200_SkipBackup_PassesThrough(t *testing.T) {
+	stub := &stubFlasher{
+		res: &flasher.Result{
+			Outcome: flasher.OutcomeSuccess,
+			Port:    "COM3",
+			Stages: map[string]flasher.StageResult{
+				"preflight": {Status: "ok"},
+				"backup":    {Status: "skipped"},
+				"erase":     {Status: "ok"},
+				"program":   {Status: "ok"},
+				"verify":    {Status: "ok"},
+				"test":      {Status: "skipped"},
+				"rollback":  {Status: "n/a"},
+			},
+		},
+	}
+	s, _, op := newTestServerWithFlash(t, stub, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF","skip_backup":true}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !stub.last.Req.SkipBackup {
+		t.Errorf("SkipBackup did not reach the flasher: got %+v", stub.last.Req)
+	}
+	body2 := rr.Body.String()
+	for _, want := range []string{
+		`"outcome":"success"`,
+		`"scope":"skipped"`,
+		`"hex":""`,
+		`"saved_path":""`,
+		`"sha256":""`,
+		`"size_bytes":0`,
+	} {
+		if !strings.Contains(body2, want) {
+			t.Errorf("body missing %q\nbody: %s", want, body2)
+		}
+	}
+}
+
+func TestFlash_200_NoSkipBackup_ScopeIsFlashOnly(t *testing.T) {
+	stub := &stubFlasher{
+		res: &flasher.Result{
+			Outcome: flasher.OutcomeSuccess,
+			Port:    "COM3",
+			Stages: map[string]flasher.StageResult{
+				"preflight": {Status: "ok"},
+				"backup":    {Status: "ok"},
+				"erase":     {Status: "ok"},
+				"program":   {Status: "ok"},
+				"verify":    {Status: "ok"},
+				"test":      {Status: "skipped"},
+				"rollback":  {Status: "n/a"},
+			},
+			BackupHex: ":00000001FF\n",
+			Backup:    flasher.BackupInfo{Path: "/tmp/x.hex", SHA256: "abc", SizeBytes: 12},
+		},
+	}
+	s, _, op := newTestServerWithFlash(t, stub, true)
+	op.Add(labserial.NewFakePort("COM3"))
+	body := `{"firmware":":00000001FF"}`
+	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	if stub.last.Req.SkipBackup {
+		t.Errorf("SkipBackup should default to false when omitted")
+	}
+	if !strings.Contains(rr.Body.String(), `"scope":"flash_only"`) {
+		t.Errorf("body should carry scope:flash_only, got: %s", rr.Body.String())
+	}
+}
