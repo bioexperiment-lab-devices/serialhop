@@ -4,8 +4,11 @@ package panel
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"gopkg.in/yaml.v3"
@@ -86,9 +89,21 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 	return SaveResult{OK: true}
 }
 
-func (a *App) VerifyCredentials(_, _, _ string) CredsResult {
-	// Implemented in Task 11.
-	return CredsResult{Outcome: "ok"}
+// VerifyCredentials runs the verify-then-save state machine for the
+// CURRENT form vs the on-disk YAML. Returns a categorical outcome the
+// TS side maps to inline errors / confirm modals (spec §5.9).
+func (a *App) VerifyCredentials(newHost, newUser, newPass string) CredsResult {
+	old := a.LoadConfigFromDisk()
+	cv := NewCredVerifier(&liveCredVerifier{hc: &http.Client{Timeout: 10 * time.Second}})
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	dec, _ := cv.Decide(ctx, CredChange{
+		OldUser: old.LabBridge.User, OldPass: old.LabBridge.Pass,
+		NewHost: newHost, NewUser: newUser, NewPass: newPass,
+	})
+	return CredsResult{Outcome: dec.Outcome, Detail: dec.Detail}
 }
 
 func (a *App) OpenConfigInEditor() error {
@@ -173,4 +188,23 @@ func extractField(err error) string {
 		}
 	}
 	return ""
+}
+
+// liveCredVerifier adapts the existing verifyCredentials helper in
+// firstrun.go to the CredVerifier interface so CredVerify can drive it.
+type liveCredVerifier struct {
+	hc *http.Client
+}
+
+func (l *liveCredVerifier) Verify(ctx context.Context, host, user, pass string) (CredsCheckKind, error) {
+	base := ""
+	if host != "" {
+		base = "https://" + host
+	}
+	userAgent := "SerialHop/" + version.Base() + " (panel)"
+	res := verifyCredentials(ctx, l.hc, base, user, pass, userAgent)
+	if res.Detail != "" {
+		return res.Kind, errors.New(res.Detail)
+	}
+	return res.Kind, nil
 }

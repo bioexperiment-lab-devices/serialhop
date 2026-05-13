@@ -74,3 +74,23 @@ func TestLoadConfigFromDisk_ReturnsDefaultWhenMissing(t *testing.T) {
 		t.Errorf("expected default; got %+v", got)
 	}
 }
+
+func TestVerifyCredentials_UnchangedSkipsVerify(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.yaml")
+	t.Setenv("SERIALHOP_TEST_CONFIG_PATH", cfgPath)
+
+	app := newApp()
+	cfg := config.Default()
+	cfg.LabBridge.Host = "h.example"
+	cfg.LabBridge.User = "alice"
+	cfg.LabBridge.Pass = "pw"
+	if !app.SaveConfig(cfg).OK {
+		t.Fatalf("seed SaveConfig failed")
+	}
+
+	res := app.VerifyCredentials("h.example", "alice", "pw")
+	if res.Outcome != "skipped" {
+		t.Errorf("Outcome: got %q, want skipped", res.Outcome)
+	}
+}
