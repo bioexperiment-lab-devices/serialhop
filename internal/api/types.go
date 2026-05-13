@@ -63,6 +63,7 @@ type FlashRequest struct {
 	TimeoutMs        *int   `json:"timeout_ms,omitempty"`
 	InterByteMs      *int   `json:"inter_byte_ms,omitempty"`
 	PostOpenSettleMs *int   `json:"post_open_settle_ms,omitempty"`
+	SkipBackup       bool   `json:"skip_backup,omitempty"`
 }
 
 type StageDTO struct {

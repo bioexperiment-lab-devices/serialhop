@@ -346,3 +346,125 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+func TestFlash_SkipBackup_Success(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	prev := make([]byte, 128)
+	for i := range prev {
+		prev[i] = byte(i)
+	}
+	op.fake.PreloadFlash(prev)
+
+	dir := t.TempDir()
+	fl, _ := New(op, dir, 10, 0)
+	newImg := make([]byte, 128)
+	for i := range newImg {
+		newImg[i] = byte(255 - i)
+	}
+
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:   newImg,
+		Timeout:    500 * time.Millisecond,
+		InterByte:  10 * time.Millisecond,
+		SkipBackup: true,
+	})
+	if err != nil {
+		t.Fatalf("Flash: %v", err)
+	}
+	if res.Outcome != OutcomeSuccess {
+		t.Fatalf("Outcome: got %s, want success", res.Outcome)
+	}
+	if got := res.Stages["backup"].Status; got != "skipped" {
+		t.Errorf("backup stage: got %q, want skipped", got)
+	}
+	for _, name := range []string{"preflight", "erase", "program", "verify"} {
+		if got := res.Stages[name].Status; got != "ok" {
+			t.Errorf("stage %s: got %q, want ok", name, got)
+		}
+	}
+	if got := res.Stages["rollback"].Status; got != "n/a" {
+		t.Errorf("stage rollback: got %q, want n/a", got)
+	}
+	// New firmware must have been programmed even though backup was skipped.
+	img := op.fake.FlashImage()
+	for i := 0; i < 128; i++ {
+		if img[i] != newImg[i] {
+			t.Fatalf("flash[%d]: got %02X, want %02X", i, img[i], newImg[i])
+		}
+	}
+	if res.BackupHex != "" {
+		t.Errorf("BackupHex should be empty when SkipBackup, got %q", res.BackupHex)
+	}
+	if res.Backup.Path != "" {
+		t.Errorf("Backup.Path should be empty when SkipBackup, got %q", res.Backup.Path)
+	}
+	// No file should have been written to the backup dir.
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Errorf("backup dir should be empty when SkipBackup, got %d entries", len(entries))
+	}
+}
+
+func TestFlash_SkipBackup_VerifyFailureIsNoRecovery(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	op.fake.AckButDontPersistNextProgPage() // causes verify mismatch
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:   make([]byte, avr.PageSize),
+		Timeout:    500 * time.Millisecond,
+		InterByte:  10 * time.Millisecond,
+		SkipBackup: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeFailedNoRecovery {
+		t.Fatalf("Outcome: got %s, want failed_no_recovery", res.Outcome)
+	}
+	if got := res.Stages["backup"].Status; got != "skipped" {
+		t.Errorf("backup stage: got %q, want skipped", got)
+	}
+	if got := res.Stages["verify"].Status; got != "failed" {
+		t.Errorf("verify stage: got %q, want failed", got)
+	}
+	if got := res.Stages["rollback"].Status; got != "skipped" {
+		t.Errorf("rollback stage: got %q, want skipped (no backup to roll back to)", got)
+	}
+	if res.RecoveryHint == "" || !contains(res.RecoveryHint, "skip_backup") {
+		t.Errorf("RecoveryHint should mention skip_backup, got %q", res.RecoveryHint)
+	}
+}
+
+func TestFlash_SkipBackup_TestFailureIsNoRecovery(t *testing.T) {
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	op.fake.SetSketchResponse([]byte{0x99}) // wrong test response
+
+	fl, _ := New(op, t.TempDir(), 10, 0)
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:         make([]byte, avr.PageSize),
+		TestCommand:      []byte{0x10},
+		ExpectedResponse: []byte{0xAA},
+		Timeout:          200 * time.Millisecond,
+		InterByte:        20 * time.Millisecond,
+		SkipBackup:       true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Outcome != OutcomeFailedNoRecovery {
+		t.Fatalf("Outcome: got %s, want failed_no_recovery", res.Outcome)
+	}
+	if got := res.Stages["rollback"].Status; got != "skipped" {
+		t.Errorf("rollback stage: got %q, want skipped", got)
+	}
+	if res.TestResult == nil {
+		t.Fatal("TestResult nil")
+	}
+	if res.TestResult.Match {
+		t.Errorf("Match: got true, want false")
+	}
+	if res.RecoveryHint == "" || !contains(res.RecoveryHint, "skip_backup") {
+		t.Errorf("RecoveryHint should mention skip_backup, got %q", res.RecoveryHint)
+	}
+}

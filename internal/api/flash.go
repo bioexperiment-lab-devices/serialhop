@@ -146,6 +146,7 @@ func (s *Server) handlePostFlashPort(w http.ResponseWriter, r *http.Request) {
 		Timeout:          time.Duration(timeoutMs) * time.Millisecond,
 		InterByte:        time.Duration(interByteMs) * time.Millisecond,
 		PostOpenSettle:   time.Duration(settleMs) * time.Millisecond,
+		SkipBackup:       body.SkipBackup,
 	})
 	if err != nil {
 		if errors.Is(err, flasher.ErrBusy) {
@@ -190,12 +191,16 @@ func mapFlashResult(res *flasher.Result, port string) FlashResponse {
 		}
 		out.Stages[name] = dto
 	}
+	scope := "flash_only"
+	if backupStage, ok := res.Stages["backup"]; ok && backupStage.Status == "skipped" {
+		scope = "skipped"
+	}
 	out.Backup = BackupDTO{
 		Hex:       res.BackupHex,
 		SavedPath: res.Backup.Path,
 		SHA256:    res.Backup.SHA256,
 		SizeBytes: res.Backup.SizeBytes,
-		Scope:     "flash_only",
+		Scope:     scope,
 	}
 	if res.TestResult != nil {
 		out.TestResult = &TestResultDTO{
