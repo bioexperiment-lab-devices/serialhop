@@ -9,32 +9,24 @@ interface DeviceDTO {
   port: string;
 }
 
-interface DevicesResponse {
+interface DevicesResult {
   devices: DeviceDTO[];
   discovered_at: string | null;
+  status: { reachable: boolean; reason?: string };
 }
 
-type Status = { reachable: boolean; reason?: string };
-
 export function DevicesTab() {
-  const [resp, setResp] = useState<DevicesResponse>({ devices: [], discovered_at: null });
-  const [status, setStatus] = useState<Status>({ reachable: false });
+  const [resp, setResp] = useState<DevicesResult>({ devices: [], discovered_at: null, status: { reachable: false } });
   const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
     setBusy(true);
-    try {
-      const [r, s] = await GetDevices();
-      setResp(r); setStatus(s);
-    } finally { setBusy(false); }
+    try { setResp(await GetDevices()); } finally { setBusy(false); }
   };
 
   const rediscover = async () => {
     setBusy(true);
-    try {
-      const [r, s] = await Discover();
-      setResp(r); setStatus(s);
-    } finally { setBusy(false); }
+    try { setResp(await Discover()); } finally { setBusy(false); }
   };
 
   const disconnect = async () => {
@@ -45,7 +37,7 @@ export function DevicesTab() {
   useEffect(() => { refresh(); }, []);
 
   const empty = resp.devices.length === 0;
-  const banner = pickBanner(status, empty, "devices");
+  const banner = pickBanner(resp.status, empty, "devices");
 
   return (
     <div className="devices-tab">
@@ -53,8 +45,8 @@ export function DevicesTab() {
         <span>{resp.discovered_at ? `Discovered at ${fmtTime(resp.discovered_at)}` : "Never run"}</span>
       </div>
       <div className="actions">
-        <Button onClick={rediscover} disabled={busy || !status.reachable}>Rediscover</Button>
-        <Button onClick={disconnect} disabled={busy || !status.reachable || empty}>Disconnect all</Button>
+        <Button onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
+        <Button onClick={disconnect} disabled={busy || !resp.status.reachable || empty}>Disconnect all</Button>
         <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
       </div>
       {banner && <div className="empty-banner">{banner}</div>}
@@ -75,7 +67,7 @@ function fmtTime(iso: string): string {
   return d.toLocaleTimeString();
 }
 
-function pickBanner(status: Status, empty: boolean, tab: "devices" | "ports"): string | null {
+function pickBanner(status: { reachable: boolean; reason?: string }, empty: boolean, tab: "devices" | "ports"): string | null {
   if (!status.reachable && status.reason === "service_down") {
     return "Service is not running. Start it from the Status tab.";
   }

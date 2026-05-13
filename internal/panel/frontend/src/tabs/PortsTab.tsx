@@ -14,20 +14,18 @@ interface DetailedPortDTO {
   device_id?: string;
 }
 
-interface DetailedPortsResponse {
+interface PortsResult {
   ports: DetailedPortDTO[];
+  status: { reachable: boolean; reason?: string };
 }
 
-type Status = { reachable: boolean; reason?: string };
-
 export function PortsTab() {
-  const [resp, setResp] = useState<DetailedPortsResponse>({ ports: [] });
-  const [status, setStatus] = useState<Status>({ reachable: false });
+  const [resp, setResp] = useState<PortsResult>({ ports: [], status: { reachable: false } });
   const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
     setBusy(true);
-    try { const [r, s] = await GetPorts(); setResp(r); setStatus(s); } finally { setBusy(false); }
+    try { setResp(await GetPorts()); } finally { setBusy(false); }
   };
   const rediscover = async () => {
     setBusy(true);
@@ -36,8 +34,8 @@ export function PortsTab() {
 
   useEffect(() => { refresh(); }, []);
 
-  const banner = !status.reachable
-    ? (status.reason === "service_down"
+  const banner = !resp.status.reachable
+    ? (resp.status.reason === "service_down"
         ? "Service is not running. Start it from the Status tab."
         : "Can't reach the local service. It may have just started — wait a few seconds and click Refresh.")
     : resp.ports.length === 0 ? "No serial ports detected on this machine." : null;
@@ -46,7 +44,7 @@ export function PortsTab() {
     <div className="ports-tab">
       <div className="actions">
         <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
-        <Button onClick={rediscover} disabled={busy || !status.reachable}>Rediscover</Button>
+        <Button onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
       </div>
       {banner && <div className="empty-banner">{banner}</div>}
       <table className="ports-table">

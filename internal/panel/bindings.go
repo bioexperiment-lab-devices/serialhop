@@ -52,6 +52,25 @@ type ServiceTabStatusDTO struct {
 	Reason    string `json:"reason,omitempty"` // "service_down" | "unreachable" | ""
 }
 
+// DevicesResult is GetDevices/Discover's combined return — the response
+// fields plus the panel-internal reachability status. Wails v2 only
+// exposes the first return value of a multi-return Go function to JS;
+// embedding both into a single struct keeps the contract explicit.
+type DevicesResult struct {
+	api.DevicesResponse
+	Status ServiceTabStatusDTO `json:"status"`
+}
+
+type DisconnectResult struct {
+	api.DisconnectResponse
+	Status ServiceTabStatusDTO `json:"status"`
+}
+
+type PortsResult struct {
+	api.DetailedPortsResponse
+	Status ServiceTabStatusDTO `json:"status"`
+}
+
 // --- Bindings ---
 
 func (a *App) GetVersion() string { return version.Base() }
@@ -208,17 +227,17 @@ func toTabStatus(s ServiceCliStatus) ServiceTabStatusDTO {
 	return ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
 }
 
-func (a *App) GetDevices(ctx context.Context) (api.DevicesResponse, ServiceTabStatusDTO) {
+func (a *App) GetDevices(ctx context.Context) DevicesResult {
 	resp, st, _ := a.svc.GetDevices(ctx)
-	return resp, toTabStatus(st)
+	return DevicesResult{DevicesResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) Discover(ctx context.Context) (api.DevicesResponse, ServiceTabStatusDTO) {
+func (a *App) Discover(ctx context.Context) DevicesResult {
 	resp, st, _ := a.svc.Discover(ctx)
-	return resp, toTabStatus(st)
+	return DevicesResult{DevicesResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) DisconnectAll(ctx context.Context) (api.DisconnectResponse, ServiceTabStatusDTO) {
+func (a *App) DisconnectAll(ctx context.Context) DisconnectResult {
 	resp, st, _ := a.svc.DisconnectAll(ctx)
 	if st == StatusOK {
 		a.emitEvent("footer:set", map[string]interface{}{
@@ -226,12 +245,12 @@ func (a *App) DisconnectAll(ctx context.Context) (api.DisconnectResponse, Servic
 			"text": fmt.Sprintf("Disconnected %d device(s).", resp.Released),
 		})
 	}
-	return resp, toTabStatus(st)
+	return DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) GetPorts(ctx context.Context) (api.DetailedPortsResponse, ServiceTabStatusDTO) {
+func (a *App) GetPorts(ctx context.Context) PortsResult {
 	resp, st, _ := a.svc.GetPorts(ctx)
-	return resp, toTabStatus(st)
+	return PortsResult{DetailedPortsResponse: resp, Status: toTabStatus(st)}
 }
 
 func (a *App) StartLogStream(id string) {
