@@ -166,7 +166,18 @@ func (a *App) runAdmin(action, successMsg string) AdminResult {
 	return AdminResult{OK: true}
 }
 
-func (a *App) TriggerProbe(_ string) {} // Implemented in Task 16.
+func (a *App) TriggerProbe(which string) {
+	switch which {
+	case "server":
+		a.lamps.setServer(netLamp{kind: lampChecking})
+		a.emitServerLamp()
+		trySend(a.serverTrigger)
+	case "tunnel":
+		a.lamps.setTunnel(netLamp{kind: lampChecking})
+		a.emitTunnelLamp()
+		trySend(a.tunnelTrigger)
+	}
+}
 
 func (a *App) CheckForUpdate() { go runUpdateCheckEvent(a) }
 
