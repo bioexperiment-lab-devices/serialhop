@@ -38,6 +38,9 @@ type FileTail struct {
 // newline). onRotate is called once per detected rotation. Both callbacks
 // are invoked from FileTail's own goroutine — they must not block; route
 // work onto a different channel if needed.
+//
+// Callers that never call Run must call Close to release the pre-opened
+// file descriptor.
 func NewFileTail(path string, pollEvery time.Duration, onLine func(string), onRotate func()) *FileTail {
 	ft := &FileTail{path: path, pollEvery: pollEvery, onLine: onLine, onRotate: onRotate}
 	// Eagerly open so seeks happen before any concurrent writes can race
@@ -53,6 +56,18 @@ func NewFileTail(path string, pollEvery time.Duration, onLine func(string), onRo
 		}
 	}
 	return ft
+}
+
+// Close releases the file handle held by the constructor if Run was never
+// called. Safe to call multiple times. Calling Close after Run has started
+// is a no-op (Run owns the handle from that point on).
+func (t *FileTail) Close() error {
+	if t.initFile != nil {
+		err := t.initFile.Close()
+		t.initFile = nil
+		return err
+	}
+	return nil
 }
 
 // Run blocks until ctx is cancelled, polling the file at pollEvery and
@@ -149,23 +164,24 @@ func (t *FileTail) drain(f *os.File, reader *bufio.Reader, stat *os.FileInfo) {
 	}
 	for {
 		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			n := len(line)
-			if n > 0 && line[n-1] == '\n' {
-				line = line[:n-1]
-				n--
-			}
-			if n > 0 && line[n-1] == '\r' {
-				line = line[:n-1]
-			}
-			t.onLine(line)
-		}
 		if err == io.EOF {
+			// remember the size we caught up to
 			*stat = curStat
 			break
 		}
 		if err != nil {
+			// partial read on transient error — discard; next tick re-reads
 			break
 		}
+		// err == nil → complete line ending in \n
+		n := len(line)
+		if n > 0 && line[n-1] == '\n' {
+			line = line[:n-1]
+			n--
+		}
+		if n > 0 && line[n-1] == '\r' {
+			line = line[:n-1]
+		}
+		t.onLine(line)
 	}
 }
