@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.12.0...v0.13.0) (2026-05-13)
+
+
+### Features
+
+* **api:** add skip_backup option to POST /flash/{port} ([#66](https://github.com/bioexperiment-lab-devices/serialhop/issues/66)) ([9ec9162](https://github.com/bioexperiment-lab-devices/serialhop/commit/9ec9162e580554b321d64bf00a1515c5196102dd))
+
 ## [0.12.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.11.0...v0.12.0) (2026-05-12)
 
 
