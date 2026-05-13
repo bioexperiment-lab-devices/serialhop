@@ -1,0 +1,14 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "SerialHop",
+  "outputfilename": "SerialHop",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./internal/panel/frontend/src/wails",
+  "frontend:dir": "./internal/panel/frontend",
+  "author": {
+    "name": "Bioexperiment Lab Devices"
+  }
+}
