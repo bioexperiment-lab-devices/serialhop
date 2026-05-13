@@ -31,6 +31,7 @@ type App struct {
 	updateCh *updateCtl
 	hc       *http.Client
 	logTail  *logTailController
+	svc      *ServiceCli
 }
 
 func newApp() *App {
@@ -43,6 +44,7 @@ func newApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	cfg, _ := config.LoadPartial(paths.ConfigPath())
+	a.svc = NewServiceCli(paths.ServerInfoCachePath(), cfg.LabBridge.User)
 	if cfg.AutoUpdate.Enabled {
 		go func() {
 			time.Sleep(500 * time.Millisecond)

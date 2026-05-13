@@ -185,17 +185,42 @@ func (a *App) CancelDownload() {
 
 func (a *App) InstallUpdate() AdminResult { return ctlInstallEvent(a) }
 
-func (a *App) GetDevices(_ context.Context) (api.DevicesResponse, ServiceTabStatusDTO) {
-	return api.DevicesResponse{}, ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
+// toTabStatus translates ServiceCli's three-way reachability outcome
+// into the TS-facing DTO consumed by the Devices and Ports tabs.
+func toTabStatus(s ServiceCliStatus) ServiceTabStatusDTO {
+	switch s {
+	case StatusOK:
+		return ServiceTabStatusDTO{Reachable: true}
+	case StatusServiceDown:
+		return ServiceTabStatusDTO{Reachable: false, Reason: "service_down"}
+	}
+	return ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
 }
-func (a *App) Discover(_ context.Context) (api.DevicesResponse, ServiceTabStatusDTO) {
-	return api.DevicesResponse{}, ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
+
+func (a *App) GetDevices(ctx context.Context) (api.DevicesResponse, ServiceTabStatusDTO) {
+	resp, st, _ := a.svc.GetDevices(ctx)
+	return resp, toTabStatus(st)
 }
-func (a *App) DisconnectAll(_ context.Context) (api.DisconnectResponse, ServiceTabStatusDTO) {
-	return api.DisconnectResponse{}, ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
+
+func (a *App) Discover(ctx context.Context) (api.DevicesResponse, ServiceTabStatusDTO) {
+	resp, st, _ := a.svc.Discover(ctx)
+	return resp, toTabStatus(st)
 }
-func (a *App) GetPorts(_ context.Context) (api.DetailedPortsResponse, ServiceTabStatusDTO) {
-	return api.DetailedPortsResponse{}, ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
+
+func (a *App) DisconnectAll(ctx context.Context) (api.DisconnectResponse, ServiceTabStatusDTO) {
+	resp, st, _ := a.svc.DisconnectAll(ctx)
+	if st == StatusOK {
+		a.emitEvent("footer:set", map[string]interface{}{
+			"kind": "ok",
+			"text": fmt.Sprintf("Disconnected %d device(s).", resp.Released),
+		})
+	}
+	return resp, toTabStatus(st)
+}
+
+func (a *App) GetPorts(ctx context.Context) (api.DetailedPortsResponse, ServiceTabStatusDTO) {
+	resp, st, _ := a.svc.GetPorts(ctx)
+	return resp, toTabStatus(st)
 }
 
 func (a *App) StartLogStream(id string) {
