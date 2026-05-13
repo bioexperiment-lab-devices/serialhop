@@ -46,6 +46,27 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/panel/frontend/package-lock.json
+
+      - name: install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: install frontend deps
+        run: npm ci
+        working-directory: internal/panel/frontend
+
+      - name: frontend build (typecheck + bundle)
+        run: npm run build
+        working-directory: internal/panel/frontend
+
+      - name: frontend tests
+        run: npm test
+        working-directory: internal/panel/frontend
+
       - name: gofmt
         run: |
           out=$(gofmt -l .)
@@ -71,10 +92,9 @@ jobs:
 
       - name: cross-compile windows binary
         run: |
-          GOOS=windows GOARCH=amd64 go build \
-            -trimpath \
-            -ldflags="-H windowsgui -X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'" \
-            -o /tmp/SerialHop.exe ./cmd/serialhop
+          wails build -platform windows/amd64 -s -trimpath \
+            -ldflags="-X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'"
+          cp build/bin/SerialHop.exe /tmp/SerialHop.exe
 
       - name: upload artifact
         uses: actions/upload-artifact@v7

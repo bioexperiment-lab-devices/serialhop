@@ -1,6 +1,6 @@
 // buildcmd is the cross-platform driver for `task build`. It reads
 // assets/version.json for the base version, runs `git describe` for the
-// suffix, and execs `go build` with the resulting `-ldflags -X` injection.
+// suffix, and execs `wails build` with the resulting `-ldflags -X` injection.
 //
 // This exists as a Go program rather than an inline shell pipeline because
 // Task's embedded sh interpreter has Windows-specific quoting quirks that
@@ -32,6 +32,7 @@ func main() {
 	out := flag.String("o", "dist/SerialHop.exe", "output binary path")
 	goos := flag.String("goos", os.Getenv("GOOS"), "GOOS for the build")
 	goarch := flag.String("goarch", os.Getenv("GOARCH"), "GOARCH for the build")
+	skipFrontend := flag.Bool("s", false, "skip frontend build (frontend already built)")
 	flag.Parse()
 
 	raw, err := os.ReadFile("assets/version.json")
@@ -65,25 +66,46 @@ func main() {
 	}
 	version := vf.StringFileInfo.FileVersion + "+" + suffix
 
-	if dir := filepath.Dir(*out); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			fail("mkdir %s: %v", dir, err)
-		}
+	// Determine the wails output path and final destination.
+	// wails build always places the binary under build/bin/<name>[.exe].
+	// We rename it to the caller-specified -o path after a successful build.
+	platform := *goos + "/" + *goarch
+	ext := ""
+	if *goos == "windows" {
+		ext = ".exe"
+	}
+	wailsBin := filepath.Join("build", "bin", "SerialHop"+ext)
+
+	// wails build does not use -H windowsgui — it manages the subsystem flag
+	// internally via its own linker flags for Windows GUI targets.
+	ldflags := fmt.Sprintf("-X %s.Version=%s", versionPkg, version)
+	args := []string{"build", "-platform", platform, "-trimpath", "-ldflags=" + ldflags}
+	if *skipFrontend {
+		args = append(args, "-s")
 	}
 
-	ldflags := fmt.Sprintf("-H windowsgui -X %s.Version=%s", versionPkg, version)
-	args := []string{"build", "-trimpath", "-ldflags=" + ldflags, "-o", *out, "./cmd/serialhop"}
-
-	cmd := exec.Command("go", args...) //nolint:gosec // args derived from build inputs (version.json, git describe, caller flags); this is a build-tool subprocess, not user-input handling
+	cmd := exec.Command("wails", args...) //nolint:gosec // args derived from build inputs (version.json, git describe, caller flags); this is a build-tool subprocess, not user-input handling
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "GOOS="+*goos, "GOARCH="+*goarch)
+	// wails reads GOOS/GOARCH from -platform, not from env; keep env clean.
+	cmd.Env = os.Environ()
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			os.Exit(ee.ExitCode())
 		}
-		fail("go build: %v", err)
+		fail("wails build: %v", err)
+	}
+
+	// Move the wails output to the expected destination path.
+	destDir := filepath.Dir(*out)
+	if destDir != "" && destDir != "." {
+		if err := os.MkdirAll(destDir, 0o750); err != nil {
+			fail("mkdir %s: %v", destDir, err)
+		}
+	}
+	if err := os.Rename(wailsBin, *out); err != nil {
+		fail("rename %s → %s: %v", wailsBin, *out, err)
 	}
 }
 
