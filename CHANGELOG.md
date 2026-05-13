@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.11.0...v0.12.0) (2026-05-12)
+
+
+### Features
+
+* **api:** remote firmware flashing ([#63](https://github.com/bioexperiment-lab-devices/serialhop/issues/63)) ([509c6ac](https://github.com/bioexperiment-lab-devices/serialhop/commit/509c6acc721d77b25cc66d16cabfa5b3684ccb36))
+
 ## [0.11.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.10.0...v0.11.0) (2026-05-12)
 
 
