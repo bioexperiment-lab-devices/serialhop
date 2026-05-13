@@ -113,7 +113,9 @@ func (a *App) OpenConfigInEditor() error {
 	return OpenWithDefaultApp(resolveConfigPath())
 }
 
-func (a *App) OpenLogsFolder() error { return nil } // Implemented in Task 14.
+func (a *App) OpenLogsFolder() error {
+	return OpenWithDefaultApp(paths.LogsDir())
+}
 
 func (a *App) OpenReleaseNotes() error {
 	a.updateCh.mu.Lock()
@@ -196,8 +198,19 @@ func (a *App) GetPorts(_ context.Context) (api.DetailedPortsResponse, ServiceTab
 	return api.DetailedPortsResponse{}, ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
 }
 
-func (a *App) StartLogStream(_ string) {} // Implemented in Task 14.
-func (a *App) StopLogStream()          {} // Implemented in Task 14.
+func (a *App) StartLogStream(id string) {
+	if a.logTail == nil {
+		a.logTail = &logTailController{}
+	}
+	a.logTail.start(id, a.emitEvent)
+}
+
+func (a *App) StopLogStream() {
+	if a.logTail == nil {
+		return
+	}
+	a.logTail.stop()
+}
 
 // --- Helpers ---
 

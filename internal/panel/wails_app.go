@@ -30,6 +30,7 @@ type App struct {
 	ctx      context.Context
 	updateCh *updateCtl
 	hc       *http.Client
+	logTail  *logTailController
 }
 
 func newApp() *App {
@@ -65,7 +66,9 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 }
 
 func (a *App) shutdown(_ context.Context) {
-	// Wiring added by later tasks.
+	if a.logTail != nil {
+		a.logTail.stop()
+	}
 }
 
 // Run is the panel-mode entry point invoked from cmd/serialhop/main.go.
