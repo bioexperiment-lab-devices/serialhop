@@ -48,8 +48,10 @@ type updateCtl struct {
 	dlCancel context.CancelFunc
 }
 
-// Run opens the control-panel window and blocks until the user closes it.
-func Run() error {
+// walkRun opens the control-panel window and blocks until the user closes it.
+//
+//nolint:unused // kept temporarily during Wails migration; deleted in cleanup task
+func walkRun() error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
