@@ -31,7 +31,7 @@ export function ConfigTab({ onDirtyChange }: Props) {
   const [loaded, setLoaded] = useState<ConfigDTO | null>(null);
   const [form, setForm] = useState<ConfigDTO | null>(null);
   const [errors, setErrors] = useState<FieldErrorDTO[]>([]);
-  const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{ detail: string; alsoRestart: boolean } | null>(null);
 
   useEffect(() => {
     LoadConfigFromDisk().then((cfg: ConfigDTO) => { setLoaded(clone(cfg)); setForm(clone(cfg)); });
@@ -58,7 +58,7 @@ export function ConfigTab({ onDirtyChange }: Props) {
       return;
     }
     if (verify.outcome === "needs_confirm") {
-      setPendingConfirm(verify.detail || "");
+      setPendingConfirm({ detail: verify.detail || "", alsoRestart });
       return;
     }
     await doSave(alsoRestart);
@@ -180,13 +180,13 @@ export function ConfigTab({ onDirtyChange }: Props) {
           actions={
             <>
               <Button variant="ghost" onClick={() => setPendingConfirm(null)}>Cancel</Button>
-              <Button variant="primary" onClick={async () => { setPendingConfirm(null); await doSave(false); }}>
+              <Button variant="primary" onClick={async () => { const r = pendingConfirm.alsoRestart; setPendingConfirm(null); await doSave(r); }}>
                 Save anyway
               </Button>
             </>
           }
         >
-          <p>Couldn&apos;t reach the server to verify the credentials ({pendingConfirm}). Save anyway?</p>
+          <p>Couldn&apos;t reach the server to verify the credentials ({pendingConfirm.detail}). Save anyway?</p>
         </Modal>
       )}
     </div>

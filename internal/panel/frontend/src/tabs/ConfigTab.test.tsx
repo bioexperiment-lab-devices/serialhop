@@ -51,4 +51,16 @@ describe("ConfigTab", () => {
     await waitFor(() => screen.getByText(/rejected these credentials/));
     expect(App.SaveConfig).not.toHaveBeenCalled();
   });
+
+  it("preserves alsoRestart through the needs-confirm modal", async () => {
+    (App.VerifyCredentials as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ outcome: "needs_confirm", detail: "no route to host" });
+    render(<ConfigTab onDirtyChange={() => {}} />);
+    await waitFor(() => screen.getByDisplayValue("alice"));
+    fireEvent.change(screen.getByDisplayValue("alice"), { target: { value: "bob" } });
+    fireEvent.click(screen.getByText("Save & restart"));
+    await waitFor(() => screen.getByRole("button", { name: "Save anyway" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+    await waitFor(() => expect(App.SaveConfig).toHaveBeenCalled());
+    await waitFor(() => expect(App.RestartService).toHaveBeenCalled());
+  });
 });
