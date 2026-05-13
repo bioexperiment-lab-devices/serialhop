@@ -4,9 +4,15 @@ package panel
 
 import (
 	"context"
+	"os"
+	"strings"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"gopkg.in/yaml.v3"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 )
 
@@ -45,18 +51,39 @@ type ServiceTabStatusDTO struct {
 func (a *App) GetVersion() string { return version.Base() }
 
 func (a *App) LoadConfigFromDisk() config.Config {
-	// Implemented in Task 10.
-	return config.Default()
+	p := resolveConfigPath()
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		return config.Default()
+	}
+	c, err := config.Load(p)
+	if err != nil {
+		a.emitWarn("Config file unreadable: " + err.Error())
+		return config.Default()
+	}
+	return c
 }
 
-func (a *App) ValidateConfig(_ config.Config) []FieldError {
-	// Implemented in Task 10.
+func (a *App) ValidateConfig(cfg config.Config) []FieldError {
+	if err := config.Validate(&cfg); err != nil {
+		return []FieldError{{Field: extractField(err), Detail: err.Error()}}
+	}
 	return nil
 }
 
-func (a *App) SaveConfig(_ config.Config) SaveResult {
-	// Implemented in Task 10.
-	return SaveResult{OK: false}
+func (a *App) SaveConfig(cfg config.Config) SaveResult {
+	if errs := a.ValidateConfig(cfg); len(errs) > 0 {
+		return SaveResult{OK: false, FieldErrors: errs}
+	}
+	p := resolveConfigPath()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
+	}
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
+	}
+	a.emitEvent("config:saved", nil)
+	return SaveResult{OK: true}
 }
 
 func (a *App) VerifyCredentials(_, _, _ string) CredsResult {
@@ -64,10 +91,22 @@ func (a *App) VerifyCredentials(_, _, _ string) CredsResult {
 	return CredsResult{Outcome: "ok"}
 }
 
-func (a *App) OpenConfigInEditor() error { return nil } // Implemented in Task 10.
-func (a *App) OpenLogsFolder() error     { return nil } // Implemented in Task 14.
-func (a *App) OpenReleaseNotes() error   { return nil } // Implemented in Task 13.
-func (a *App) PickBackupDir() string     { return "" }  // Implemented in Task 10.
+func (a *App) OpenConfigInEditor() error {
+	return OpenWithDefaultApp(resolveConfigPath())
+}
+
+func (a *App) OpenLogsFolder() error   { return nil } // Implemented in Task 14.
+func (a *App) OpenReleaseNotes() error { return nil } // Implemented in Task 13.
+
+func (a *App) PickBackupDir() string {
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choose firmware backup directory",
+	})
+	if err != nil {
+		return ""
+	}
+	return dir
+}
 
 func (a *App) InstallService() AdminResult   { return AdminResult{} } // Implemented in Task 12.
 func (a *App) UninstallService() AdminResult { return AdminResult{} } // Implemented in Task 12.
@@ -96,3 +135,42 @@ func (a *App) GetPorts(_ context.Context) (api.DetailedPortsResponse, ServiceTab
 
 func (a *App) StartLogStream(_ string) {} // Implemented in Task 14.
 func (a *App) StopLogStream()          {} // Implemented in Task 14.
+
+// --- Helpers ---
+
+// resolveConfigPath returns paths.ConfigPath() unless the test hook is
+// set (SERIALHOP_TEST_CONFIG_PATH). Used to make config bindings
+// unit-testable without touching ProgramData.
+func resolveConfigPath() string {
+	if p := os.Getenv("SERIALHOP_TEST_CONFIG_PATH"); p != "" {
+		return p
+	}
+	return paths.ConfigPath()
+}
+
+// extractField pulls a dot-path out of a config.Validate error when one is
+// present. config.Validate returns errors like "lab_bridge.host must be
+// non-empty"; the first space-delimited token is the field path if it
+// contains a dot and no spaces itself. Falls back to empty string (which
+// the UI maps to a global banner).
+func extractField(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Try colon-separated format first ("lab_bridge.host: required").
+	if idx := strings.Index(msg, ":"); idx > 0 {
+		candidate := msg[:idx]
+		if !strings.ContainsAny(candidate, " ") {
+			return candidate
+		}
+	}
+	// Fall back to space-separated format ("lab_bridge.host must be ...").
+	if idx := strings.IndexByte(msg, ' '); idx > 0 {
+		candidate := msg[:idx]
+		if strings.ContainsRune(candidate, '.') {
+			return candidate
+		}
+	}
+	return ""
+}
