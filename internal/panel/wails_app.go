@@ -6,12 +6,16 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 )
 
@@ -23,15 +27,41 @@ var assets embed.FS
 // The struct itself holds the long-lived collaborators (probe
 // goroutines, log tailer, service-cli) initialized in startup.
 type App struct {
-	ctx context.Context
-	// Long-lived collaborators wired in startup() by later tasks.
+	ctx      context.Context
+	updateCh *updateCtl
+	hc       *http.Client
 }
 
-func newApp() *App { return &App{} }
+func newApp() *App {
+	return &App{
+		updateCh: &updateCtl{},
+		hc:       &http.Client{}, // no global timeout; per-request ctx applied in the update helpers
+	}
+}
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	// Wiring added by later tasks.
+	cfg, _ := config.LoadPartial(paths.ConfigPath())
+	if cfg.AutoUpdate.Enabled {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			runUpdateCheckEvent(a)
+		}()
+		go a.updateRecheckLoop(ctx)
+	}
+}
+
+func (a *App) updateRecheckLoop(ctx context.Context) {
+	t := time.NewTicker(6 * time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			runUpdateCheckEvent(a)
+		}
+	}
 }
 
 func (a *App) shutdown(_ context.Context) {
