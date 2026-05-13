@@ -123,9 +123,34 @@ func (a *App) PickBackupDir() string {
 	return dir
 }
 
-func (a *App) InstallService() AdminResult   { return AdminResult{} } // Implemented in Task 12.
-func (a *App) UninstallService() AdminResult { return AdminResult{} } // Implemented in Task 12.
-func (a *App) RestartService() AdminResult   { return AdminResult{} } // Implemented in Task 12.
+func (a *App) InstallService() AdminResult   { return a.runAdmin("install", "Service installed") }
+func (a *App) UninstallService() AdminResult { return a.runAdmin("uninstall", "Service uninstalled") }
+func (a *App) RestartService() AdminResult   { return a.runAdmin("restart", "Service restarted") }
+
+// runAdmin is the shared body for the three service-control bindings.
+// Emits footer events (work / err / ok) around the UAC subprocess; the
+// AdminResult fields (OK / Cancelled / ErrorMessage) drive whatever
+// post-action behavior the SPA needs (e.g., reloading device tables).
+func (a *App) runAdmin(action, successMsg string) AdminResult {
+	a.emitEvent("footer:set", map[string]string{"kind": "work", "text": "Working…"})
+	errMsg, err := RunElevatedAdminAction(action)
+	switch {
+	case errors.Is(err, ErrUserCancelled):
+		a.emitEvent("footer:set", map[string]string{"kind": "info", "text": "Cancelled."})
+		return AdminResult{Cancelled: true}
+	case err != nil:
+		a.emitEvent("footer:set", map[string]interface{}{"kind": "err", "text": "Failed: " + err.Error()})
+		return AdminResult{ErrorMessage: err.Error()}
+	case errMsg != "":
+		a.emitEvent("footer:set", map[string]interface{}{"kind": "err", "text": "Failed: " + errMsg})
+		return AdminResult{ErrorMessage: errMsg}
+	}
+	a.emitEvent("footer:set", map[string]interface{}{
+		"kind": "ok",
+		"text": successMsg + " at " + time.Now().Format("15:04:05"),
+	})
+	return AdminResult{OK: true}
+}
 
 func (a *App) TriggerProbe(_ string) {} // Implemented in Task 16.
 func (a *App) CheckForUpdate()       {} // Implemented in Task 13.
