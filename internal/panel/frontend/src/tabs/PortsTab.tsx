@@ -41,40 +41,48 @@ export function PortsTab() {
     : resp.ports.length === 0 ? "No serial ports detected on this machine." : null;
 
   return (
-    <div className="ports-tab">
-      <div className="actions">
+    <>
+      <div className="shp-btn-row" style={{ marginBottom: 12 }}>
         <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
         <Button onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
       </div>
-      {banner && <div className="empty-banner">{banner}</div>}
-      <table className="ports-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>USB</th>
-            <th>VID <Help title="VID" what="USB vendor ID in hexadecimal." /></th>
-            <th>PID <Help title="PID" what="USB product ID in hexadecimal." /></th>
-            <th>Serial <Help title="Serial number" what="USB serial string if the device reports one." /></th>
-            <th>Product <Help title="Product" what="USB product descriptor string." /></th>
-            <th>Discovered <Help title="Discovered" what="True if discovery matched a SerialHop device on this port." /></th>
-            <th>Device ID <Help title="Device ID" what="The logical device ID this port was bound to during the last discovery." /></th>
-          </tr>
-        </thead>
-        <tbody>
-          {[...resp.ports].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-            <tr key={p.name}>
-              <td>{p.name}</td>
-              <td>{p.is_usb ? "✓" : ""}</td>
-              <td>{p.vid}</td>
-              <td>{p.pid}</td>
-              <td>{p.serial_number}</td>
-              <td>{p.product}</td>
-              <td>{p.discovered ? "✓" : ""}</td>
-              <td>{p.device_id || ""}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+      {banner && (
+        <div className="shp-empty">
+          <div className="shp-empty__body">{banner}</div>
+        </div>
+      )}
+      {!banner && (
+        <div className="shp-table-wrap">
+          <table className="shp-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>USB</th>
+                <th>VID <Help title="VID" what="USB vendor ID in hexadecimal." /></th>
+                <th>PID <Help title="PID" what="USB product ID in hexadecimal." /></th>
+                <th>Serial <Help title="Serial number" what="USB serial string if the device reports one." /></th>
+                <th>Product <Help title="Product" what="USB product descriptor string." /></th>
+                <th>Discovered <Help title="Discovered" what="True if discovery matched a SerialHop device on this port." /></th>
+                <th>Device ID <Help title="Device ID" what="The logical device ID this port was bound to during the last discovery." /></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...resp.ports].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                <tr key={p.name}>
+                  <td>{p.name}</td>
+                  <td>{p.is_usb ? <span className="shp-check">✓</span> : <span className="shp-dim">—</span>}</td>
+                  <td>{p.vid}</td>
+                  <td>{p.pid}</td>
+                  <td>{p.serial_number}</td>
+                  <td>{p.product}</td>
+                  <td>{p.discovered ? <span className="shp-check">✓</span> : <span className="shp-dim">—</span>}</td>
+                  <td>{p.device_id || <span className="shp-dim">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
