@@ -90,7 +90,23 @@ export function LogsTab() {
         </label>
         <label className="shp-toggle" data-on={follow}>
           <span className="shp-toggle__sw" />
-          <input type="checkbox" style={{ display: "none" }} checked={follow} onChange={e => setFollow(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={follow}
+            onChange={e => setFollow(e.target.checked)}
+            style={{
+              position: "absolute",
+              opacity: 0,
+              width: 1,
+              height: 1,
+              margin: -1,
+              padding: 0,
+              overflow: "hidden",
+              clip: "rect(0,0,0,0)",
+              whiteSpace: "nowrap",
+              border: 0,
+            }}
+          />
           Follow
         </label>
         <input className="shp-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
