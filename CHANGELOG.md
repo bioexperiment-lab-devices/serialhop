@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.1...v0.18.2) (2026-05-14)
+
+
+### Bug Fixes
+
+* **flasher:** align STK500v1 flow with optiboot reality ([#102](https://github.com/bioexperiment-lab-devices/serialhop/issues/102)) ([193957d](https://github.com/bioexperiment-lab-devices/serialhop/commit/193957d5ac5cb579f6587c5a765e64bb92cba9a1))
+
 ## [0.18.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.0...v0.18.1) (2026-05-14)
 
 
