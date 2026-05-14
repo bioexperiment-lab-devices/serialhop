@@ -20,13 +20,43 @@ interface PortsResult {
   status: { reachable: boolean; reason?: string };
 }
 
+// JS-side timeout wrapper. Wails binding promises can stall forever if
+// the bridge mis-delivers a response; that previously rendered as the
+// stuck "Can't reach the local service" empty-state because the initial
+// React state has reachable=false. With this wrapper, a stuck call
+// surfaces as an actionable banner instead of looking like normal
+// unreachability.
+const BINDING_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms);
+    p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
+
 export function PortsTab() {
+  // `loaded` distinguishes initial state from "first call returned
+  // saying unreachable". The original code rendered the same "Can't
+  // reach" banner in both situations, which is exactly what made it
+  // impossible to tell whether the binding had even been called.
   const [resp, setResp] = useState<PortsResult>({ ports: [], status: { reachable: false } });
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
 
   const refresh = async () => {
     setBusy(true);
-    try { setResp(await GetPorts()); } finally { setBusy(false); }
+    setCallError(null);
+    try {
+      const r = await withTimeout(GetPorts(), BINDING_TIMEOUT_MS, "GetPorts");
+      setResp(r);
+    } catch (e) {
+      setCallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      setLoaded(true);
+    }
   };
   const rediscover = async () => {
     setBusy(true);
@@ -35,11 +65,15 @@ export function PortsTab() {
 
   useEffect(() => { refresh(); }, []);
 
-  const banner = !resp.status.reachable
-    ? (resp.status.reason === "service_down"
-        ? "Service is not running. Start it from the Status tab."
-        : "Can't reach the local service. It may have just started — wait a few seconds and click Refresh.")
-    : resp.ports.length === 0 ? "No serial ports detected on this machine." : null;
+  const banner = callError
+    ? `Binding error: ${callError}. Show diagnostics below for details.`
+    : !loaded
+        ? "Loading…"
+        : !resp.status.reachable
+            ? (resp.status.reason === "service_down"
+                ? "Service is not running. Start it from the Status tab."
+                : "Can't reach the local service. It may have just started — wait a few seconds and click Refresh.")
+            : resp.ports.length === 0 ? "No serial ports detected on this machine." : null;
 
   return (
     <>

@@ -4,6 +4,7 @@ package panel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -293,6 +294,17 @@ type DiagnosticsDTO struct {
 	ConfigPath              string `json:"config_path"`
 	DataDir                 string `json:"data_dir"`
 	PanelErrorLogPath       string `json:"panel_error_log_path"`
+
+	// HTTP-probe result — the panel actually makes a GET /serial/ports/detailed
+	// against the resolved local port using the same ServiceCli path the
+	// Devices/Ports tabs use. Reports per-phase outcome so we can tell
+	// "cache OK but loopback dead" from "cache OK and HTTP works but the
+	// JS layer is dropping the result." This is the part `BaseURLStatus`
+	// alone can't reveal — `BaseURLStatus` only checks the cache.
+	HTTPProbeStatus   string `json:"http_probe_status"`          // "ok" | "service_down" | "unreachable" | "skipped"
+	HTTPProbeError    string `json:"http_probe_error,omitempty"` // raw error from Do/decode if any
+	HTTPProbeDurMs    int64  `json:"http_probe_duration_ms"`     // wall-clock duration
+	HTTPProbePortsLen int    `json:"http_probe_ports_len"`       // number of ports in the response on success
 }
 
 // Diagnostics returns a snapshot of every input that gates the
@@ -332,6 +344,44 @@ func (a *App) Diagnostics() DiagnosticsDTO {
 		}
 	} else {
 		d.BaseURLStatus = "no_servicecli"
+	}
+	// HTTP probe: directly call /serial/ports/detailed at the resolved
+	// loopback URL so the diagnostics snapshot captures the actual
+	// transport-layer error (which ServiceCli.do swallows when it maps
+	// every transport failure to StatusServiceDown). This is the piece
+	// `BaseURLStatus` can't reveal — `BaseURLStatus` only checks the
+	// cache. If the cache resolves a port but the panel still renders
+	// "Can't reach", the HTTP error here will say why (refused, timeout,
+	// IPv6 vs IPv4 mismatch, AV/firewall blocking loopback, ...).
+	if d.BaseURLResolved == "" {
+		d.HTTPProbeStatus = "skipped"
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, "GET", d.BaseURLResolved+"/serial/ports/detailed", nil)
+		hc := &http.Client{Timeout: 6 * time.Second}
+		t0 := time.Now()
+		resp, err := hc.Do(req)
+		d.HTTPProbeDurMs = time.Since(t0).Milliseconds()
+		switch {
+		case err != nil:
+			d.HTTPProbeStatus = "service_down"
+			d.HTTPProbeError = err.Error()
+		case resp.StatusCode != 200:
+			d.HTTPProbeStatus = "service_down"
+			d.HTTPProbeError = fmt.Sprintf("status=%d", resp.StatusCode)
+			_ = resp.Body.Close()
+		default:
+			var body api.DetailedPortsResponse
+			if derr := json.NewDecoder(resp.Body).Decode(&body); derr != nil {
+				d.HTTPProbeStatus = "service_down"
+				d.HTTPProbeError = "decode: " + derr.Error()
+			} else {
+				d.HTTPProbeStatus = "ok"
+				d.HTTPProbePortsLen = len(body.Ports)
+			}
+			_ = resp.Body.Close()
+		}
 	}
 	return d
 }
