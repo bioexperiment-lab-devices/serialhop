@@ -107,8 +107,14 @@ jobs:
         # internal/panel/frontend/src/wails/ (see README there); Wails'
         # bindings regen needs a project layout we don't match and isn't
         # required for the resulting binary.
+        #
+        # -devtools: enables AreDevToolsEnabled=true in the WebView2
+        # settings. Without this, F12 / right-click Inspect have no
+        # effect AND the WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS env var's
+        # --remote-debugging-port flag is silently ignored — the smoke
+        # test's CDP capture depends on it.
         run: |
-          wails build -platform windows/amd64 -s -skipbindings -trimpath \
+          wails build -platform windows/amd64 -s -skipbindings -devtools -trimpath \
             -ldflags="-X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'"
           cp build/bin/SerialHop.exe /tmp/SerialHop.exe
 

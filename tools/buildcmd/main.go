@@ -85,8 +85,14 @@ func main() {
 	// `packageApplicationForWindows` would produce a second .syso in the same
 	// directory as main.go, causing `too many .rsrc sections` at link time.
 	// Skip Wails packaging; ours is already in place.
+	//
+	// -devtools: enables AreDevToolsEnabled=true on the WebView2 settings so
+	// operators can F12 / right-click Inspect when something breaks. Without
+	// this the WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS env var's
+	// --remote-debugging-port flag is also silently ignored, which makes
+	// remote diagnosis (CI smoke + ad-hoc CDP attach) impossible.
 	ldflags := fmt.Sprintf("-X %s.Version=%s", versionPkg, version)
-	args := []string{"build", "-platform", platform, "-nopackage", "-trimpath", "-ldflags=" + ldflags}
+	args := []string{"build", "-platform", platform, "-nopackage", "-devtools", "-trimpath", "-ldflags=" + ldflags}
 	if *skipFrontend {
 		args = append(args, "-s")
 	}
