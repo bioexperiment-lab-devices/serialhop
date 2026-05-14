@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.4...v0.15.0) (2026-05-14)
+
+
+### Features
+
+* **panel:** responsive layout with 720px collapse breakpoint ([#83](https://github.com/bioexperiment-lab-devices/serialhop/issues/83)) ([235e27f](https://github.com/bioexperiment-lab-devices/serialhop/commit/235e27fca0d3783df73b485837a503983b4582be))
+* **panel:** vite dev preview with wails-shim for macOS ([#85](https://github.com/bioexperiment-lab-devices/serialhop/issues/85)) ([f657b49](https://github.com/bioexperiment-lab-devices/serialhop/commit/f657b49d0d4d9e9adb5a20452c277c17ad91702a))
+
+
+### Bug Fixes
+
+* **panel:** help popover hover + portal + viewport clamp ([#84](https://github.com/bioexperiment-lab-devices/serialhop/issues/84)) ([83b829e](https://github.com/bioexperiment-lab-devices/serialhop/commit/83b829ec26b90854427ab22b2d4de9eb8d5168ec))
+* **panel:** reconcile tab class names to design tokens ([#82](https://github.com/bioexperiment-lab-devices/serialhop/issues/82)) ([0163199](https://github.com/bioexperiment-lab-devices/serialhop/commit/0163199ef14b5e97f65ebd4a28705e85812f2028))
+* **panel:** remove faux window frame and fluid sizing ([#81](https://github.com/bioexperiment-lab-devices/serialhop/issues/81)) ([daebac1](https://github.com/bioexperiment-lab-devices/serialhop/commit/daebac1e6f8c69a66f3ae0aee9dd45b27aa2f6f3))
+
 ## [0.14.4](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.3...v0.14.4) (2026-05-14)
 
 
