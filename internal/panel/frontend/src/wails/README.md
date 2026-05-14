@@ -15,6 +15,7 @@ missing import from `./wails/...`, update the matching stub.
 
 Why committed instead of generated in CI?
 
-Wails v2's `generate module` requires a `package main` at the project root.
-Our cmd/serialhop/main.go is nested. A shadow-main file at the root just
-for bindings generation introduces more complexity than committing stubs.
+`wails build` regenerates bindings on production builds, but PR CI runs
+`tsc --noEmit` BEFORE `wails build` to fail fast on TS errors. The PR
+cross-compile passes `-skipbindings` to keep CI fast and reuse the
+committed shapes.

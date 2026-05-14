@@ -5,7 +5,7 @@ vars:
   GOARCH: '{{.GOARCH | default "amd64"}}'
   OUTPUT_DIR: dist
   BINARY_NAME: 'SerialHop{{if eq .GOOS "windows"}}.exe{{end}}'
-  RESOURCE_FILE: cmd/serialhop/resource_windows.syso
+  RESOURCE_FILE: resource_windows.syso
 
 tasks:
   manifest:

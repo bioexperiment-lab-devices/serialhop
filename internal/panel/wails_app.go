@@ -195,7 +195,7 @@ func (a *App) scmPollLoop(ctx context.Context) {
 	}
 }
 
-// Run is the panel-mode entry point invoked from cmd/serialhop/main.go.
+// Run is the panel-mode entry point invoked from main.go.
 // Replaces the walk-based panel from panel.go (kept as walkRun for now).
 func Run() error {
 	app := newApp()

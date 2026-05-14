@@ -91,11 +91,10 @@ jobs:
         uses: golang/govulncheck-action@v1
 
       - name: cross-compile windows binary
-        # -skipbindings: Wails would otherwise compile a temp bindings binary
-        # via `go build` from the repo root, which fails because our
-        # package main lives under cmd/serialhop/ instead. The TS shims are
-        # committed under internal/panel/frontend/src/wails/ — see the
-        # README there for the rationale.
+        # -skipbindings: the TS shims are committed under
+        # internal/panel/frontend/src/wails/ (see README there); Wails'
+        # bindings regen needs a project layout we don't match and isn't
+        # required for the resulting binary.
         run: |
           wails build -platform windows/amd64 -s -skipbindings -trimpath \
             -ldflags="-X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'"
