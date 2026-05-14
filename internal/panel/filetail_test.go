@@ -46,7 +46,7 @@ func TestFileTail_StartsFromEndOfFile(t *testing.T) {
 	tailer := NewFileTail(p, 10*time.Millisecond, s.line, s.rotate)
 	go tailer.Run(ctx)
 
-	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // p is t.TempDir() + literal filename
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
