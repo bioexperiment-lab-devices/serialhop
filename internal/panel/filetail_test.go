@@ -88,9 +88,15 @@ func TestFileTail_DetectsRotationOnInodeReset(t *testing.T) {
 	// Wait for the tailer to attach.
 	time.Sleep(50 * time.Millisecond)
 
-	// Simulate lumberjack rotation: remove file, create new shorter one.
-	if err := os.Remove(p); err != nil {
-		t.Fatalf("remove: %v", err)
+	// Simulate lumberjack rotation. Lumberjack renames the live file to
+	// a timestamped name and creates a fresh file at the same path —
+	// it does NOT os.Remove the live file, because Windows refuses to
+	// delete a file held open by another process (and the production
+	// tailer keeps the handle open). Match the real-world rotation
+	// shape so this test runs on both unix and Windows CI runners.
+	rotated := p + ".1"
+	if err := os.Rename(p, rotated); err != nil {
+		t.Fatalf("rename: %v", err)
 	}
 	if err := os.WriteFile(p, []byte("post-rotation\n"), 0o600); err != nil {
 		t.Fatalf("rewrite: %v", err)
