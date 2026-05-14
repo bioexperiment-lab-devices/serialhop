@@ -19,6 +19,7 @@ const (
 	stkProgPage      byte = 0x64
 	stkReadPage      byte = 0x74
 	stkChipErase     byte = 0x52
+	stkEnterProgMode byte = 0x50
 	stkLeaveProgMode byte = 0x51
 
 	stkCrcEop byte = 0x20
@@ -54,10 +55,12 @@ type FakeOptiboot struct {
 	failChipErase       bool
 	failChipEraseAfterN int // -1 disabled; >=0 fail after this many successes
 	failNextProgPage    bool
+	failProgPageAfterN  int // -1 disabled; >=0 fail after this many successes
 	failNextReadPage    bool
 
 	dtrSeq  []bool
 	baudSeq []int
+	dtrLow  bool // tracks DTR line state for low→high reset detection
 
 	sketch      sketchMode
 	sketchArmed bool
@@ -71,6 +74,7 @@ func NewFakeOptiboot() *FakeOptiboot {
 		txSignal:            make(chan struct{}, 1),
 		readTimeout:         100 * time.Millisecond,
 		failChipEraseAfterN: -1, // disabled
+		failProgPageAfterN:  -1, // disabled
 	}
 	for i := range f.flash {
 		f.flash[i] = 0xFF
@@ -121,6 +125,16 @@ func (f *FakeOptiboot) FailNextProgPage() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failNextProgPage = true
+}
+
+// FailProgPageAfterN lets the first n STK_PROG_PAGE calls succeed, then makes
+// the (n+1)-th respond NOSYNC. Used to inject failures into rollback's
+// page-write loop without affecting the primary flash. n=0 is equivalent to
+// FailNextProgPage.
+func (f *FakeOptiboot) FailProgPageAfterN(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failProgPageAfterN = n
 }
 
 // FailNextReadPage makes the next STK_READ_PAGE respond NOSYNC.
@@ -177,6 +191,10 @@ func (f *FakeOptiboot) SetReadTimeout(d time.Duration) error {
 	return nil
 }
 
+// SetDTR mirrors the real-device behaviour: a low→high transition pulses
+// RESET. After the transition the chip "boots" back into the bootloader, so
+// any sketch-mode armed by a prior LeaveProgMode is disarmed and any pending
+// RX/TX bytes are dropped.
 func (f *FakeOptiboot) SetDTR(level bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -184,6 +202,15 @@ func (f *FakeOptiboot) SetDTR(level bool) error {
 		return labserial.ErrClosed
 	}
 	f.dtrSeq = append(f.dtrSeq, level)
+	if !level {
+		f.dtrLow = true
+	} else if f.dtrLow {
+		f.dtrLow = false
+		f.sketchArmed = false
+		f.rx = nil
+		f.tx = nil
+		f.wordAddr = 0
+	}
 	return nil
 }
 
@@ -194,11 +221,6 @@ func (f *FakeOptiboot) SetBaudRate(rate int) error {
 		return labserial.ErrClosed
 	}
 	f.baudSeq = append(f.baudSeq, rate)
-	// If baud changes back to BootloaderBaud after sketch mode was armed,
-	// disarm sketch mode so STK commands work again for rollback.
-	if f.sketchArmed && rate == avr.BootloaderBaud {
-		f.sketchArmed = false
-	}
 	return nil
 }
 
@@ -361,6 +383,13 @@ func (f *FakeOptiboot) dispatch(cmd []byte) []byte {
 			f.failNextProgPage = false
 			return []byte{stkNoSync}
 		}
+		if f.failProgPageAfterN == 0 {
+			f.failProgPageAfterN = -1
+			return []byte{stkNoSync}
+		}
+		if f.failProgPageAfterN > 0 {
+			f.failProgPageAfterN--
+		}
 		if len(body) < 3 {
 			return []byte{stkNoSync}
 		}
@@ -416,6 +445,10 @@ func (f *FakeOptiboot) dispatch(cmd []byte) []byte {
 		for i := range f.flash {
 			f.flash[i] = 0xFF
 		}
+		return []byte{stkInSync, stkOK}
+
+	case stkEnterProgMode:
+		// Optiboot accepts ENTER_PROGMODE as a no-op that replies INSYNC+OK.
 		return []byte{stkInSync, stkOK}
 
 	case stkLeaveProgMode:

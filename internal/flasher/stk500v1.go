@@ -16,6 +16,7 @@ const (
 	stkProgPage      byte = 0x64
 	stkReadPage      byte = 0x74
 	stkChipErase     byte = 0x52
+	stkEnterProgMode byte = 0x50
 	stkLeaveProgMode byte = 0x51
 
 	stkCrcEop byte = 0x20
@@ -39,24 +40,36 @@ func newSTKClient(p serial.Port) *stkClient { return &stkClient{p: p} }
 
 // Sync waits for the bootloader to reply to STK_GET_SYNC within the total
 // budget. Retries up to bootloaderSyncRetries with a fixed gap between attempts.
+//
+// Per the bogdan-firmware doc: the first sync byte after a DTR-pulse reset can
+// be eaten while optiboot is starting up, and partial replies (one byte
+// arriving before the other) leave residual bytes that misalign every
+// subsequent attempt. So we drain the RX buffer before each attempt and
+// accumulate up to two reply bytes within the per-attempt budget.
 func (c *stkClient) Sync(totalBudget time.Duration) error {
 	per := totalBudget / time.Duration(bootloaderSyncRetries)
 	if per <= 0 {
 		per = 100 * time.Millisecond
 	}
 	for i := 0; i < bootloaderSyncRetries; i++ {
+		_ = c.p.Drain(10 * time.Millisecond)
 		if err := c.p.SetReadTimeout(per); err != nil {
 			return fmt.Errorf("sync: set read timeout: %w", err)
 		}
 		if _, err := c.p.Write([]byte{stkGetSync, stkCrcEop}); err != nil {
 			return fmt.Errorf("sync: write: %w", err)
 		}
+		out := make([]byte, 0, 2)
 		buf := make([]byte, 2)
-		n, err := c.p.Read(buf)
-		if err != nil {
-			return fmt.Errorf("sync: read: %w", err)
+		deadline := time.Now().Add(per)
+		for len(out) < 2 && time.Now().Before(deadline) {
+			n, err := c.p.Read(buf[:2-len(out)])
+			if err != nil {
+				return fmt.Errorf("sync: read: %w", err)
+			}
+			out = append(out, buf[:n]...)
 		}
-		if n == 2 && buf[0] == stkInSync && buf[1] == stkOK {
+		if len(out) == 2 && out[0] == stkInSync && out[1] == stkOK {
 			return nil
 		}
 		time.Sleep(syncAttemptGap)
@@ -194,8 +207,25 @@ func (c *stkClient) GetSignOn(timeout time.Duration) (string, error) {
 	}
 }
 
-// ChipErase clears the entire flash to 0xFF. Optiboot auto-erases per page on
-// ProgPage, but we still send the explicit erase to fail-fast on a wedged chip.
+// EnterProgMode sends STK_ENTER_PROGMODE. Optiboot accepts it as a no-op that
+// replies INSYNC+OK, but the STK500v1 spec (and bogdan-firmware's reference
+// flow §11.3) requires it once after sync, before any LoadAddress / ProgPage /
+// ReadPage. Skipping it works against optiboot 8.x but is non-spec.
+func (c *stkClient) EnterProgMode(timeout time.Duration) error {
+	if err := c.p.SetReadTimeout(timeout); err != nil {
+		return fmt.Errorf("enter_progmode: set read timeout: %w", err)
+	}
+	if _, err := c.p.Write([]byte{stkEnterProgMode, stkCrcEop}); err != nil {
+		return fmt.Errorf("enter_progmode: write: %w", err)
+	}
+	return c.expectInSyncOK(timeout, "enter_progmode")
+}
+
+// ChipErase sends STK_CHIP_ERASE. Optiboot 512 B does NOT implement chip erase
+// — avrdude requires the `-D` flag (skip chip erase) for this bootloader, and
+// per-page erase happens implicitly during ProgPage. The opcode is kept here
+// because the STK client is reusable, but production flash flow does not call
+// it. See bogdan-firmware/docs/firmware-backup-and-flash.md §8.
 func (c *stkClient) ChipErase(timeout time.Duration) error {
 	if err := c.p.SetReadTimeout(timeout); err != nil {
 		return fmt.Errorf("chip_erase: set read timeout: %w", err)

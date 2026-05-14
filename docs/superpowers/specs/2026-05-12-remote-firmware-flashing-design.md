@@ -242,11 +242,11 @@ preflight     backup    (erase→reprogram(backup)→readback)
 | preflight | ~10–50 ms |
 | bootloader sync + boot delay | ~50 ms (best case) — ~1.5 s on a sluggish board |
 | backup | ~8 s |
-| erase | ~50–100 ms |
+| erase | 0 ms (no-op on optiboot — see §5.5) |
 | program | ~8 s |
 | verify | ~3 s |
 | test | 0 (skipped) or ~0.05–5 s |
-| rollback (if triggered) | ~11 s (erase + reprogram + readback) |
+| rollback (if triggered) | ~11 s (reprogram + readback; +~150 ms for DTR-pulse re-entry when triggered after `test`) |
 | **worst-case total** | ~36 s |
 
 Comfortably within the existing `http.Server.WriteTimeout = 90 s`; no server-timeout tuning required.
@@ -278,14 +278,22 @@ The port handle remains open from this point through stages 2–5 (backup, erase
 
 ### 5.3 Rollback details
 
-Triggered by failure in `erase`, `program`, `verify`, or `test`. Uses the in-memory backup image read during stage 2. Mechanics:
+Triggered by failure in `program`, `verify`, or `test`. (`erase` is a no-op stage on optiboot — see §5.5 — so it cannot trigger rollback.) Uses the in-memory backup image read during stage 2. Mechanics:
 
-1. `STK_CHIP_ERASE`. On failure → `failed_no_recovery`.
-2. Page-write the backup image. On per-page failure → `failed_no_recovery`.
+1. **If triggered after `test`:** the bootloader has exited and the user firmware is running at `TargetBaud`. Switch baud back to `BootloaderBaud`, pulse DTR low→high, sleep 50 ms, re-sync, re-`STK_ENTER_PROGMODE`. For `program` / `verify` triggers the bootloader is still alive in the existing session — skip this re-entry.
+2. Page-write the backup image. On per-page failure → `failed_no_recovery`. (No `STK_CHIP_ERASE` — optiboot's per-page erase happens implicitly during `STK_PROG_PAGE`; see §5.5.)
 3. Page-read flash, `bytes.Equal` against backup image. On mismatch → `failed_no_recovery`.
 4. Otherwise → `rolled_back_verify_failed` or `rolled_back_test_failed` based on which stage triggered rollback.
 
 We do not re-run `test_command` against the rolled-back device. The test was the contract for the new firmware; the backup's behaviour is taken as previously-known.
+
+### 5.5 Why `erase` is a no-op stage
+
+Optiboot 512 B (the variant shipped with `arduino:avr` 1.8.7) does **not** implement chip erase — `avrdude` requires its `-D` flag (skip chip erase) for this bootloader. Per-page erase happens implicitly inside `STK_PROG_PAGE` as each page is written. Sending `STK_CHIP_ERASE` would either be ignored (lenient optiboot variants reply INSYNC+OK) or fail outright (stricter variants), so the production flow never sends it.
+
+The `erase` stage is retained in the response shape for stability; it always reports `{"status": "ok", "duration_ms": 0}` once preflight + bootloader entry succeed.
+
+Reference: `bogdan-firmware/docs/firmware-backup-and-flash.md` §3 ("Critical: Optiboot can't access EEPROM" — same per-page-erase mechanic applies to flash) and §8 (the `-D` requirement).
 
 ### 5.4 Backup file lifecycle
 

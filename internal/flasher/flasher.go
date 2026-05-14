@@ -178,6 +178,16 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 		logFlashSummary(s, port)
 		return s.res, nil
 	}
+	// STK500v1 requires ENTER_PROGMODE before any LoadAddress / ProgPage /
+	// ReadPage. Optiboot replies INSYNC+OK as a no-op, but skipping it is
+	// non-spec — see bogdan-firmware/docs/firmware-backup-and-flash.md §11.3.
+	if err := c.EnterProgMode(req.Timeout); err != nil {
+		s.res.Stages["backup"] = StageResult{Status: "failed", Error: "enter_progmode: " + err.Error()}
+		s.skipDownstream("erase", "program", "verify", "test", "rollback")
+		s.res.Outcome = OutcomeFailedBackup
+		logFlashSummary(s, port)
+		return s.res, nil
+	}
 
 	if req.SkipBackup {
 		s.res.Stages["backup"] = StageResult{Status: "skipped"}

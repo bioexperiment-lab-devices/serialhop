@@ -91,16 +91,14 @@ func runBackup(s *runState, c *stkClient) bool {
 	return true
 }
 
-// runErase issues STK_CHIP_ERASE. On failure transitions into rollback.
+// runErase is a no-op on optiboot. The 512 B optiboot bootloader does not
+// implement chip erase (avrdude requires `-D` for this reason); flash pages
+// are erased implicitly by ProgPage as they are written. The stage is
+// retained in the public state machine to keep the response shape stable —
+// see bogdan-firmware/docs/firmware-backup-and-flash.md §3 and §8.
 func runErase(s *runState, c *stkClient) bool {
-	start := time.Now()
-	if err := c.ChipErase(s.req.Timeout); err != nil {
-		s.recordStage("erase", "failed", err.Error(), time.Since(start))
-		slog.Info("flash_stage", "port", s.port, "stage", "erase", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
-		return false
-	}
-	s.recordStage("erase", "ok", "", time.Since(start))
-	slog.Info("flash_stage", "port", s.port, "stage", "erase", "status", "ok", "duration_ms", time.Since(start).Milliseconds())
+	s.recordStage("erase", "ok", "", 0)
+	slog.Info("flash_stage", "port", s.port, "stage", "erase", "status", "ok", "duration_ms", 0)
 	return true
 }
 
@@ -197,13 +195,31 @@ func runRollback(s *runState, c *stkClient, p labserial.Port) (*Result, error) {
 		}
 	}
 
-	// If the test phase ran (and left the port at TargetBaud), switch back to
-	// BootloaderBaud so STK commands are routed correctly again.
-	_ = p.SetBaudRate(avr.BootloaderBaud)
-
-	if err := c.ChipErase(s.req.Timeout); err != nil {
-		return rollbackFailed(s, st, start, "chip_erase: "+err.Error())
+	// If the test phase ran, the bootloader has exited and the user firmware
+	// is running at TargetBaud. STK commands sent now would be eaten by the
+	// sketch. To recover, pulse DTR to reset the chip back into the bootloader,
+	// re-sync, and re-enter programming mode. For verify/program/erase
+	// triggers, the bootloader is still alive (no LeaveProgMode was sent), so
+	// just continue with the existing session — no DTR pulse needed.
+	if trigger == "test" {
+		if err := p.SetBaudRate(avr.BootloaderBaud); err != nil {
+			return rollbackFailed(s, st, start, "set_baud: "+err.Error())
+		}
+		_ = p.SetDTR(false)
+		time.Sleep(50 * time.Millisecond)
+		_ = p.SetDTR(true)
+		time.Sleep(50 * time.Millisecond)
+		if err := c.Sync(bootloaderSyncRetries * syncAttemptGap); err != nil {
+			return rollbackFailed(s, st, start, "sync: "+err.Error())
+		}
+		if err := c.EnterProgMode(s.req.Timeout); err != nil {
+			return rollbackFailed(s, st, start, "enter_progmode: "+err.Error())
+		}
 	}
+
+	// No chip-erase: optiboot does per-page erase during ProgPage; sending
+	// STK_CHIP_ERASE here would either be a no-op or fail outright depending
+	// on the optiboot variant. See firmware-backup-and-flash.md §3 + §8.
 	prog := s.backupBytes
 	for off := 0; off < len(prog); off += avr.PageSize {
 		end := off + avr.PageSize
