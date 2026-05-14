@@ -49,6 +49,12 @@ export const runtime = {
   EventsEmit(name: string, ...data: any[]) {
     emit(name, ...data);
   },
+  WindowMinimise() {
+    console.info("[preview] WindowMinimise (no-op in browser preview)");
+  },
+  Quit() {
+    console.info("[preview] Quit (no-op in browser preview)");
+  },
 };
 
 export function emit(name: string, ...data: any[]): void {
