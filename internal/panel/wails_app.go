@@ -211,6 +211,10 @@ func Run() error {
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		Bind:       []interface{}{app},
+		// EnableDefaultContextMenu turns on the WebView2 right-click menu in
+		// production. Operators get cut+copy+paste; we get a fighting chance
+		// at diagnostics — `Inspect` is included, which opens DevTools.
+		EnableDefaultContextMenu: true,
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
