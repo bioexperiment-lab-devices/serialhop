@@ -943,7 +943,7 @@ body {
 
 /* ===== Modal overlays for dialogs (for Config screens) ===== */
 .shp-modal-scrim {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(26,25,22,0.32);
   backdrop-filter: blur(0.5px);
