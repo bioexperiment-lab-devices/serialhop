@@ -51,22 +51,24 @@ export function DevicesTab() {
           <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
         </div>
       </div>
-      {banner && (
+      {!resp.status.reachable && banner ? (
         <div className="shp-empty">
           <div className="shp-empty__body">{banner}</div>
         </div>
-      )}
-      {!banner && (
-        <div className="shp-table-wrap">
-          <table className="shp-table">
-            <thead><tr><th>ID</th><th>Type</th><th>Port</th></tr></thead>
-            <tbody>
-              {[...resp.devices].sort((a, b) => a.id.localeCompare(b.id)).map(d => (
-                <tr key={d.id}><td>{d.id}</td><td>{d.type}</td><td>{d.port}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      ) : (
+        <>
+          {banner && <div className="shp-toolbar__banner" style={{ marginBottom: 8 }}>{banner}</div>}
+          <div className="shp-table-wrap">
+            <table className="shp-table">
+              <thead><tr><th>ID</th><th>Type</th><th>Port</th></tr></thead>
+              <tbody>
+                {[...resp.devices].sort((a, b) => a.id.localeCompare(b.id)).map(d => (
+                  <tr key={d.id}><td>{d.id}</td><td>{d.type}</td><td>{d.port}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </>
   );
