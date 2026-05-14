@@ -19,7 +19,6 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/app"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
-	"github.com/bioexperiment-lab-devices/serialhop/internal/panel"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	internalversion "github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
@@ -76,7 +75,7 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		if err := panel.Run(); err != nil {
+		if err := runPanel(); err != nil {
 			writePanelStartupError(err)
 			fmt.Fprintln(os.Stderr, "fatal:", err)
 			os.Exit(1)

@@ -42,7 +42,14 @@ type App struct {
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
 }
 
-func newApp() *App {
+// NewApp constructs a fully-initialised App. Exported so the panel-mode
+// entry point in package main can construct it and embed it in a
+// main-package binding wrapper (Wails namespaces bindings by Go package
+// path, so the struct that actually gets bound needs to live in main
+// for the SPA to find it at window.go.main.App).
+func NewApp() *App { return newAppInternal() }
+
+func newAppInternal() *App {
 	return &App{
 		updateCh: &updateCtl{},
 		hc:       &http.Client{}, // no global timeout; per-request ctx applied in the update helpers
@@ -105,48 +112,11 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 	}
 }
 
-// onDomReady runs once the WebView has parsed the HTML. We use it to:
-//  1. Write a marker line to the wails log so we know the DOM was reached.
-//  2. Inject diagnostic JS that writes runtime state / errors into
-//     document.title — readable from outside the process via Win32
-//     GetWindowText. This works even when window.go.main.App isn't
-//     populated (the very condition we're trying to diagnose), unlike
-//     a binding callback.
+// onDomReady runs once the WebView has parsed the HTML. We log a marker
+// to the wails log so anyone debugging "panel never shows anything" can
+// confirm the page was reached.
 func (a *App) onDomReady(ctx context.Context) {
-	wailsruntime.LogPrint(ctx, "[panel] DOM ready (calling ExecJS)")
-	// Diagnostic: paint the body magenta and, after 3s, inject a visible
-	// snapshot of the runtime state right into the document. The text
-	// will appear in the smoke-test screenshot.
-	wailsruntime.WindowExecJS(ctx, `
-(function(){
-  document.body.style.background = 'magenta';
-  setTimeout(function(){
-    var root = document.getElementById('root');
-    var rootChildren = root ? root.childElementCount : 'NO-ROOT';
-    var rootInner = root ? root.innerHTML.length : '?';
-    var bodyInner = document.body ? document.body.innerHTML.length : '?';
-    var hasGo = (typeof window.go);
-    var hasRt = (typeof window.runtime);
-    var hasWb = (typeof window.wailsbindings);
-    var scripts = Array.prototype.map.call(
-      document.querySelectorAll('script[src]'),
-      function(s){ return s.getAttribute('src'); }
-    ).join('\n');
-    var diag = document.createElement('pre');
-    diag.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:cyan;color:black;font:14px/1.4 monospace;padding:20px;overflow:auto;margin:0;white-space:pre-wrap;';
-    diag.textContent =
-      'go=' + hasGo + '\n' +
-      'runtime=' + hasRt + '\n' +
-      'wailsbindings=' + hasWb + '\n' +
-      'root.childElementCount=' + rootChildren + '\n' +
-      'root.innerHTML.length=' + rootInner + '\n' +
-      'body.innerHTML.length=' + bodyInner + '\n' +
-      'scripts:\n' + scripts;
-    document.body.appendChild(diag);
-  }, 3000);
-})();
-`)
-	wailsruntime.LogPrint(ctx, "[panel] injected diagnostic")
+	wailsruntime.LogPrint(ctx, "[panel] DOM ready")
 	wailsruntime.WindowExecJS(ctx, `
 (function () {
   function setTitle(s) {
@@ -277,10 +247,12 @@ func (a *App) scmPollLoop(ctx context.Context) {
 	}
 }
 
-// Run is the panel-mode entry point invoked from main.go.
-// Replaces the walk-based panel from panel.go (kept as walkRun for now).
-func Run() error {
-	app := newApp()
+// RunWithBindings is the panel-mode entry. The caller (typically the
+// package-main wrapper in main_panel_windows.go) passes a Bind list
+// containing structs whose methods Wails will reflect to populate
+// window.go.<pkg>.<struct>.* — putting the bound struct in package main
+// is what wires the SPA's window.go.main.App imports correctly.
+func RunWithBindings(app *App, bindings []interface{}) error {
 
 	// Make sure %ProgramData%\SerialHop\logs exists before we try to point a
 	// FileLogger at it. We swallow the error here because the panel works
@@ -320,7 +292,7 @@ func Run() error {
 		// we know the bundle JS errored after parse. Either is invaluable
 		// for diagnosing empty-window failures we can't reproduce locally.
 		OnDomReady: app.onDomReady,
-		Bind:       []interface{}{app},
+		Bind:       bindings,
 		// EnableDefaultContextMenu turns on the WebView2 right-click menu in
 		// production. Operators get cut+copy+paste; we get a fighting chance
 		// at diagnostics — `Inspect` is included, which opens DevTools.

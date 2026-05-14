@@ -2,11 +2,9 @@
 
 package panel
 
-import "errors"
-
-// Run is a non-Windows stub so the package builds on macOS/Linux CI.
-// The panel only ships on Windows; on other platforms invoking it is
-// a programming error.
-func Run() error {
-	return errors.New("panel.Run is only available on Windows")
-}
+// The Wails app, its App struct, and RunWithBindings all live in
+// wails_app.go behind //go:build windows. On non-Windows builds the
+// package compiles only its pure-Go helpers (servicecli, filetail,
+// credverify, lampstate, state, update_state, firstrun) so tests can
+// run on macOS/Linux CI. There is no Wails entry point on these
+// platforms; main.go's panel-mode dispatch is itself //go:build windows.
