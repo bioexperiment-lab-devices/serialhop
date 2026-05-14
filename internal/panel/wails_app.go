@@ -220,6 +220,14 @@ func RunWithBindings(app *App, bindings []interface{}) error {
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		Bind:       bindings,
+		// Frameless removes the OS-drawn caption (title text + system buttons).
+		// The SPA's TitleBar component supplies the chrome instead, including
+		// minimise / close buttons that call WindowMinimise / Quit. Window
+		// dragging is enabled per-element via `--wails-draggable: drag`.
+		// Trade-off: Win11 Snap Layouts (the maximize-button hover menu) are
+		// not reachable without a custom hit-test bridge — acceptable for an
+		// operator panel that doesn't expose maximize anyway.
+		Frameless: true,
 		// EnableDefaultContextMenu turns on the WebView2 right-click menu in
 		// production. Operators get cut+copy+paste; we get a fighting chance
 		// at diagnostics — `Inspect` is included, which opens DevTools.

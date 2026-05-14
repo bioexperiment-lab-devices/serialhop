@@ -8,6 +8,8 @@ interface WailsRuntime {
   EventsOn(eventName: string, callback: (...data: any[]) => void): () => void;
   EventsOff(...eventNames: string[]): void;
   EventsEmit(eventName: string, ...data: any[]): void;
+  WindowMinimise(): void;
+  Quit(): void;
 }
 
 function rt(): WailsRuntime | null {
@@ -25,4 +27,12 @@ export function EventsOff(...eventNames: string[]): void {
 
 export function EventsEmit(eventName: string, data?: any): void {
   rt()?.EventsEmit(eventName, data);
+}
+
+export function WindowMinimise(): void {
+  rt()?.WindowMinimise();
+}
+
+export function Quit(): void {
+  rt()?.Quit();
 }
