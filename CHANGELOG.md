@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.4](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.3...v0.14.4) (2026-05-14)
+
+
+### Bug Fixes
+
+* **panel:** bind App from package main so SPA finds window.go.main.App ([#77](https://github.com/bioexperiment-lab-devices/serialhop/issues/77)) ([c995bb8](https://github.com/bioexperiment-lab-devices/serialhop/commit/c995bb8f764fb4c1d6491f119eae0e0db9105c2c))
+
 ## [0.14.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.2...v0.14.3) (2026-05-14)
 
 
