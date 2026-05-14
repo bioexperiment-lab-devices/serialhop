@@ -1,21 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar, type TabId } from "./components/TabBar";
 import { Warning } from "./components/Warning";
 import { Footer } from "./components/Footer";
+import { Modal } from "./components/Modal";
+import { Button } from "./components/Button";
 import { StatusTab } from "./tabs/StatusTab";
-import { ConfigTab } from "./tabs/ConfigTab";
+import { ConfigTab, type ConfigTabHandle } from "./tabs/ConfigTab";
 import { DevicesTab } from "./tabs/DevicesTab";
 import { PortsTab } from "./tabs/PortsTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { GetVersion, LoadConfigFromDisk } from "./wails/go/main/App";
 import { useGlobalUiState } from "./state/globalStore";
 
+// TODO(spec §5.10): also intercept window close. Wails v2 exposes
+// OnBeforeClose; needs a Go-side bridge to ask the frontend whether
+// to allow close. Out of scope for this fix loop.
+
 export function App() {
   const [version, setVersion] = useState("…");
   const [tab, setTab] = useState<TabId>("status");
   const [configDirty, setConfigDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<TabId | null>(null);
   const { warn, footer, lamps } = useGlobalUiState();
+  const configRef = useRef<ConfigTabHandle | null>(null);
 
   useEffect(() => {
     GetVersion().then(setVersion);
@@ -25,21 +33,55 @@ export function App() {
     });
   }, []);
 
+  const requestTab = (next: TabId) => {
+    if (configDirty && tab === "config" && next !== "config") {
+      setPendingTab(next);
+      return;
+    }
+    setTab(next);
+  };
+
+  const onSaveAndSwitch = async () => {
+    if (!configRef.current) return;
+    const ok = await configRef.current.save();
+    if (ok && pendingTab) { setTab(pendingTab); setPendingTab(null); }
+  };
+
+  const onDiscardAndSwitch = () => {
+    configRef.current?.discard();
+    if (pendingTab) { setTab(pendingTab); setPendingTab(null); }
+  };
+
   return (
     <div className="shp-window">
       <TitleBar version={version} />
-      <TabBar active={tab} dirty={configDirty} onChange={setTab} />
+      <TabBar active={tab} dirty={configDirty} onChange={requestTab} />
       <Warning message={warn} />
       <div className="shp-content">
         <div className="shp-content__pad">
-          {tab === "status" && <StatusTab lamps={lamps} />}
-          {tab === "config" && <ConfigTab onDirtyChange={setConfigDirty} />}
+          {tab === "status" && <StatusTab lamps={lamps} configDirty={configDirty} />}
+          {tab === "config" && <ConfigTab ref={configRef} onDirtyChange={setConfigDirty} />}
           {tab === "devices" && <DevicesTab />}
           {tab === "ports" && <PortsTab />}
           {tab === "logs" && <LogsTab />}
         </div>
       </div>
       <Footer {...footer} />
+
+      {pendingTab && (
+        <Modal
+          title="Discard unsaved configuration changes?"
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setPendingTab(null)}>Cancel</Button>
+              <Button variant="ghost" onClick={onDiscardAndSwitch}>Discard</Button>
+              <Button variant="primary" onClick={onSaveAndSwitch}>Save</Button>
+            </>
+          }
+        >
+          <p>You have unsaved configuration changes. Save them, discard them, or cancel?</p>
+        </Modal>
+      )}
     </div>
   );
 }

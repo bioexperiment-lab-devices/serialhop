@@ -7,11 +7,13 @@ import {
   InstallService, UninstallService, RestartService,
   DownloadUpdate, CancelDownload, InstallUpdate, OpenReleaseNotes,
 } from "../wails/go/main/App";
-import { EventsOn, EventsOff } from "../wails/runtime/runtime";
+import { EventsOn, EventsOff, EventsEmit } from "../wails/runtime/runtime";
 
 type Lamps = Record<LampWhich, { tone: Tone; label: string; sub?: string }>;
 
-export function StatusTab({ lamps }: { lamps: Lamps }) {
+interface Props { lamps: Lamps; configDirty?: boolean; }
+
+export function StatusTab({ lamps, configDirty }: Props) {
   const [update, setUpdate] = useState<UpdateStatePayload>({ state: UpdateState.Idle, release_tag: "" });
   const [busy, setBusy] = useState(false);
 
@@ -21,9 +23,14 @@ export function StatusTab({ lamps }: { lamps: Lamps }) {
     return () => EventsOff("update:state");
   }, []);
 
-  const adminAction = async (fn: () => Promise<{ ok: boolean; error_message?: string }>) => {
+  const adminAction = async (fn: () => Promise<{ ok: boolean; error_message?: string }>, isRestart = false) => {
     setBusy(true);
-    try { await fn(); } finally { setBusy(false); }
+    try {
+      const res = await fn();
+      if (isRestart && res.ok && configDirty) {
+        EventsEmit("footer:set", { kind: "info", text: "Note: unsaved config changes were not applied." });
+      }
+    } finally { setBusy(false); }
   };
 
   // Service-action enablement derived from the service lamp tone.
@@ -50,7 +57,7 @@ export function StatusTab({ lamps }: { lamps: Lamps }) {
       <section className="actions">
         <Button elevated disabled={busy || !installEnabled} onClick={() => adminAction(InstallService)}>Install</Button>
         <Button elevated disabled={busy || !installedEnabled} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
-        <Button elevated disabled={busy || !installedEnabled} onClick={() => adminAction(RestartService)}>Restart</Button>
+        <Button elevated disabled={busy || !installedEnabled} onClick={() => adminAction(RestartService, true)}>Restart</Button>
       </section>
 
       {update.state !== UpdateState.Idle && (

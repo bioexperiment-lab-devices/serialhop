@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
 import { Section } from "../components/Section";
@@ -25,9 +25,16 @@ interface ConfigDTO {
 
 interface Props { onDirtyChange: (b: boolean) => void; }
 
+export interface ConfigTabHandle {
+  /** Runs validation + credential verify + save. Returns true if save completed. */
+  save: () => Promise<boolean>;
+  /** Resets form to last-loaded state. */
+  discard: () => void;
+}
+
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
-export function ConfigTab({ onDirtyChange }: Props) {
+export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({ onDirtyChange }, ref) {
   const [loaded, setLoaded] = useState<ConfigDTO | null>(null);
   const [form, setForm] = useState<ConfigDTO | null>(null);
   const [errors, setErrors] = useState<FieldErrorDTO[]>([]);
@@ -39,6 +46,34 @@ export function ConfigTab({ onDirtyChange }: Props) {
 
   const dirty = !!(loaded && form && JSON.stringify(loaded) !== JSON.stringify(form));
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+
+  const discard = () => {
+    if (loaded) { setForm(clone(loaded)); setErrors([]); }
+  };
+
+  useImperativeHandle(ref, () => ({
+    save: async () => {
+      if (!form) return false;
+      const vErrs = await ValidateConfig(form);
+      if (vErrs && vErrs.length) { setErrors(vErrs); return false; }
+      setErrors([]);
+      const verify = await VerifyCredentials(form.lab_bridge.host, form.lab_bridge.user, form.lab_bridge.pass);
+      if (verify.outcome === "unauthorized") {
+        setErrors([{ field: "lab_bridge.user", detail: "Server rejected these credentials. Check the username and password." }]);
+        return false;
+      }
+      if (verify.outcome === "needs_confirm") {
+        // Operator must resolve the confirm modal first — save cannot complete now.
+        setPendingConfirm({ detail: verify.detail || "", alsoRestart: false });
+        return false;
+      }
+      const res = await SaveConfig(form);
+      if (!res.ok) { setErrors(res.field_errors || []); return false; }
+      setLoaded(clone(form));
+      return true;
+    },
+    discard,
+  }), [form, discard]);
 
   if (!form || !loaded) return <div>Loading…</div>;
 
@@ -70,8 +105,6 @@ export function ConfigTab({ onDirtyChange }: Props) {
     setLoaded(clone(form));
     if (alsoRestart) await RestartService();
   };
-
-  const discard = () => { setForm(clone(loaded)); setErrors([]); };
 
   return (
     <div className="config-tab">
@@ -191,7 +224,7 @@ export function ConfigTab({ onDirtyChange }: Props) {
       )}
     </div>
   );
-}
+});
 
 function errFor(errs: FieldErrorDTO[], field: string): string | undefined {
   return errs.find(e => e.field === field)?.detail;
