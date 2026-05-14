@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.17.0...v0.17.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **panel:** bypass cache user-anchor on reachability path + log reason ([#95](https://github.com/bioexperiment-lab-devices/serialhop/issues/95)) ([528cdfe](https://github.com/bioexperiment-lab-devices/serialhop/commit/528cdfee314fa6eb7339155c71f343bfe72610ab))
+
 ## [0.17.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.16.1...v0.17.0) (2026-05-14)
 
 
