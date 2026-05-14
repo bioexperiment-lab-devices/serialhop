@@ -46,6 +46,13 @@ tasks:
     cmds:
       - go mod tidy
 
+  preview:
+    desc: "Run the panel UI in a desktop browser (macOS / Linux). Uses a Wails-runtime shim — no Windows or WebView2 needed."
+    dir: internal/panel/frontend
+    cmds:
+      - npm install
+      - npm run preview:mac
+
   clean:
     desc: Remove build outputs and generated resources
     cmds:
