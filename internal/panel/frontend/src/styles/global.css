@@ -593,9 +593,16 @@ body {
 }
 .shp-field {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(160px, 18ch) 1fr;
   gap: 14px;
   align-items: start;
+}
+@media (max-width: 720px) {
+  .shp-field {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .shp-field__label { padding-top: 0; }
 }
 .shp-field__label {
   display: flex;
