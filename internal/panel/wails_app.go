@@ -114,12 +114,39 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 //     a binding callback.
 func (a *App) onDomReady(ctx context.Context) {
 	wailsruntime.LogPrint(ctx, "[panel] DOM ready (calling ExecJS)")
-	// Visual canary: paint the body magenta. If the screenshot still
-	// shows the cream WebView background, JS isn't being evaluated at
-	// all. If it shows magenta, JS runs and the React-mount problem is
-	// elsewhere (likely missing window.go.main.App globals).
-	wailsruntime.WindowExecJS(ctx, `document.title = 'JS-START'; document.body.style.background = 'magenta';`)
-	wailsruntime.LogPrint(ctx, "[panel] sent JS-START + magenta background")
+	// Diagnostic: paint the body magenta and, after 3s, inject a visible
+	// snapshot of the runtime state right into the document. The text
+	// will appear in the smoke-test screenshot.
+	wailsruntime.WindowExecJS(ctx, `
+(function(){
+  document.body.style.background = 'magenta';
+  setTimeout(function(){
+    var root = document.getElementById('root');
+    var rootChildren = root ? root.childElementCount : 'NO-ROOT';
+    var rootInner = root ? root.innerHTML.length : '?';
+    var bodyInner = document.body ? document.body.innerHTML.length : '?';
+    var hasGo = (typeof window.go);
+    var hasRt = (typeof window.runtime);
+    var hasWb = (typeof window.wailsbindings);
+    var scripts = Array.prototype.map.call(
+      document.querySelectorAll('script[src]'),
+      function(s){ return s.getAttribute('src'); }
+    ).join('\n');
+    var diag = document.createElement('pre');
+    diag.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:cyan;color:black;font:14px/1.4 monospace;padding:20px;overflow:auto;margin:0;white-space:pre-wrap;';
+    diag.textContent =
+      'go=' + hasGo + '\n' +
+      'runtime=' + hasRt + '\n' +
+      'wailsbindings=' + hasWb + '\n' +
+      'root.childElementCount=' + rootChildren + '\n' +
+      'root.innerHTML.length=' + rootInner + '\n' +
+      'body.innerHTML.length=' + bodyInner + '\n' +
+      'scripts:\n' + scripts;
+    document.body.appendChild(diag);
+  }, 3000);
+})();
+`)
+	wailsruntime.LogPrint(ctx, "[panel] injected diagnostic")
 	wailsruntime.WindowExecJS(ctx, `
 (function () {
   function setTitle(s) {
