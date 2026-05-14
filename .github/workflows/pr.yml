@@ -204,22 +204,36 @@ jobs:
           "@ -ReferencedAssemblies System.Drawing
 
           # Launch via ProcessStartInfo with UseShellExecute=$false so we
-          # can deterministically force the env var into the child process,
-          # rather than relying on PowerShell inheritance.
+          # can deterministically force the env var into the child process.
+          # Use a per-run user-data-dir for WebView2 — without this, WebView2
+          # may reuse a global Edge profile and silently bail if it has
+          # stale crash state.
+          $userData = Join-Path $env:TEMP "wv2-userdata-$([guid]::NewGuid())"
+          New-Item -ItemType Directory -Force -Path $userData | Out-Null
+
           $psi = New-Object System.Diagnostics.ProcessStartInfo
           $psi.FileName = $exe
           $psi.UseShellExecute = $false
           $psi.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=9222"
+          $psi.EnvironmentVariables["WEBVIEW2_USER_DATA_FOLDER"] = $userData
           $proc = [System.Diagnostics.Process]::Start($psi)
-          Write-Host "Started pid=$($proc.Id); waiting 8s for WebView2 to come up"
-          Start-Sleep -Seconds 8
+          Write-Host "Started pid=$($proc.Id); waiting 15s for WebView2 to come up"
+          Start-Sleep -Seconds 15
 
-          # Sanity-check that port 9222 is actually listening before we
-          # invoke wv2-inspect. If WebView2 didn't pick up the env var, the
-          # port won't be open and wv2-inspect's diagnostic message will be
-          # informative anyway, but logging it explicitly helps.
-          $portOpen = Test-NetConnection -ComputerName 127.0.0.1 -Port 9222 -WarningAction SilentlyContinue -InformationLevel Quiet
+          # Use a short, explicit TCP probe (Test-NetConnection's default
+          # timeout blocks for ~22s on a closed port).
+          $portOpen = $false
+          try {
+              $tcp = New-Object System.Net.Sockets.TcpClient
+              $iar = $tcp.BeginConnect("127.0.0.1", 9222, $null, $null)
+              if ($iar.AsyncWaitHandle.WaitOne(2000)) {
+                  $tcp.EndConnect($iar)
+                  $portOpen = $true
+              }
+              $tcp.Close()
+          } catch {}
           Write-Host "Port 9222 open: $portOpen"
+          Write-Host "Process exited: $($proc.HasExited); MainWindowHandle: $($proc.MainWindowHandle)"
 
           # Attach to the WebView2 CDP endpoint and capture console + DOM.
           # Runs for 10s, then writes wv2.json. We do this BEFORE the
