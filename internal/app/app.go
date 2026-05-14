@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -123,12 +124,24 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 
 // writeActualRestPort updates the bootstrap cache with the port the local
 // REST listener actually bound to. Called once after api.Listen returns.
-// Silently no-ops if the cache is missing or anchored to a different user;
-// the panel falls back to its "service unreachable" empty state in that case.
-func writeActualRestPort(cachePath, user string, port int) error {
-	c, err := bootstrap.ReadCache(cachePath, user)
+// Reads via ReadCacheUnchecked so a user-anchor mismatch (cache anchored
+// to a previous lab_bridge.user) does NOT prevent the port write — the
+// panel relies on ActualRestPort being populated for the Devices/Ports
+// tabs to find the service, so silently dropping the update there
+// rendered those tabs permanently unreachable. Silently no-ops only if
+// the cache file is missing (first launch racing bootstrap.Resolve);
+// the next bootstrap.Resolve will write it from scratch.
+//
+// The `user` parameter is retained for compatibility with existing
+// callers (it was previously used as the anchor); ignored now.
+func writeActualRestPort(cachePath, _ string, port int) error {
+	c, err := bootstrap.ReadCacheUnchecked(cachePath)
 	if err != nil {
-		// ErrCacheMissing or anchored-to-other-user: silently skip.
+		if errors.Is(err, bootstrap.ErrCacheMissing) {
+			return nil
+		}
+		// Parse / version errors already triggered a delete inside
+		// ReadCacheUnchecked; bootstrap.Resolve will rewrite shortly.
 		return nil
 	}
 	c.ActualRestPort = port

@@ -62,14 +62,7 @@ func newAppInternal() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	cfg, _ := config.LoadPartial(paths.ConfigPath())
-	// userFn reads the lab-bridge user from disk on every request so the
-	// panel picks up credentials saved after launch (first-run flow) — a
-	// captured-at-startup snapshot would otherwise pin svc to the empty
-	// initial value until the panel was reopened.
-	a.svc = NewServiceCli(paths.ServerInfoCachePath(), func() string {
-		c, _ := config.LoadPartial(paths.ConfigPath())
-		return c.LabBridge.User
-	})
+	a.svc = NewServiceCli(paths.ServerInfoCachePath())
 	if cfg.AutoUpdate.Enabled {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
