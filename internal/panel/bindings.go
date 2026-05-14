@@ -275,6 +275,25 @@ func (a *App) StopLogStream() {
 	a.logTail.stop()
 }
 
+// LogJS is invoked from the WebView (via the diagnostic JS injected by
+// onDomReady) to forward console errors / unhandled rejections /
+// initial-state snapshots into a file we can read from outside the
+// process. Lets us diagnose empty-window and bundle-error states without
+// DevTools access on the operator's machine.
+func (a *App) LogJS(level, msg string) {
+	dir := paths.LogsDir()
+	if dir == "" {
+		return
+	}
+	path := filepath.Join(dir, "SerialHop_js.log")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // path is paths.LogsDir() + literal
+	if err != nil {
+		return
+	}
+	defer f.Close() //nolint:errcheck
+	_, _ = fmt.Fprintf(f, "%s\t%s\t%s\n", time.Now().UTC().Format(time.RFC3339), level, msg)
+}
+
 // --- Helpers ---
 
 // resolveConfigPath returns paths.ConfigPath() unless the test hook is

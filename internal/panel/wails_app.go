@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
@@ -102,6 +103,44 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 			runUpdateCheckEvent(a)
 		}
 	}
+}
+
+// onDomReady runs once the WebView has parsed the HTML. We use it to:
+//   1. Write a marker line to the wails log so we know the DOM was reached.
+//   2. Inject a tiny JS snippet that captures uncaught errors / unhandled
+//      promise rejections / window.onerror events and forwards them via
+//      the LogJS binding to the Go-side diagnostic log.
+func (a *App) onDomReady(ctx context.Context) {
+	wailsruntime.LogPrint(ctx, "[panel] DOM ready")
+	wailsruntime.WindowExecJS(ctx, `
+(function () {
+  function send(level, msg) {
+    try { window.go && window.go.main && window.go.main.App && window.go.main.App.LogJS(level, String(msg)); } catch (_) {}
+  }
+  send('init', 'typeof window.go=' + (typeof window.go) + ' typeof window.runtime=' + (typeof window.runtime));
+  send('init', 'scripts: ' + Array.from(document.querySelectorAll('script')).map(function(s){return s.src||'(inline)';}).join(' | '));
+  send('init', 'root.childElementCount=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'no-root'));
+  send('init', 'body.innerHTML.length=' + (document.body ? document.body.innerHTML.length : 0));
+
+  window.addEventListener('error', function (e) {
+    send('error', (e.message || 'error') + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?'));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    send('rejection', String(e.reason && (e.reason.stack || e.reason.message || e.reason)));
+  });
+  var origErr = console.error;
+  console.error = function () {
+    try { send('console.error', Array.prototype.slice.call(arguments).map(String).join(' ')); } catch(_){}
+    origErr.apply(console, arguments);
+  };
+
+  // Re-snapshot after React's first useEffect tick.
+  setTimeout(function () {
+    send('post-mount', 'root.childElementCount=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'no-root'));
+    send('post-mount', 'body.innerHTML.length=' + (document.body ? document.body.innerHTML.length : 0));
+  }, 1500);
+})();
+`)
 }
 
 func (a *App) shutdown(_ context.Context) {
@@ -234,7 +273,13 @@ func Run() error {
 		LogLevelProduction: logger.DEBUG,
 		OnStartup:          app.startup,
 		OnShutdown:         app.shutdown,
-		Bind:               []interface{}{app},
+		// OnDomReady fires once the WebView has parsed the served HTML and
+		// the document is interactable. If this never fires we know the page
+		// itself never loaded; if it fires but the React tree never mounts
+		// we know the bundle JS errored after parse. Either is invaluable
+		// for diagnosing empty-window failures we can't reproduce locally.
+		OnDomReady: app.onDomReady,
+		Bind:       []interface{}{app},
 		// EnableDefaultContextMenu turns on the WebView2 right-click menu in
 		// production. Operators get cut+copy+paste; we get a fighting chance
 		// at diagnostics — `Inspect` is included, which opens DevTools.
