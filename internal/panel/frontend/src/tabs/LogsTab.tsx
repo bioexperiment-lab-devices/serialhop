@@ -11,6 +11,25 @@ type LevelFilter = "all" | "debug" | "info" | "warn" | "error";
 const RING_CAPACITY = 5_000;
 const LEVEL_RANK: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
+// v1 simplification: spec §9 requires per-entry help for the Stream dropdown.
+// Since native <select> options can't host inline icons, we render a single Help
+// icon whose content changes based on the currently selected stream — same
+// information density as per-option help, just surfaced after selection.
+const streamHelp: Record<StreamID, { title: string; what: string }> = {
+  service: {
+    title: "Service log",
+    what: "Structured JSON log from the SerialHop service (slog records). Time / Level / Message columns with full field detail on row click.",
+  },
+  stderr: {
+    title: "Stderr",
+    what: "Raw stderr output from the service process. Append-only.",
+  },
+  panel: {
+    title: "Panel errors",
+    what: "Errors written by the panel itself during startup or auto-update. No rotation.",
+  },
+};
+
 export function LogsTab() {
   const [stream, setStream] = useState<StreamID>("service");
   const [level, setLevel] = useState<LevelFilter>("all");
@@ -61,7 +80,7 @@ export function LogsTab() {
             <option value="stderr">Stderr</option>
             <option value="panel">Panel errors</option>
           </select>
-          <Help title={`${stream} stream`} what="Source file for the displayed log entries." />
+          <Help title={streamHelp[stream].title} what={streamHelp[stream].what} />
         </label>
         <label>
           Level:

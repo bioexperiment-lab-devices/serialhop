@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
 import { Section } from "../components/Section";
@@ -118,10 +118,24 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         <Field label="Host" helpComponent={<Help title="Host" what="lab-bridge VPS host." defaultVal="111.88.145.138" />}>
           <input value={form.lab_bridge.host} onChange={e => setNested("lab_bridge", "host", e.target.value)} />
         </Field>
-        <Field label="Username" hint={errFor(errors, "lab_bridge.user")}>
+        <Field label="Username" hint={errFor(errors, "lab_bridge.user")}
+          helpComponent={
+            <Help
+              title="Username"
+              what="The lab-bridge account username that authenticates this client's chisel tunnel and REST calls."
+              when="Save will verify these credentials against the lab-bridge."
+            />
+          }>
           <input value={form.lab_bridge.user} onChange={e => setNested("lab_bridge", "user", e.target.value)} />
         </Field>
-        <Field label="Password" hint={errFor(errors, "lab_bridge.pass")}>
+        <Field label="Password" hint={errFor(errors, "lab_bridge.pass")}
+          helpComponent={
+            <Help
+              title="Password"
+              what="The lab-bridge account password. Stored as plaintext in the YAML (matches the existing convention)."
+              when="Save will verify these credentials against the lab-bridge."
+            />
+          }>
           <input value={form.lab_bridge.pass} onChange={e => setNested("lab_bridge", "pass", e.target.value)} />
         </Field>
       </Section>
@@ -139,52 +153,119 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           onChange={v => setNested("discovery", "include", v)}
           disabled={form.discovery.exclude.length > 0}
           note={form.discovery.exclude.length > 0 ? "Include and Exclude can't be used together" : undefined}
+          helpComponent={
+            <Help
+              title="Include"
+              what="Probe only these COM ports during discovery."
+              defaultVal="Empty (probe every enumerated port)."
+              when="Cannot be combined with Exclude."
+            />
+          }
         />
         <ListField label="Exclude"
           values={form.discovery.exclude}
           onChange={v => setNested("discovery", "exclude", v)}
           disabled={form.discovery.include.length > 0}
           note={form.discovery.include.length > 0 ? "Include and Exclude can't be used together" : undefined}
+          helpComponent={
+            <Help
+              title="Exclude"
+              what="Skip these COM ports during discovery."
+              defaultVal="Empty."
+              when="Cannot be combined with Include."
+            />
+          }
         />
-        <Field label="Post-open settle (ms)">
+        <Field label="Post-open settle (ms)"
+          helpComponent={
+            <Help
+              title="Post-open settle (ms)"
+              what="Wait period after opening a serial port before probing it. Covers the Arduino bootloader reset window."
+              defaultVal="2000."
+            />
+          }>
           <input type="number" min={0} value={form.discovery.post_open_settle_ms}
             onChange={e => setNested("discovery", "post_open_settle_ms", Number(e.target.value) || 0)} />
         </Field>
       </Section>
 
       <Section title="Log">
-        <Field label="Level">
+        <Field label="Level"
+          helpComponent={
+            <Help
+              title="Level"
+              what="Logging verbosity for the service log."
+              defaultVal="info."
+              when="Increase to debug when triaging a problem; warn or error in production if logs are too noisy."
+            />
+          }>
           <select value={form.log.level} onChange={e => setNested("log", "level", e.target.value)}>
             <option>debug</option><option>info</option><option>warn</option><option>error</option>
           </select>
         </Field>
       </Section>
 
-      <Section title="Raw serial">
+      <Section title="Raw serial"
+        helpComponent={
+          <Help
+            title="Raw serial"
+            what="Exposes GET /serial/ports + POST /serial/ports/{port}/command for diagnostics. Bypasses device classification."
+            defaultVal="off."
+            when="Enable only when actively probing the wire."
+          />
+        }>
         <Field label="">
           <Checkbox label="Enabled" checked={form.raw_serial.enabled}
             onChange={v => setNested("raw_serial", "enabled", v)} />
         </Field>
       </Section>
 
-      <Section title="Auto-update">
+      <Section title="Auto-update"
+        helpComponent={
+          <Help
+            title="Auto-update"
+            what="When on, the panel checks GitHub Releases on launch and every 6 hours, then offers to download and install new SerialHop versions."
+            defaultVal="on."
+          />
+        }>
         <Field label="">
           <Checkbox label="Enabled" checked={form.auto_update.enabled}
             onChange={v => setNested("auto_update", "enabled", v)} />
         </Field>
       </Section>
 
-      <Section title="Firmware flashing">
+      <Section title="Firmware flashing"
+        helpComponent={
+          <Help
+            title="Firmware flashing"
+            what="Allows the service to flash firmware to detected boards."
+            defaultVal="off."
+          />
+        }>
         <p className="shp-section__info">
           Firmware flashing is higher risk than raw serial — a bad .hex bricks
           the board (ISP recovery required). Leave disabled unless you&apos;re
           actively flashing devices.
         </p>
-        <Field label="">
-          <Checkbox label="Enabled" checked={form.flashing.enabled}
+        <Field label="Enabled"
+          helpComponent={
+            <Help
+              title="Enabled"
+              what="Allows the service to flash firmware to detected boards."
+              defaultVal="off."
+            />
+          }>
+          <Checkbox label="" checked={form.flashing.enabled}
             onChange={v => setNested("flashing", "enabled", v)} />
         </Field>
-        <Field label="Backup directory" disabled={!form.flashing.enabled}>
+        <Field label="Backup directory" disabled={!form.flashing.enabled}
+          helpComponent={
+            <Help
+              title="Backup directory"
+              what="Where the service writes a backup of a board's existing firmware before flashing it."
+              defaultVal="%ProgramData%\\SerialHop\\backups."
+            />
+          }>
           <input value={form.flashing.backup_dir}
             disabled={!form.flashing.enabled}
             onChange={e => setNested("flashing", "backup_dir", e.target.value)} />
@@ -193,7 +274,15 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             Pick…
           </Button>
         </Field>
-        <Field label="Keep N backups" disabled={!form.flashing.enabled}>
+        <Field label="Keep N backups" disabled={!form.flashing.enabled}
+          helpComponent={
+            <Help
+              title="Keep N backups"
+              what="How many per-board backup files to retain. Oldest beyond this count are deleted."
+              defaultVal="10."
+              when="0 keeps all backups indefinitely."
+            />
+          }>
           <input type="number" min={0} value={form.flashing.keep_n}
             disabled={!form.flashing.enabled}
             onChange={e => setNested("flashing", "keep_n", Number(e.target.value) || 0)} />
@@ -236,11 +325,12 @@ interface ListFieldProps {
   onChange: (v: string[]) => void;
   disabled?: boolean;
   note?: string;
+  helpComponent?: React.ReactNode;
 }
 
-function ListField({ label, values, onChange, disabled, note }: ListFieldProps) {
+function ListField({ label, values, onChange, disabled, note, helpComponent }: ListFieldProps) {
   return (
-    <Field label={label} hint={note} disabled={disabled}>
+    <Field label={label} hint={note} disabled={disabled} helpComponent={helpComponent}>
       <div className="list-field">
         {values.map((v, i) => (
           <div key={i} className="list-field__row">
