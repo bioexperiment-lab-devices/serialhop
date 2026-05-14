@@ -3,3 +3,4 @@ dist/
 src/wails/wailsjs/
 .vite/
 *.log
+dist-preview/
