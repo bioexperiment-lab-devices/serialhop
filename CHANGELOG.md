@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.2...v0.18.3) (2026-05-14)
+
+
+### Bug Fixes
+
+* **panel:** drop ctx from Wails-bound methods — actual reachability fix ([#104](https://github.com/bioexperiment-lab-devices/serialhop/issues/104)) ([6399a67](https://github.com/bioexperiment-lab-devices/serialhop/commit/6399a6770d5d01b8b9ea413c6d91b448b2b979c6))
+
 ## [0.18.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.1...v0.18.2) (2026-05-14)
 
 
