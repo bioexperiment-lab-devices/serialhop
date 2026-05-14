@@ -214,7 +214,9 @@ jobs:
           $psi = New-Object System.Diagnostics.ProcessStartInfo
           $psi.FileName = $exe
           $psi.UseShellExecute = $false
-          $psi.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=9222"
+          # Chromium 111+ requires --remote-allow-origins to actually open
+          # the debug port (otherwise it's silently filtered for security).
+          $psi.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=9222 --remote-allow-origins=*"
           $psi.EnvironmentVariables["WEBVIEW2_USER_DATA_FOLDER"] = $userData
           $proc = [System.Diagnostics.Process]::Start($psi)
           Write-Host "Started pid=$($proc.Id); waiting 15s for WebView2 to come up"
