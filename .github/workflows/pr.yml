@@ -237,6 +237,31 @@ jobs:
           Write-Host "Port 9222 open: $portOpen"
           Write-Host "Process exited: $($proc.HasExited); MainWindowHandle: $($proc.MainWindowHandle)"
 
+          # The diagnostic JS injected by OnDomReady writes runtime state +
+          # errors into document.title. Read it via GetWindowText.
+          Add-Type @"
+            using System;
+            using System.Text;
+            using System.Runtime.InteropServices;
+            public class WinTitle {
+                [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+                public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+            }
+          "@
+          function Read-Title {
+              param([IntPtr]$h)
+              if ($h -eq [IntPtr]::Zero) { return "<no window>" }
+              $sb = New-Object System.Text.StringBuilder 1024
+              [WinTitle]::GetWindowTextW($h, $sb, $sb.Capacity) | Out-Null
+              return $sb.ToString()
+          }
+
+          $proc.Refresh()
+          Write-Host "Title T+0:    $(Read-Title $proc.MainWindowHandle)"
+          Start-Sleep -Seconds 5
+          $proc.Refresh()
+          Write-Host "Title T+5s:   $(Read-Title $proc.MainWindowHandle)"
+
           # Attach to the WebView2 CDP endpoint and capture console + DOM.
           # Runs for 10s, then writes wv2.json. We do this BEFORE the
           # screenshot so the capture happens against the same state.

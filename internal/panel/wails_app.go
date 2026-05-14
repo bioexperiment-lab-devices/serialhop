@@ -107,38 +107,46 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 
 // onDomReady runs once the WebView has parsed the HTML. We use it to:
 //  1. Write a marker line to the wails log so we know the DOM was reached.
-//  2. Inject a tiny JS snippet that captures uncaught errors / unhandled
-//     promise rejections / window.onerror events and forwards them via
-//     the LogJS binding to the Go-side diagnostic log.
+//  2. Inject diagnostic JS that writes runtime state / errors into
+//     document.title — readable from outside the process via Win32
+//     GetWindowText. This works even when window.go.main.App isn't
+//     populated (the very condition we're trying to diagnose), unlike
+//     a binding callback.
 func (a *App) onDomReady(ctx context.Context) {
 	wailsruntime.LogPrint(ctx, "[panel] DOM ready")
 	wailsruntime.WindowExecJS(ctx, `
 (function () {
-  function send(level, msg) {
-    try { window.go && window.go.main && window.go.main.App && window.go.main.App.LogJS(level, String(msg)); } catch (_) {}
+  function setTitle(s) {
+    try { document.title = String(s).substring(0, 250); } catch (_) {}
   }
-  send('init', 'typeof window.go=' + (typeof window.go) + ' typeof window.runtime=' + (typeof window.runtime));
-  send('init', 'scripts: ' + Array.from(document.querySelectorAll('script')).map(function(s){return s.src||'(inline)';}).join(' | '));
-  send('init', 'root.childElementCount=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'no-root'));
-  send('init', 'body.innerHTML.length=' + (document.body ? document.body.innerHTML.length : 0));
 
+  // Intercept early errors so the title surfaces them.
   window.addEventListener('error', function (e) {
-    send('error', (e.message || 'error') + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?'));
+    setTitle('ERR ' + (e.message || '?') + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'));
   });
   window.addEventListener('unhandledrejection', function (e) {
-    send('rejection', String(e.reason && (e.reason.stack || e.reason.message || e.reason)));
+    setTitle('REJ ' + String(e.reason && (e.reason.stack || e.reason.message || e.reason)));
   });
-  var origErr = console.error;
-  console.error = function () {
-    try { send('console.error', Array.prototype.slice.call(arguments).map(String).join(' ')); } catch(_){}
-    origErr.apply(console, arguments);
-  };
 
-  // Re-snapshot after React's first useEffect tick.
-  setTimeout(function () {
-    send('post-mount', 'root.childElementCount=' + (document.getElementById('root') ? document.getElementById('root').childElementCount : 'no-root'));
-    send('post-mount', 'body.innerHTML.length=' + (document.body ? document.body.innerHTML.length : 0));
-  }, 1500);
+  function snapshot(tag) {
+    var scripts = Array.prototype.map.call(
+      document.querySelectorAll('script[src]'),
+      function (s) { return s.getAttribute('src'); }
+    ).join(',');
+    var root = document.getElementById('root');
+    setTitle(tag +
+      ' go=' + (typeof window.go) +
+      ' rt=' + (typeof window.runtime) +
+      ' wb=' + (typeof window.wailsbindings) +
+      ' rk=' + (root ? root.childElementCount : 'NO-ROOT') +
+      ' bl=' + (document.body ? document.body.innerHTML.length : 0) +
+      ' s=' + scripts);
+  }
+
+  snapshot('READY');
+  // Re-snapshot after the bundle has had a chance to mount React.
+  setTimeout(function () { snapshot('T1500'); }, 1500);
+  setTimeout(function () { snapshot('T4000'); }, 4000);
 })();
 `)
 }
