@@ -113,7 +113,14 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 //     populated (the very condition we're trying to diagnose), unlike
 //     a binding callback.
 func (a *App) onDomReady(ctx context.Context) {
-	wailsruntime.LogPrint(ctx, "[panel] DOM ready")
+	wailsruntime.LogPrint(ctx, "[panel] DOM ready (calling ExecJS)")
+	// Sleep briefly so the WebView's JS context is fully initialized
+	// before we Eval. NavigationCompleted (which is what fires
+	// OnDomReady) on WebView2 doesn't always mean the script context
+	// is live for Eval.
+	time.Sleep(500 * time.Millisecond)
+	wailsruntime.WindowExecJS(ctx, `document.title = 'JS-START';`)
+	wailsruntime.LogPrint(ctx, "[panel] sent JS-START")
 	wailsruntime.WindowExecJS(ctx, `
 (function () {
   function setTitle(s) {
