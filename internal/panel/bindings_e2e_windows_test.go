@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
@@ -68,7 +70,7 @@ func TestApp_GetPorts_ReachesServiceEndToEnd(t *testing.T) {
 	defer srv.Close()
 	app := newAppPointedAt(t, srv)
 
-	got := app.GetPorts(context.Background())
+	got := app.GetPorts()
 	if !got.Status.Reachable {
 		t.Fatalf("Status.Reachable=false, reason=%q; want true", got.Status.Reason)
 	}
@@ -82,7 +84,7 @@ func TestApp_GetDevices_ReachesServiceEndToEnd(t *testing.T) {
 	defer srv.Close()
 	app := newAppPointedAt(t, srv)
 
-	got := app.GetDevices(context.Background())
+	got := app.GetDevices()
 	if !got.Status.Reachable {
 		t.Fatalf("Status.Reachable=false, reason=%q; want true", got.Status.Reason)
 	}
@@ -96,7 +98,7 @@ func TestApp_Discover_ReachesServiceEndToEnd(t *testing.T) {
 	defer srv.Close()
 	app := newAppPointedAt(t, srv)
 
-	got := app.Discover(context.Background())
+	got := app.Discover()
 	if !got.Status.Reachable {
 		t.Fatalf("Status.Reachable=false, reason=%q; want true", got.Status.Reason)
 	}
@@ -123,7 +125,7 @@ func TestApp_GetPorts_JSONShapeMatchesSPAContract(t *testing.T) {
 	defer srv.Close()
 	app := newAppPointedAt(t, srv)
 
-	got := app.GetPorts(context.Background())
+	got := app.GetPorts()
 	raw, err := json.Marshal(got)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -151,7 +153,7 @@ func TestApp_GetPorts_JSONShapeMatchesSPAContract(t *testing.T) {
 func TestApp_GetPorts_CacheMissingSurfacesUnreachable(t *testing.T) {
 	app := NewApp()
 	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.json"))
-	got := app.GetPorts(context.Background())
+	got := app.GetPorts()
 	if got.Status.Reachable {
 		t.Errorf("expected Reachable=false when cache is missing, got reachable=true")
 	}
@@ -205,5 +207,49 @@ func TestApp_Diagnostics_HTTPProbe_LoopbackDead(t *testing.T) {
 	}
 	if d.HTTPProbeError == "" {
 		t.Errorf("HTTPProbeError empty; want a transport error message")
+	}
+}
+
+// TestApp_NoBoundMethodTakesContextContext is the regression test for
+// the *actual* "Can't reach the local service" bug. Wails v2.12.0 does
+// not auto-inject context.Context as the first argument for methods
+// reached through embedding (main.App embeds *panel.App). The JS-side
+// shim in src/wails/go/main/App.ts always calls bindings with zero
+// arguments; if any bound method expects a context.Context, the
+// Wails bridge rejects the call with:
+//
+//	"error parsing arguments: received 0 arguments to method 'main.App.X',
+//	 expected 1"
+//
+// which the SPA never sees as an error in a try/catch and silently
+// drops back to its initial reachable=false state — producing the
+// "Can't reach the local service" banner that survived three prior
+// speculative fixes. Walk every exported method on *App and fail if
+// it takes a context.Context. The unblock for any future need-a-ctx
+// case is `app.callCtx()` inside the method body.
+func TestApp_NoBoundMethodTakesContextContext(t *testing.T) {
+	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	appType := reflect.TypeOf(&App{})
+	for i := 0; i < appType.NumMethod(); i++ {
+		m := appType.Method(i)
+		// receiver counts as the first input, so real args start at 1.
+		for j := 1; j < m.Type.NumIn(); j++ {
+			if m.Type.In(j).Implements(ctxType) || m.Type.In(j) == ctxType {
+				t.Errorf("App.%s takes %s as parameter %d — Wails v2.12.0 won't auto-inject through embedded methods, so the bridge will reject every JS-side invocation. Drop the parameter and call a.callCtx() in the body instead.",
+					m.Name, m.Type.In(j), j-1)
+				break
+			}
+			// Implements check above catches the interface form. Also
+			// reject struct types whose name contains "Context" as a
+			// belt-and-braces signal that someone tried again — the
+			// stdlib alias is the only legitimate match, which the
+			// Implements check covers; anything else here is a likely
+			// typo or wrapper that won't behave.
+			if name := m.Type.In(j).String(); strings.Contains(strings.ToLower(name), "context") {
+				t.Errorf("App.%s takes %s (likely a context type) as parameter %d — see comment in this test for why that fails through Wails.",
+					m.Name, name, j-1)
+				break
+			}
+		}
 	}
 }
