@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.0...v0.18.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **panel:** HTTP-probe Diagnostics + surface JS binding errors ([#100](https://github.com/bioexperiment-lab-devices/serialhop/issues/100)) ([301ba2a](https://github.com/bioexperiment-lab-devices/serialhop/commit/301ba2a8dbded06d4ddf60a4779a95f2182bbd73))
+
 ## [0.18.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.17.1...v0.18.0) (2026-05-14)
 
 
