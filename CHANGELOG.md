@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.13.0...v0.14.0) (2026-05-14)
+
+
+### Features
+
+* **panel:** rewrite UI from lxn/walk to Wails v2 + React ([#68](https://github.com/bioexperiment-lab-devices/serialhop/issues/68)) ([fbfc013](https://github.com/bioexperiment-lab-devices/serialhop/commit/fbfc013348f9acc96a096762d96524a3e2ce0767))
+
 ## [0.13.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.12.0...v0.13.0) (2026-05-13)
 
 
