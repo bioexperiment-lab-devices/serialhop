@@ -590,6 +590,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-width: 880px;
+  width: 100%;
 }
 .shp-field {
   display: grid;
