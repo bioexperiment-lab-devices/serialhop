@@ -114,13 +114,12 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 //     a binding callback.
 func (a *App) onDomReady(ctx context.Context) {
 	wailsruntime.LogPrint(ctx, "[panel] DOM ready (calling ExecJS)")
-	// Sleep briefly so the WebView's JS context is fully initialized
-	// before we Eval. NavigationCompleted (which is what fires
-	// OnDomReady) on WebView2 doesn't always mean the script context
-	// is live for Eval.
-	time.Sleep(500 * time.Millisecond)
-	wailsruntime.WindowExecJS(ctx, `document.title = 'JS-START';`)
-	wailsruntime.LogPrint(ctx, "[panel] sent JS-START")
+	// Visual canary: paint the body magenta. If the screenshot still
+	// shows the cream WebView background, JS isn't being evaluated at
+	// all. If it shows magenta, JS runs and the React-mount problem is
+	// elsewhere (likely missing window.go.main.App globals).
+	wailsruntime.WindowExecJS(ctx, `document.title = 'JS-START'; document.body.style.background = 'magenta';`)
+	wailsruntime.LogPrint(ctx, "[panel] sent JS-START + magenta background")
 	wailsruntime.WindowExecJS(ctx, `
 (function () {
   function setTitle(s) {
