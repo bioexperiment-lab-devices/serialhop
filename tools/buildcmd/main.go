@@ -78,8 +78,15 @@ func main() {
 
 	// wails build does not use -H windowsgui — it manages the subsystem flag
 	// internally via its own linker flags for Windows GUI targets.
+	//
+	// -nopackage: this project already generates a Windows .syso file via
+	// `tools/goversioninfo` in the `resource` Taskfile target (UAC manifest +
+	// icon + version metadata via assets/version.json). Wails' own
+	// `packageApplicationForWindows` would produce a second .syso in the same
+	// directory as main.go, causing `too many .rsrc sections` at link time.
+	// Skip Wails packaging; ours is already in place.
 	ldflags := fmt.Sprintf("-X %s.Version=%s", versionPkg, version)
-	args := []string{"build", "-platform", platform, "-trimpath", "-ldflags=" + ldflags}
+	args := []string{"build", "-platform", platform, "-nopackage", "-trimpath", "-ldflags=" + ldflags}
 	if *skipFrontend {
 		args = append(args, "-s")
 	}
