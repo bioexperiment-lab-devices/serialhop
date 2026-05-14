@@ -71,55 +71,59 @@ export function LogsTab() {
   });
 
   return (
-    <div className="logs-tab">
-      <div className="logs-controls">
-        <label>
-          Stream:
-          <select value={stream} onChange={e => setStream(e.target.value as StreamID)}>
+    <>
+      <div className="shp-logs-controls">
+        <label className="shp-row">
+          <span style={{ marginRight: 4 }}>Stream:</span>
+          <select className="shp-select" value={stream} onChange={e => setStream(e.target.value as StreamID)}>
             <option value="service">Service log</option>
             <option value="stderr">Stderr</option>
             <option value="panel">Panel errors</option>
           </select>
           <Help title={streamHelp[stream].title} what={streamHelp[stream].what} />
         </label>
-        <label>
-          Level:
-          <select value={level} onChange={e => setLevel(e.target.value as LevelFilter)} disabled={stream !== "service"}>
+        <label className="shp-row">
+          <span style={{ marginRight: 4 }}>Level:</span>
+          <select className="shp-select" value={level} onChange={e => setLevel(e.target.value as LevelFilter)} disabled={stream !== "service"}>
             <option>all</option><option>debug</option><option>info</option><option>warn</option><option>error</option>
           </select>
         </label>
-        <label>
-          <input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} /> Follow
+        <label className="shp-toggle" data-on={follow}>
+          <span className="shp-toggle__sw" />
+          <input type="checkbox" style={{ display: "none" }} checked={follow} onChange={e => setFollow(e.target.checked)} />
+          Follow
         </label>
-        <input className="logs-search" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+        <input className="shp-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-      <div className="logs-view">
-        {stream === "service" ? (
-          <table className="logs-table">
-            <thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead>
+      {stream === "service" ? (
+        <div className="shp-table-wrap">
+          <table className="shp-table shp-logs-table">
+            <thead><tr><th className="col-time">Time</th><th className="col-level">Level</th><th>Message</th></tr></thead>
             <tbody>
               {filtered.map((l, i) => l.record && (
                 <tr key={i} onClick={() => setSelected(l)} data-selected={selected === l}>
-                  <td>{String(l.record.time || "")}</td>
-                  <td>{String(l.record.level || "")}</td>
+                  <td className="col-time">{String(l.record.time || "")}</td>
+                  <td className="col-level"><span className="shp-level-pill" data-level={String(l.record.level || "info").toLowerCase()}>{String(l.record.level || "")}</span></td>
                   <td>{String(l.record.msg || "")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : (
-          <pre className="logs-raw">
-            {filtered.map((l, i) => <div key={i}>{l.raw}</div>)}
-          </pre>
-        )}
-        <div ref={endRef} />
-      </div>
-      {selected?.record && (
-        <pre className="logs-details">{JSON.stringify(selected.record, null, 2)}</pre>
+        </div>
+      ) : (
+        <pre className="shp-mono-view">
+          {filtered.map((l, i) => <div key={i}>{l.raw}</div>)}
+        </pre>
       )}
-      <div className="logs-actions">
+      <div ref={endRef} />
+      {selected?.record && (
+        <pre className="shp-mono-view" style={{ height: "auto", maxHeight: 200, marginTop: 12 }}>
+          {JSON.stringify(selected.record, null, 2)}
+        </pre>
+      )}
+      <div className="shp-btn-row" style={{ marginTop: 12 }}>
         <Button variant="ghost" onClick={() => OpenLogsFolder()}>Open logs folder</Button>
       </div>
-    </div>
+    </>
   );
 }
