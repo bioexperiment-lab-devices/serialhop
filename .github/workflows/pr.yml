@@ -129,10 +129,27 @@ jobs:
           name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
           path: dist
 
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build wv2-inspect (CDP capture tool)
+        shell: powershell
+        run: |
+          go build -o wv2-inspect.exe .\tools\wv2-inspect
+
       - name: launch panel and capture window
         # Windows PowerShell 5.1 (not pwsh / PS7) — the legacy .NET Framework
         # has System.Drawing in the GAC, which pwsh's .NET 7+ split out.
         shell: powershell
+        env:
+          # Tell WebView2 to expose its Chrome DevTools Protocol on port 9222.
+          # wv2-inspect.exe attaches to it to capture console messages,
+          # uncaught exceptions, browser log entries, and the rendered DOM.
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--remote-debugging-port=9222"
         run: |
           $exe = Resolve-Path dist/SerialHop.exe
           Write-Host "Launching $exe"
@@ -177,8 +194,19 @@ jobs:
           "@ -ReferencedAssemblies System.Drawing
 
           $proc = Start-Process -FilePath $exe -PassThru
-          Write-Host "Started pid=$($proc.Id); waiting 20s for WebView2 + React to mount"
-          Start-Sleep -Seconds 20
+          Write-Host "Started pid=$($proc.Id); waiting 8s for WebView2 to come up"
+          Start-Sleep -Seconds 8
+
+          # Attach to the WebView2 CDP endpoint and capture console + DOM.
+          # Runs for 10s, then writes wv2.json. We do this BEFORE the
+          # screenshot so the capture happens against the same state.
+          New-Item -ItemType Directory -Force -Path screenshots | Out-Null
+          Write-Host "Running wv2-inspect (CDP capture, 10s window)"
+          & .\wv2-inspect.exe -port 9222 -duration 10s -out screenshots\wv2.json
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "::warning::wv2-inspect exited $LASTEXITCODE (binary may have launched without CDP)"
+          }
+          Start-Sleep -Seconds 2
 
           # Refresh process to pick up the main window handle.
           $proc.Refresh()
