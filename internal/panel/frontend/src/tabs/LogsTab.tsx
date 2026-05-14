@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Help } from "../components/Help";
 import { OpenLogsFolder } from "../wails/go/main/App";
@@ -38,9 +38,20 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
   const [follow, setFollow] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<LogLinePayload | null>(null);
-  const topRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => { if (follow) topRef.current?.scrollIntoView({ behavior: "auto", block: "start" }); }, [lines, follow]);
+  useEffect(() => {
+    if (!follow) return;
+    // Reset the outer scroll container directly: scrollIntoView on a marker
+    // inside `.shp-content__pad` lands at scrollTop = padding-top (~18px),
+    // which shows as a slight downward offset on streams with short backlogs.
+    const scroller = document.querySelector(".shp-content") as HTMLElement | null;
+    if (scroller) scroller.scrollTop = 0;
+  }, [lines, follow]);
+
+  // Selection is meaningful only for the service-log table. Clear it when
+  // the user switches streams so a previously selected service row doesn't
+  // linger in state when they come back.
+  useEffect(() => { setSelected(null); }, [stream]);
 
   const filtered = lines.filter(l => {
     if (stream === "service" && level !== "all" && l.record) {
@@ -57,7 +68,6 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
 
   return (
     <>
-      <div ref={topRef} />
       <div className="shp-logs-controls">
         <label className="shp-row">
           <span style={{ marginRight: 4 }}>Stream:</span>
@@ -103,23 +113,30 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
             <thead><tr><th className="col-time">Time</th><th className="col-level">Level</th><th>Message</th></tr></thead>
             <tbody>
               {display.map((l, i) => l.record && (
-                <tr key={i} onClick={() => setSelected(l)} data-selected={selected === l}>
-                  <td className="col-time">{String(l.record.time || "")}</td>
-                  <td className="col-level"><span className="shp-level-pill" data-level={String(l.record.level || "info").toLowerCase()}>{String(l.record.level || "")}</span></td>
-                  <td>{String(l.record.msg || "")}</td>
-                </tr>
+                <Fragment key={i}>
+                  <tr
+                    onClick={() => setSelected(prev => (prev === l ? null : l))}
+                    data-selected={selected === l}
+                  >
+                    <td className="col-time">{String(l.record.time || "")}</td>
+                    <td className="col-level"><span className="shp-level-pill" data-level={String(l.record.level || "info").toLowerCase()}>{String(l.record.level || "")}</span></td>
+                    <td>{String(l.record.msg || "")}</td>
+                  </tr>
+                  {selected === l && (
+                    <tr className="shp-logs-detail">
+                      <td colSpan={3}>
+                        <pre className="shp-logs-detail__json">{JSON.stringify(l.record, null, 2)}</pre>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <pre className="shp-mono-view">
+        <pre className="shp-mono-view shp-logs-mono">
           {display.map((l, i) => <div key={i}>{l.raw}</div>)}
-        </pre>
-      )}
-      {selected?.record && (
-        <pre className="shp-mono-view" style={{ height: "auto", maxHeight: 200, marginTop: 12 }}>
-          {JSON.stringify(selected.record, null, 2)}
         </pre>
       )}
       <div className="shp-btn-row" style={{ marginTop: 12 }}>

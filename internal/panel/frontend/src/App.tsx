@@ -67,7 +67,7 @@ export function App() {
       <TabBar active={tab} dirty={configDirty} onChange={requestTab} />
       <Warning message={warn} />
       <div className="shp-content">
-        <div className="shp-content__pad">
+        <div className="shp-content__pad" data-tab={tab}>
           {tab === "status" && <StatusTab lamps={lamps} buttons={buttons} configDirty={configDirty} />}
           {tab === "config" && <ConfigTab ref={configRef} onDirtyChange={setConfigDirty} />}
           {tab === "devices" && <DevicesTab />}
