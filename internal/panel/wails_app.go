@@ -212,8 +212,8 @@ func RunWithBindings(app *App, bindings []interface{}) error {
 		Title:     "SerialHop v" + version.Base(),
 		Width:     980,
 		Height:    700,
-		MinWidth:  860,
-		MinHeight: 580,
+		MinWidth:  720,
+		MinHeight: 480,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

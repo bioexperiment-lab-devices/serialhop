@@ -77,7 +77,7 @@ body { margin: 0; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  font-size: 13px;
+  font-size: clamp(12.5px, 0.85vw + 8px, 15.5px);
   line-height: 1.4;
   color: var(--text);
   background: var(--bg-page);
@@ -87,17 +87,13 @@ body {
 
 /* ===== Window chrome ===== */
 .shp-window {
-  width: 1080px;
-  height: 680px;
+  min-height: 100vh;
+  width: 100%;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   color: var(--text);
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  position: relative;
 }
 
 .shp-titlebar {
@@ -947,7 +943,7 @@ body {
 
 /* ===== Modal overlays for dialogs (for Config screens) ===== */
 .shp-modal-scrim {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(26,25,22,0.32);
   backdrop-filter: blur(0.5px);
@@ -1006,3 +1002,18 @@ body {
 .shp-muted { color: var(--text-muted); }
 .shp-mono { font-family: 'IBM Plex Mono', monospace; }
 .shp-strong { color: var(--text); font-weight: 600; }
+
+/* ===== Themed scrollbars ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) var(--surface-sunken);
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--surface-sunken); }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--surface-sunken);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+*::-webkit-scrollbar-corner { background: var(--surface-sunken); }
