@@ -17,5 +17,6 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    exclude: ["playwright/**", "node_modules/**"],
   },
 }));
