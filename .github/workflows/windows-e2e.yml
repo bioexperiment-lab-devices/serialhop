@@ -34,6 +34,23 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/panel/frontend/package-lock.json
+
+      # internal/panel/wails_app.go has `//go:embed all:frontend/dist`,
+      # so the Go compiler needs that directory to exist before it will
+      # build (or even vet) the package. Generate it once; the contents
+      # are irrelevant for the tests in this job — they exercise the
+      # binding methods directly without going through Wails.
+      - name: build frontend assets (for //go:embed)
+        run: |
+          npm ci
+          npm run build
+        working-directory: internal/panel/frontend
+
       - name: go vet (windows GOOS, all packages)
         run: go vet ./...
 
