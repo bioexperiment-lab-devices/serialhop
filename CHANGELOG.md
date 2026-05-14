@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.16.0...v0.16.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **panel:** reachability after first-run + persistent logs with backlog ([#90](https://github.com/bioexperiment-lab-devices/serialhop/issues/90)) ([59b237e](https://github.com/bioexperiment-lab-devices/serialhop/commit/59b237e7229dbb65d0db6d1f431c3b02652007f4))
+
 ## [0.16.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.15.0...v0.16.0) (2026-05-14)
 
 
