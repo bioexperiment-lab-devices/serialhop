@@ -43,3 +43,9 @@ export interface FieldErrorDTO {
   field: string;
   detail: string;
 }
+
+export interface ButtonStatePayload {
+  install: boolean;
+  uninstall: boolean;
+  restart: boolean;
+}

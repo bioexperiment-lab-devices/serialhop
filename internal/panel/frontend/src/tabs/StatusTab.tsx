@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Lamp } from "../components/Lamp";
 import { Help } from "../components/Help";
-import { UpdateState, type LampWhich, type Tone, type UpdateStatePayload } from "../types";
+import { UpdateState, type ButtonStatePayload, type LampWhich, type Tone, type UpdateStatePayload } from "../types";
 import {
   InstallService, UninstallService, RestartService,
   DownloadUpdate, CancelDownload, InstallUpdate, OpenReleaseNotes,
@@ -11,9 +11,9 @@ import { EventsOn, EventsOff, EventsEmit } from "../wails/runtime/runtime";
 
 type Lamps = Record<LampWhich, { tone: Tone; label: string; sub?: string }>;
 
-interface Props { lamps: Lamps; configDirty?: boolean; }
+interface Props { lamps: Lamps; buttons: ButtonStatePayload; configDirty?: boolean; }
 
-export function StatusTab({ lamps, configDirty }: Props) {
+export function StatusTab({ lamps, buttons, configDirty }: Props) {
   const [update, setUpdate] = useState<UpdateStatePayload>({ state: UpdateState.Idle, release_tag: "" });
   const [busy, setBusy] = useState(false);
 
@@ -33,13 +33,6 @@ export function StatusTab({ lamps, configDirty }: Props) {
     } finally { setBusy(false); }
   };
 
-  // Service-action enablement derived from the service lamp tone.
-  // Grey/red → "not installed" → only Install enabled.
-  // Green/yellow → installed → Uninstall + Restart enabled.
-  const svc = lamps.service.tone;
-  const installEnabled = svc === "grey" || svc === "red";
-  const installedEnabled = svc === "green" || svc === "yellow";
-
   return (
     <div className="status-tab">
       <section className="lamps">
@@ -55,9 +48,9 @@ export function StatusTab({ lamps, configDirty }: Props) {
       </section>
 
       <section className="actions">
-        <Button elevated disabled={busy || !installEnabled} onClick={() => adminAction(InstallService)}>Install</Button>
-        <Button elevated disabled={busy || !installedEnabled} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
-        <Button elevated disabled={busy || !installedEnabled} onClick={() => adminAction(RestartService, true)}>Restart</Button>
+        <Button elevated disabled={busy || !buttons.install} onClick={() => adminAction(InstallService)}>Install</Button>
+        <Button elevated disabled={busy || !buttons.uninstall} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
+        <Button elevated disabled={busy || !buttons.restart} onClick={() => adminAction(RestartService, true)}>Restart</Button>
       </section>
 
       {update.state !== UpdateState.Idle && (

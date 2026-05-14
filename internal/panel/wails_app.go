@@ -138,6 +138,15 @@ func (a *App) emitServiceLamp() {
 	})
 }
 
+func (a *App) emitButtonState(s serviceLamp) {
+	btns := ComputeButtons(s.state, s.cfgValid)
+	a.emitEvent("buttons:state", ButtonStateDTO{
+		Install:   btns.Install,
+		Uninstall: btns.Uninstall,
+		Restart:   btns.Restart,
+	})
+}
+
 func toneString(c StatusColor) string {
 	switch c {
 	case ColorGreen:
@@ -153,6 +162,7 @@ func toneString(c StatusColor) string {
 func (a *App) scmPollLoop(ctx context.Context) {
 	t := time.NewTicker(1 * time.Second)
 	defer t.Stop()
+	first := true
 	for {
 		select {
 		case <-ctx.Done():
@@ -170,8 +180,11 @@ func (a *App) scmPollLoop(ctx context.Context) {
 		newSvc := serviceLamp{state: scmState, cfgValid: cfgErr == nil}
 		oldSvc, _, _ := a.lamps.snapshot()
 		a.lamps.setService(newSvc)
-		if oldSvc.state != newSvc.state || oldSvc.cfgValid != newSvc.cfgValid {
+		changed := oldSvc.state != newSvc.state || oldSvc.cfgValid != newSvc.cfgValid
+		if first || changed {
 			a.emitServiceLamp()
+			a.emitButtonState(newSvc)
+			first = false
 		}
 		// Warn header tracking — emit on every tick so the SPA stays current.
 		if cfgErr != nil {

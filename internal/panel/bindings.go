@@ -24,6 +24,14 @@ import (
 
 // --- DTOs declared just for the binding surface. ---
 
+// ButtonStateDTO mirrors state.ComputeButtons for the SPA's Install /
+// Uninstall / Restart button enablement.
+type ButtonStateDTO struct {
+	Install   bool `json:"install"`
+	Uninstall bool `json:"uninstall"`
+	Restart   bool `json:"restart"`
+}
+
 // FieldError pairs a config field path (dot-separated for nested structs,
 // e.g. "lab_bridge.host") with a human-readable detail string.
 type FieldError struct {
