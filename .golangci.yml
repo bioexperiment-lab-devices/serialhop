@@ -14,3 +14,9 @@ linters:
     - govet
     - bodyclose
     - misspell
+  exclusions:
+    paths:
+      # Vendored Go code shipped inside npm packages (e.g. the `flatted`
+      # package bundles a Go reference implementation under its node_modules
+      # tree). Not our code; lint warnings there are noise.
+      - internal/panel/frontend/node_modules
