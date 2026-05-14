@@ -118,3 +118,134 @@ jobs:
           name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
           path: /tmp/SerialHop.exe
           retention-days: 7
+
+  panel-smoke:
+    name: panel smoke (windows)
+    runs-on: windows-latest
+    needs: verify
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
+          path: dist
+
+      - name: launch panel and capture window
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path dist/SerialHop.exe
+          Write-Host "Launching $exe"
+
+          Add-Type @"
+            using System;
+            using System.Drawing;
+            using System.Drawing.Imaging;
+            using System.Runtime.InteropServices;
+
+            public class Win32 {
+                [DllImport("user32.dll")]
+                public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+                [DllImport("user32.dll")]
+                public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+                [DllImport("user32.dll", SetLastError = true)]
+                public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+                [StructLayout(LayoutKind.Sequential)]
+                public struct RECT { public int Left, Top, Right, Bottom; }
+
+                public static Bitmap CaptureWindow(IntPtr hwnd) {
+                    RECT rect;
+                    GetWindowRect(hwnd, out rect);
+                    int w = rect.Right - rect.Left;
+                    int h = rect.Bottom - rect.Top;
+                    if (w <= 0 || h <= 0) return null;
+                    Bitmap bmp = new Bitmap(w, h);
+                    using (Graphics g = Graphics.FromImage(bmp)) {
+                        IntPtr hdc = g.GetHdc();
+                        // PW_RENDERFULLCONTENT (0x00000002): asks WebView2-style
+                        // chromium widgets to render their content even when
+                        // off-screen / hidden. Required to capture our panel.
+                        PrintWindow(hwnd, hdc, 0x00000002);
+                        g.ReleaseHdc(hdc);
+                    }
+                    return bmp;
+                }
+            }
+          "@ -ReferencedAssemblies System.Drawing,System.Drawing.Common
+
+          $proc = Start-Process -FilePath $exe -PassThru
+          Write-Host "Started pid=$($proc.Id); waiting 20s for WebView2 + React to mount"
+          Start-Sleep -Seconds 20
+
+          # Refresh process to pick up the main window handle.
+          $proc.Refresh()
+          $hwnd = $proc.MainWindowHandle
+          if ($hwnd -eq [IntPtr]::Zero) {
+              Write-Host "::error::Panel never created a main window"
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+              exit 1
+          }
+          Write-Host "Panel HWND=$hwnd; capturing"
+
+          [Win32]::ShowWindow($hwnd, 9) | Out-Null  # SW_RESTORE
+          Start-Sleep -Seconds 1
+
+          $bmp = [Win32]::CaptureWindow($hwnd)
+          if ($null -eq $bmp) {
+              Write-Host "::error::CaptureWindow returned null"
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+              exit 1
+          }
+
+          New-Item -ItemType Directory -Force -Path screenshots | Out-Null
+          $bmp.Save("screenshots/panel.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          Write-Host "Saved screenshots/panel.png ($($bmp.Width) x $($bmp.Height))"
+
+          # Pixel diversity: a panel that rendered any UI will have many distinct
+          # colors. An empty Wails window (no React mount, no assets) shows a
+          # uniform background. Sample 500 random points; require at least 12
+          # unique ARGB values inside the content area (skipping the OS title
+          # bar by clipping the top 32px).
+          $rng = New-Object System.Random
+          $unique = @{}
+          $samples = 500
+          $clipTop = [Math]::Min(32, $bmp.Height / 4)
+          for ($i = 0; $i -lt $samples; $i++) {
+              $x = $rng.Next($bmp.Width)
+              $y = $clipTop + $rng.Next($bmp.Height - $clipTop)
+              $c = $bmp.GetPixel($x, $y).ToArgb()
+              $unique[$c] = $true
+          }
+          $bmp.Dispose()
+          Write-Host "Content area: $($unique.Count) unique colors / $samples samples"
+
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+          if ($unique.Count -lt 12) {
+              Write-Host "::error::Panel content area appears empty (only $($unique.Count) unique colors). See uploaded screenshot."
+              exit 1
+          }
+
+      - name: capture panel logs
+        if: always()
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:ProgramData "SerialHop\logs"
+          New-Item -ItemType Directory -Force -Path captured-logs | Out-Null
+          if (Test-Path $logs) {
+              Get-ChildItem $logs | ForEach-Object {
+                  Copy-Item $_.FullName -Destination "captured-logs/$($_.Name)"
+              }
+              Write-Host "Copied $((Get-ChildItem captured-logs).Count) log file(s)"
+          } else {
+              Write-Host "No log directory at $logs"
+          }
+
+      - name: upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: panel-smoke-pr-${{ github.event.pull_request.number }}
+          path: |
+            screenshots/
+            captured-logs/
+          retention-days: 14
