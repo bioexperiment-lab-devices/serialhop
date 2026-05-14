@@ -4,3 +4,5 @@ src/wails/wailsjs/
 .vite/
 *.log
 dist-preview/
+playwright-report/
+test-results/
