@@ -6,8 +6,8 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"path/filepath"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
