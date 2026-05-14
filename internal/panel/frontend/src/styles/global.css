@@ -852,7 +852,12 @@ body {
   flex-wrap: wrap;
 }
 .shp-logs-controls .shp-select { width: auto; min-width: 0; padding-right: 26px; }
-.shp-logs-controls .shp-input { width: 200px; }
+.shp-logs-controls .shp-input {
+  width: auto;
+  min-width: 160px;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
 
 .shp-toggle {
   display: inline-flex;
