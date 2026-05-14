@@ -145,12 +145,16 @@ jobs:
         # Windows PowerShell 5.1 (not pwsh / PS7) — the legacy .NET Framework
         # has System.Drawing in the GAC, which pwsh's .NET 7+ split out.
         shell: powershell
-        env:
-          # Tell WebView2 to expose its Chrome DevTools Protocol on port 9222.
-          # wv2-inspect.exe attaches to it to capture console messages,
-          # uncaught exceptions, browser log entries, and the rendered DOM.
-          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--remote-debugging-port=9222"
         run: |
+          # Tell WebView2 to expose Chrome DevTools Protocol on port 9222.
+          # Belt and braces: set both the PowerShell scope and the process
+          # scope, then verify before launching. WEBVIEW2_ADDITIONAL_BROWSER_
+          # ARGUMENTS is documented to APPEND to whatever AdditionalBrowserArguments
+          # the host set, so it should coexist with Wails' --disable-features.
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+          [Environment]::SetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--remote-debugging-port=9222", "Process")
+          Write-Host "Process env: WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$([Environment]::GetEnvironmentVariable('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS', 'Process'))"
+
           $exe = Resolve-Path dist/SerialHop.exe
           Write-Host "Launching $exe"
 
@@ -193,9 +197,23 @@ jobs:
             }
           "@ -ReferencedAssemblies System.Drawing
 
-          $proc = Start-Process -FilePath $exe -PassThru
+          # Launch via ProcessStartInfo with UseShellExecute=$false so we
+          # can deterministically force the env var into the child process,
+          # rather than relying on PowerShell inheritance.
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $exe
+          $psi.UseShellExecute = $false
+          $psi.EnvironmentVariables["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=9222"
+          $proc = [System.Diagnostics.Process]::Start($psi)
           Write-Host "Started pid=$($proc.Id); waiting 8s for WebView2 to come up"
           Start-Sleep -Seconds 8
+
+          # Sanity-check that port 9222 is actually listening before we
+          # invoke wv2-inspect. If WebView2 didn't pick up the env var, the
+          # port won't be open and wv2-inspect's diagnostic message will be
+          # informative anyway, but logging it explicitly helps.
+          $portOpen = Test-NetConnection -ComputerName 127.0.0.1 -Port 9222 -WarningAction SilentlyContinue -InformationLevel Quiet
+          Write-Host "Port 9222 open: $portOpen"
 
           # Attach to the WebView2 CDP endpoint and capture console + DOM.
           # Runs for 10s, then writes wv2.json. We do this BEFORE the
