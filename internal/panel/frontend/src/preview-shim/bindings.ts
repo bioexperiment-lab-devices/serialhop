@@ -66,6 +66,21 @@ export const App: Record<string, (...args: any[]) => Promise<any>> = {
     status: { reachable: store.lamps.service.tone !== "red" },
   }),
 
+  Diagnostics: async () => ({
+    panel_version: "preview",
+    cache_path: "C:/ProgramData/SerialHop/server-info.cache.json",
+    cache_exists: true,
+    cache_user: "preview-user",
+    cache_fetched_at: new Date().toISOString(),
+    cache_actual_rest_port: 49283,
+    base_url_resolved: "http://127.0.0.1:49283",
+    base_url_status: "ok",
+    configured_lab_bridge_user: "preview-user",
+    config_path: "C:/ProgramData/SerialHop/SerialHop_config.yaml",
+    data_dir: "C:/ProgramData/SerialHop",
+    panel_error_log_path: "C:/ProgramData/SerialHop/logs/SerialHop_panel_error.log",
+  }),
+
   StartLogStream: async (id: string) => {
     store.activeLogStream = id as any;
     // Synthesize fake backlog so the preview exercises the production

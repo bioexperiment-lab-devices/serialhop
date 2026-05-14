@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Help } from "../components/Help";
+import { DiagnosticsDetails } from "../components/DiagnosticsDetails";
 import { GetPorts, Discover } from "../wails/go/main/App";
 
 interface DetailedPortDTO {
@@ -48,7 +49,10 @@ export function PortsTab() {
       </div>
       {!resp.status.reachable && banner ? (
         <div className="shp-empty">
-          <div className="shp-empty__body">{banner}</div>
+          <div className="shp-empty__body">
+            {banner}
+            <DiagnosticsDetails />
+          </div>
         </div>
       ) : (
         <>

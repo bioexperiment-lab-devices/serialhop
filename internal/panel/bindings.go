@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
@@ -271,6 +272,68 @@ func (a *App) DisconnectAll(ctx context.Context) DisconnectResult {
 func (a *App) GetPorts(ctx context.Context) PortsResult {
 	resp, st, _ := a.svc.GetPorts(ctx)
 	return PortsResult{DetailedPortsResponse: resp, Status: toTabStatus(st)}
+}
+
+// DiagnosticsDTO is the support-bundle the panel exposes to the SPA
+// when "Can't reach the local service" reports come in. Returning a
+// structured snapshot is more useful than asking operators to grep
+// log files: every field that gates reachability is in one place, in
+// the SAME process that handles GetPorts/GetDevices.
+type DiagnosticsDTO struct {
+	PanelVersion            string `json:"panel_version"`
+	CachePath               string `json:"cache_path"`
+	CacheExists             bool   `json:"cache_exists"`
+	CacheReadError          string `json:"cache_read_error,omitempty"`
+	CacheUser               string `json:"cache_user,omitempty"`
+	CacheFetchedAt          string `json:"cache_fetched_at,omitempty"`
+	CacheActualRestPort     int    `json:"cache_actual_rest_port"`
+	BaseURLResolved         string `json:"base_url_resolved,omitempty"`
+	BaseURLStatus           string `json:"base_url_status"`
+	ConfiguredLabBridgeUser string `json:"configured_lab_bridge_user"`
+	ConfigPath              string `json:"config_path"`
+	DataDir                 string `json:"data_dir"`
+	PanelErrorLogPath       string `json:"panel_error_log_path"`
+}
+
+// Diagnostics returns a snapshot of every input that gates the
+// Devices/Ports reachability check. Bound for the SPA so support
+// requests can paste a single JSON blob instead of hunting for log
+// files under %ProgramData%\SerialHop\logs\.
+func (a *App) Diagnostics() DiagnosticsDTO {
+	cfg, _ := config.LoadPartial(paths.ConfigPath())
+	d := DiagnosticsDTO{
+		PanelVersion:            version.Base(),
+		CachePath:               paths.ServerInfoCachePath(),
+		ConfiguredLabBridgeUser: cfg.LabBridge.User,
+		ConfigPath:              paths.ConfigPath(),
+		DataDir:                 paths.DataDir(),
+		PanelErrorLogPath:       paths.PanelErrorLogPath(),
+	}
+	if _, err := os.Stat(d.CachePath); err == nil {
+		d.CacheExists = true
+	}
+	if c, err := bootstrap.ReadCacheUnchecked(d.CachePath); err != nil {
+		d.CacheReadError = err.Error()
+	} else {
+		d.CacheUser = c.User
+		d.CacheFetchedAt = c.FetchedAt
+		d.CacheActualRestPort = c.ActualRestPort
+	}
+	if a.svc != nil {
+		base, st := a.svc.baseURL()
+		d.BaseURLResolved = base
+		switch st {
+		case StatusOK:
+			d.BaseURLStatus = "ok"
+		case StatusServiceDown:
+			d.BaseURLStatus = "service_down"
+		default:
+			d.BaseURLStatus = "unreachable"
+		}
+	} else {
+		d.BaseURLStatus = "no_servicecli"
+	}
+	return d
 }
 
 // StartLogStream attaches the panel's log tailer to the given stream and

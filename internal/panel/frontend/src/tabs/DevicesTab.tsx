@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
+import { DiagnosticsDetails } from "../components/DiagnosticsDetails";
 import { GetDevices, Discover, DisconnectAll } from "../wails/go/main/App";
 
 interface DeviceDTO {
@@ -53,7 +54,10 @@ export function DevicesTab() {
       </div>
       {!resp.status.reachable && banner ? (
         <div className="shp-empty">
-          <div className="shp-empty__body">{banner}</div>
+          <div className="shp-empty__body">
+            {banner}
+            <DiagnosticsDetails />
+          </div>
         </div>
       ) : (
         <>
