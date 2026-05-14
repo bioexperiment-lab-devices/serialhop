@@ -38,16 +38,21 @@ const (
 // open doesn't strand it on a stale port.
 type ServiceCli struct {
 	cachePath string
-	user      string
+	userFn    func() string
 	hc        *http.Client
 }
 
 // NewServiceCli returns a client anchored to the given bootstrap-cache
-// path + lab-bridge user. The HTTP client has a 5s per-call timeout.
-func NewServiceCli(cachePath, user string) *ServiceCli {
+// path. userFn is called on every request to obtain the current
+// lab-bridge user; this lets the panel pick up credential changes
+// (e.g. first-run save) without restart — capturing the user value at
+// panel-startup time would otherwise leave the client anchored to ""
+// until the panel was reopened, breaking the Devices/Ports tabs.
+// The HTTP client has a 5s per-call timeout.
+func NewServiceCli(cachePath string, userFn func() string) *ServiceCli {
 	return &ServiceCli{
 		cachePath: cachePath,
-		user:      user,
+		userFn:    userFn,
 		hc:        &http.Client{Timeout: 5 * time.Second},
 	}
 }
@@ -55,7 +60,7 @@ func NewServiceCli(cachePath, user string) *ServiceCli {
 // baseURL reads the cache and returns "http://127.0.0.1:<port>".
 // Returns StatusUnreachable on any cache-read failure or zero port.
 func (c *ServiceCli) baseURL() (string, ServiceCliStatus) {
-	cache, err := bootstrap.ReadCache(c.cachePath, c.user)
+	cache, err := bootstrap.ReadCache(c.cachePath, c.userFn())
 	if err != nil {
 		return "", StatusUnreachable
 	}
