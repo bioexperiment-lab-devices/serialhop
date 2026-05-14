@@ -1002,3 +1002,18 @@ body {
 .shp-muted { color: var(--text-muted); }
 .shp-mono { font-family: 'IBM Plex Mono', monospace; }
 .shp-strong { color: var(--text); font-weight: 600; }
+
+/* ===== Themed scrollbars ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) var(--surface-sunken);
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--surface-sunken); }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--surface-sunken);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+*::-webkit-scrollbar-corner { background: var(--surface-sunken); }
