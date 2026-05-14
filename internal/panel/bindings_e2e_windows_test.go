@@ -159,3 +159,51 @@ func TestApp_GetPorts_CacheMissingSurfacesUnreachable(t *testing.T) {
 		t.Errorf("Status.Reason: got %q, want %q", got.Status.Reason, "unreachable")
 	}
 }
+
+// TestApp_Diagnostics_HTTPProbe_OK exercises the new HTTP roundtrip
+// probe baked into Diagnostics(). When the cache is sane and a service
+// is actually serving, http_probe_status must come back "ok" so we can
+// distinguish "cache resolves a port but loopback is dead" (the
+// scenario the user keeps hitting) from "cache resolves a port and
+// loopback works fine."
+func TestApp_Diagnostics_HTTPProbe_OK(t *testing.T) {
+	srv := fakeServiceServer(t)
+	defer srv.Close()
+	app := newAppPointedAt(t, srv)
+
+	d := app.Diagnostics()
+	if d.BaseURLStatus != "ok" {
+		t.Errorf("BaseURLStatus: got %q, want ok", d.BaseURLStatus)
+	}
+	if d.HTTPProbeStatus != "ok" {
+		t.Errorf("HTTPProbeStatus: got %q, want ok; error=%q", d.HTTPProbeStatus, d.HTTPProbeError)
+	}
+	if d.HTTPProbePortsLen != 1 {
+		t.Errorf("HTTPProbePortsLen: got %d, want 1", d.HTTPProbePortsLen)
+	}
+}
+
+// TestApp_Diagnostics_HTTPProbe_LoopbackDead is the regression test
+// for the specific shape of the user's bug: cache resolves correctly
+// (BaseURLStatus=ok), but no one is listening on the resolved port.
+// The HTTP probe must surface a service_down status AND a non-empty
+// error string so the user-facing diagnostics blob explains WHY (e.g.
+// "connect: connection refused", "i/o timeout").
+func TestApp_Diagnostics_HTTPProbe_LoopbackDead(t *testing.T) {
+	// Seed a cache that points at a port we know nothing is bound to.
+	// Port 1 (TCPMUX) is reserved and usually refused immediately.
+	cachePath := seedCache(t, 1)
+	app := NewApp()
+	app.svc = NewServiceCli(cachePath)
+
+	d := app.Diagnostics()
+	if d.BaseURLStatus != "ok" {
+		t.Fatalf("BaseURLStatus: got %q, want ok (cache should resolve)", d.BaseURLStatus)
+	}
+	if d.HTTPProbeStatus == "ok" {
+		t.Errorf("HTTPProbeStatus: got ok; want service_down (nothing should be listening on :1)")
+	}
+	if d.HTTPProbeError == "" {
+		t.Errorf("HTTPProbeError empty; want a transport error message")
+	}
+}

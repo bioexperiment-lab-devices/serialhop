@@ -16,18 +16,48 @@ interface DevicesResult {
   status: { reachable: boolean; reason?: string };
 }
 
+// Mirror of PortsTab's wrapper. See PortsTab.tsx for rationale.
+const BINDING_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms);
+    p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
+
 export function DevicesTab() {
   const [resp, setResp] = useState<DevicesResult>({ devices: [], discovered_at: null, status: { reachable: false } });
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
 
   const refresh = async () => {
     setBusy(true);
-    try { setResp(await GetDevices()); } finally { setBusy(false); }
+    setCallError(null);
+    try {
+      const r = await withTimeout(GetDevices(), BINDING_TIMEOUT_MS, "GetDevices");
+      setResp(r);
+    } catch (e) {
+      setCallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      setLoaded(true);
+    }
   };
 
   const rediscover = async () => {
     setBusy(true);
-    try { setResp(await Discover()); } finally { setBusy(false); }
+    setCallError(null);
+    try {
+      const r = await withTimeout(Discover(), BINDING_TIMEOUT_MS, "Discover");
+      setResp(r);
+    } catch (e) {
+      setCallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      setLoaded(true);
+    }
   };
 
   const disconnect = async () => {
@@ -38,7 +68,11 @@ export function DevicesTab() {
   useEffect(() => { refresh(); }, []);
 
   const empty = resp.devices.length === 0;
-  const banner = pickBanner(resp.status, empty, "devices");
+  const banner = callError
+    ? `Binding error: ${callError}. Show diagnostics below for details.`
+    : !loaded
+        ? "Loading…"
+        : pickBanner(resp.status, empty, "devices");
 
   return (
     <>
