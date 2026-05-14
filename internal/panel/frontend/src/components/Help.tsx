@@ -23,6 +23,7 @@ export function Help({ title, what, defaultVal, when }: HelpProps) {
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const measuredOnceRef = useRef(false);
 
   const cancelClose = useCallback(() => {
     if (closeTimerRef.current !== null) {
@@ -67,7 +68,11 @@ export function Help({ title, what, defaultVal, when }: HelpProps) {
   }, []);
 
   useLayoutEffect(() => {
-    if (state === "closed") { setCoords(null); return; }
+    if (state === "closed") {
+      setCoords(null);
+      measuredOnceRef.current = false;
+      return;
+    }
     computePosition();
     const onResize = () => computePosition();
     const onScroll = () => computePosition();
@@ -79,13 +84,15 @@ export function Help({ title, what, defaultVal, when }: HelpProps) {
     };
   }, [state, computePosition]);
 
+  // Re-measure with real popover dimensions after it first enters the DOM.
+  // coords transitions null→value when the popover renders; at that point
+  // popoverRef.current is live and we can read its true offsetHeight.
   useLayoutEffect(() => {
-    if (state !== "closed" && popoverRef.current) {
-      // After first paint we know the real popover dimensions — re-measure once.
-      computePosition();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+    if (coords === null || measuredOnceRef.current) return;
+    if (!popoverRef.current) return;
+    measuredOnceRef.current = true;
+    computePosition();
+  }, [coords, computePosition]);
 
   useEffect(() => {
     if (state === "closed") return;
