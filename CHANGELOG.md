@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.1...v0.14.2) (2026-05-14)
+
+
+### Bug Fixes
+
+* **build:** pass -nopackage to wails build to avoid duplicate .rsrc sections ([#72](https://github.com/bioexperiment-lab-devices/serialhop/issues/72)) ([ca08882](https://github.com/bioexperiment-lab-devices/serialhop/commit/ca0888269f336ac851c26d0108be945db27c4cec))
+
 ## [0.14.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.0...v0.14.1) (2026-05-14)
 
 
