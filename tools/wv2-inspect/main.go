@@ -92,7 +92,10 @@ func main() {
 	// 3. Connect to the page target's WebSocket.
 	ctx, cancel := context.WithTimeout(context.Background(), *duration+5*time.Second)
 	defer cancel()
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+	conn, httpResp, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
+	if httpResp != nil {
+		_ = httpResp.Body.Close()
+	}
 	if err != nil {
 		writeFatal(*out, cap, fmt.Errorf("ws dial: %w", err))
 		return
@@ -170,15 +173,15 @@ func main() {
 
 	// 5. Enable domains.
 	if _, err := call("Runtime.enable", nil); err != nil {
-		writeFatal(*out, cap, fmt.Errorf("Runtime.enable: %w", err))
+		writeFatal(*out, cap, fmt.Errorf("cdp Runtime.enable: %w", err))
 		return
 	}
 	if _, err := call("Log.enable", nil); err != nil {
-		writeFatal(*out, cap, fmt.Errorf("Log.enable: %w", err))
+		writeFatal(*out, cap, fmt.Errorf("cdp Log.enable: %w", err))
 		return
 	}
 	if _, err := call("Page.enable", nil); err != nil {
-		writeFatal(*out, cap, fmt.Errorf("Page.enable: %w", err))
+		writeFatal(*out, cap, fmt.Errorf("cdp Page.enable: %w", err))
 		return
 	}
 
