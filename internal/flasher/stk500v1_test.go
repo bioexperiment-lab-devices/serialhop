@@ -134,6 +134,17 @@ func TestSTK_ChipErase_ZeroesFlash(t *testing.T) {
 	}
 }
 
+func TestSTK_EnterProgMode_HappyPath(t *testing.T) {
+	f := ft.NewFakeOptiboot()
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EnterProgMode(150 * time.Millisecond); err != nil {
+		t.Errorf("EnterProgMode: %v", err)
+	}
+}
+
 func TestSTK_LeaveProgMode(t *testing.T) {
 	f := ft.NewFakeOptiboot()
 	c := newSTKClient(f)

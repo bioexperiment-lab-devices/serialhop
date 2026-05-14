@@ -269,10 +269,14 @@ func TestFlash_RolledBackTestFailed_RealRollback(t *testing.T) {
 	}
 }
 
-func TestFlash_FailedNoRecovery_RollbackChipEraseFails(t *testing.T) {
+func TestFlash_FailedNoRecovery_RollbackProgPageFails(t *testing.T) {
 	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
-	op.fake.AckButDontPersistNextProgPage() // triggers verify failure -> rollback
-	op.fake.FailChipEraseAfterN(1)          // let runErase succeed; fail rollback's chip erase
+	// Primary ProgPage acks but doesn't persist → verify mismatch → rollback.
+	op.fake.AckButDontPersistNextProgPage()
+	// Let the primary ProgPage succeed (call #1); fail rollback's first
+	// page-write (call #2). Optiboot has no chip erase, so the first ProgPage
+	// the rollback issues is the natural failure surface.
+	op.fake.FailProgPageAfterN(1)
 
 	fl, _ := New(op, t.TempDir(), 10, 0)
 	res, err := fl.Flash(context.Background(), "COM3", Request{
