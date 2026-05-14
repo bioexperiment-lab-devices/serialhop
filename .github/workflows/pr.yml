@@ -90,13 +90,16 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@v1
 
-      - name: rebuild frontend (govulncheck-action wipes the worktree)
+      - name: reinstall + rebuild frontend (govulncheck-action wipes the worktree)
         # govulncheck-action@v1 runs `git reset --hard HEAD` which nukes the
-        # gitignored dist/ produced by the earlier "frontend build" step.
-        # The wails build below uses -s to skip the frontend script, so we
-        # have to put dist/ back ourselves before //go:embed all:frontend/dist
-        # can find any files.
-        run: npm run build
+        # gitignored dist/ AND node_modules/ produced by the earlier frontend
+        # steps. The wails build below uses -s to skip the frontend script,
+        # so we have to put dist/ back ourselves before //go:embed
+        # all:frontend/dist can find any files. npm install is faster than
+        # ci here because package-lock.json hasn't changed.
+        run: |
+          npm install --prefer-offline --no-audit --no-fund
+          npm run build
         working-directory: internal/panel/frontend
 
       - name: cross-compile windows binary
