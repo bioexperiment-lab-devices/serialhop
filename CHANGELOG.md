@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.15.0...v0.16.0) (2026-05-14)
+
+
+### Features
+
+* **panel:** frameless window with custom titlebar buttons + sticky chrome ([#88](https://github.com/bioexperiment-lab-devices/serialhop/issues/88)) ([465b1dd](https://github.com/bioexperiment-lab-devices/serialhop/commit/465b1ddc44744aa0de88b93bb4de0b0f577eba49))
+
 ## [0.15.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.4...v0.15.0) (2026-05-14)
 
 
