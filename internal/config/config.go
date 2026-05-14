@@ -6,47 +6,47 @@ import (
 )
 
 type Config struct {
-	LabBridge  LabBridgeConfig  `yaml:"lab_bridge"`
-	Rest       RestConfig       `yaml:"rest"`
-	Discovery  DiscoveryConfig  `yaml:"discovery"`
-	Log        LogConfig        `yaml:"log"`
-	RawSerial  RawSerialConfig  `yaml:"raw_serial"`
-	AutoUpdate AutoUpdateConfig `yaml:"auto_update"`
-	Flashing   FlashingConfig   `yaml:"flashing"`
+	LabBridge  LabBridgeConfig  `yaml:"lab_bridge" json:"lab_bridge"`
+	Rest       RestConfig       `yaml:"rest" json:"rest"`
+	Discovery  DiscoveryConfig  `yaml:"discovery" json:"discovery"`
+	Log        LogConfig        `yaml:"log" json:"log"`
+	RawSerial  RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
+	AutoUpdate AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
+	Flashing   FlashingConfig   `yaml:"flashing" json:"flashing"`
 }
 
 type LabBridgeConfig struct {
-	Host string `yaml:"host"`
-	User string `yaml:"user"`
-	Pass string `yaml:"pass"`
+	Host string `yaml:"host" json:"host"`
+	User string `yaml:"user" json:"user"`
+	Pass string `yaml:"pass" json:"pass"`
 }
 
 type RestConfig struct {
-	Port int `yaml:"port"`
+	Port int `yaml:"port" json:"port"`
 }
 
 type DiscoveryConfig struct {
-	Include          []string `yaml:"include"`
-	Exclude          []string `yaml:"exclude"`
-	PostOpenSettleMs int      `yaml:"post_open_settle_ms"`
+	Include          []string `yaml:"include" json:"include"`
+	Exclude          []string `yaml:"exclude" json:"exclude"`
+	PostOpenSettleMs int      `yaml:"post_open_settle_ms" json:"post_open_settle_ms"`
 }
 
 type LogConfig struct {
-	Level string `yaml:"level"`
+	Level string `yaml:"level" json:"level"`
 }
 
 type RawSerialConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 type AutoUpdateConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 type FlashingConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	BackupDir string `yaml:"backup_dir"`
-	KeepN     int    `yaml:"keep_n"`
+	Enabled   bool   `yaml:"enabled" json:"enabled"`
+	BackupDir string `yaml:"backup_dir" json:"backup_dir"`
+	KeepN     int    `yaml:"keep_n" json:"keep_n"`
 }
 
 func Default() Config {
