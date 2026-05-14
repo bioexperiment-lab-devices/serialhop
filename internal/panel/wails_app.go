@@ -39,7 +39,13 @@ type App struct {
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
 }
 
-func newApp() *App {
+// NewApp constructs a panel App. Exported so package main can wrap it
+// in its own type — Wails namespaces bindings by Go package path, so
+// the binding target must live in package main for the SPA's
+// `window.go.main.App` import to resolve.
+func NewApp() *App { return newAppInternal() }
+
+func newAppInternal() *App {
 	return &App{
 		updateCh: &updateCtl{},
 		hc:       &http.Client{}, // no global timeout; per-request ctx applied in the update helpers
@@ -195,10 +201,13 @@ func (a *App) scmPollLoop(ctx context.Context) {
 	}
 }
 
-// Run is the panel-mode entry point invoked from main.go.
-// Replaces the walk-based panel from panel.go (kept as walkRun for now).
-func Run() error {
-	app := newApp()
+// RunWithBindings is the panel-mode entry point. The caller (package main)
+// owns binding-target construction: Wails reflects over the bound values
+// and registers their methods under the Go package path of the value's
+// type. The SPA imports from `window.go.main.App`, so the binding target
+// must be a type defined in package main — typically a thin struct that
+// embeds *panel.App to inherit its methods. See `panel_run_windows.go`.
+func RunWithBindings(app *App, bindings []interface{}) error {
 	err := wails.Run(&options.App{
 		Title:     "SerialHop v" + version.Base(),
 		Width:     980,
@@ -210,7 +219,7 @@ func Run() error {
 		},
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
-		Bind:       []interface{}{app},
+		Bind:       bindings,
 		// EnableDefaultContextMenu turns on the WebView2 right-click menu in
 		// production. Operators get cut+copy+paste; we get a fighting chance
 		// at diagnostics — `Inspect` is included, which opens DevTools.
