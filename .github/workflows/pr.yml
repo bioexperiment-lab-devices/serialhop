@@ -118,3 +118,56 @@ jobs:
           name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
           path: /tmp/SerialHop.exe
           retention-days: 7
+
+  ui-checks:
+    name: ui-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            ui:
+              - 'internal/panel/frontend/**'
+              - '.github/workflows/pr.yml'
+
+      - name: skip if no UI changes
+        if: steps.changes.outputs.ui != 'true'
+        run: echo "No UI-relevant paths changed; skipping rendered-UI checks."
+
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.ui == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/panel/frontend/package-lock.json
+
+      - name: install deps
+        if: steps.changes.outputs.ui == 'true'
+        run: npm ci
+        working-directory: internal/panel/frontend
+
+      - name: install playwright browsers
+        if: steps.changes.outputs.ui == 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: internal/panel/frontend
+
+      - name: build preview bundle
+        if: steps.changes.outputs.ui == 'true'
+        run: npm run preview:build
+        working-directory: internal/panel/frontend
+
+      - name: run playwright
+        if: steps.changes.outputs.ui == 'true'
+        run: npm run playwright
+        working-directory: internal/panel/frontend
+
+      - name: upload playwright report on failure
+        if: failure() && steps.changes.outputs.ui == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: internal/panel/frontend/playwright-report
+          retention-days: 7
