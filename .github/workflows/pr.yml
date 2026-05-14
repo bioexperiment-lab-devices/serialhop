@@ -124,11 +124,6 @@ jobs:
     runs-on: windows-latest
     needs: verify
     steps:
-      - uses: actions/download-artifact@v7
-        with:
-          name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
-          path: dist
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v6
@@ -140,6 +135,11 @@ jobs:
         shell: powershell
         run: |
           go build -o wv2-inspect.exe .\tools\wv2-inspect
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
+          path: dist
 
       - name: launch panel and capture window
         # Windows PowerShell 5.1 (not pwsh / PS7) — the legacy .NET Framework
