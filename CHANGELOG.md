@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.2...v0.14.3) (2026-05-14)
+
+
+### Bug Fixes
+
+* **panel:** enable WebView2 context menu so operators can Inspect Element ([#74](https://github.com/bioexperiment-lab-devices/serialhop/issues/74)) ([2f4cd7a](https://github.com/bioexperiment-lab-devices/serialhop/commit/2f4cd7af16f0c8f4edf3e33d4938dc3c8a6d0ca3))
+
 ## [0.14.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.1...v0.14.2) (2026-05-14)
 
 
