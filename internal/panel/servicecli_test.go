@@ -45,7 +45,7 @@ func TestServiceCli_GetDevices_OK(t *testing.T) {
 	defer srv.Close()
 
 	port := mustPortFromURL(t, srv.URL)
-	cli := NewServiceCli(seedCache(t, port))
+	cli := NewServiceCli(seedCache(t, port), "alice")
 	resp, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -59,7 +59,7 @@ func TestServiceCli_GetDevices_OK(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_CacheMissingReturnsUnreachable(t *testing.T) {
-	cli := NewServiceCli(filepath.Join(t.TempDir(), "missing.json"))
+	cli := NewServiceCli(filepath.Join(t.TempDir(), "missing.json"), "alice")
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -70,7 +70,7 @@ func TestServiceCli_GetDevices_CacheMissingReturnsUnreachable(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_ActualPortZeroReturnsUnreachable(t *testing.T) {
-	cli := NewServiceCli(seedCache(t, 0))
+	cli := NewServiceCli(seedCache(t, 0), "alice")
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -82,7 +82,7 @@ func TestServiceCli_GetDevices_ActualPortZeroReturnsUnreachable(t *testing.T) {
 
 func TestServiceCli_GetDevices_ConnectionRefusedReturnsServiceDown(t *testing.T) {
 	// Use a port we know nothing is listening on.
-	cli := NewServiceCli(seedCache(t, 1)) // port 1 reserved → conn refused
+	cli := NewServiceCli(seedCache(t, 1), "alice") // port 1 reserved → conn refused
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -101,37 +101,13 @@ func TestServiceCli_Discover_PostsToDiscover(t *testing.T) {
 	}))
 	defer srv.Close()
 	port := mustPortFromURL(t, srv.URL)
-	cli := NewServiceCli(seedCache(t, port))
+	cli := NewServiceCli(seedCache(t, port), "alice")
 	_, status, err := cli.Discover(context.Background())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
 	if status != StatusOK {
 		t.Errorf("status: got %v, want StatusOK", status)
-	}
-}
-
-// TestServiceCli_IgnoresCacheUserAnchor proves the panel reaches the
-// service even when the cache was written under a DIFFERENT lab-bridge
-// user than the panel's current config — e.g., the operator edited
-// lab_bridge.user in the YAML but hasn't restarted the service yet, or
-// the panel reads cfg.LabBridge.User before the user has filled it in.
-// Production reports of "Can't reach the local service" all reduce to
-// this scenario; the user-anchor was load-bearing for the service but
-// pointless for the panel's local-port lookup.
-func TestServiceCli_IgnoresCacheUserAnchor(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(api.DevicesResponse{Devices: []api.DeviceDTO{}})
-	}))
-	defer srv.Close()
-
-	// seedCache writes the file with User="alice"; the panel calling
-	// code has no notion of "alice" — and that's the point: it should
-	// resolve the port anyway.
-	cli := NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
-	_, status, _ := cli.GetDevices(context.Background())
-	if status != StatusOK {
-		t.Errorf("with mismatched/unknown cache user: got %v, want StatusOK", status)
 	}
 }
 
