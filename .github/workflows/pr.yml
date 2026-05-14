@@ -256,11 +256,20 @@ jobs:
               return $sb.ToString()
           }
 
-          $proc.Refresh()
-          Write-Host "Title T+0:    $(Read-Title $proc.MainWindowHandle)"
-          Start-Sleep -Seconds 5
-          $proc.Refresh()
-          Write-Host "Title T+5s:   $(Read-Title $proc.MainWindowHandle)"
+          # Poll up to 30s for the main window handle (CI runners are sometimes
+          # slow to surface it; the diagnostic JS won't fire until OnDomReady,
+          # which itself depends on navigation completing).
+          for ($i = 0; $i -lt 30; $i++) {
+              $proc.Refresh()
+              if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { break }
+              Start-Sleep -Seconds 1
+          }
+          Write-Host "Final HWND after polling: $($proc.MainWindowHandle); HasExited=$($proc.HasExited)"
+          if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
+              Write-Host "Title now: $(Read-Title $proc.MainWindowHandle)"
+              # Wait extra so the 3s setTimeout in our diagnostic JS fires.
+              Start-Sleep -Seconds 5
+          }
 
           # Attach to the WebView2 CDP endpoint and capture console + DOM.
           # Runs for 10s, then writes wv2.json. We do this BEFORE the
