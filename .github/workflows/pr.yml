@@ -103,13 +103,14 @@ jobs:
         working-directory: internal/panel/frontend
 
       - name: cross-compile windows binary
-        # Drop -skipbindings so Wails generates window.wailsbindings the
-        # same way the release-build job does — that's what
-        # /wails/runtime.js needs to wire window.go.main.App.* methods
-        # from. Otherwise the smoke test sees a different code path than
-        # what operators actually run.
+        # PR-time builds use -skipbindings because Wails' bindings
+        # generator runs the host (Linux) compiler against main.go, but
+        # main.go is //go:build windows so it's excluded — the host
+        # build fails. Operators get bindings via the release-build job
+        # (which runs on windows-latest); we cover that path with the
+        # release-smoke job below.
         run: |
-          wails build -platform windows/amd64 -s -devtools -nopackage -trimpath \
+          wails build -platform windows/amd64 -s -skipbindings -devtools -nopackage -trimpath \
             -ldflags="-X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'"
           cp build/bin/SerialHop.exe /tmp/SerialHop.exe
 
@@ -137,10 +138,24 @@ jobs:
         run: |
           go build -o wv2-inspect.exe .\tools\wv2-inspect
 
-      - uses: actions/download-artifact@v7
-        with:
-          name: SerialHop-pr-${{ github.event.pull_request.number }}.exe
-          path: dist
+      # Pull the LATEST PUBLISHED RELEASE artifact (not the PR's
+      # cross-compiled one). The PR build runs on Linux and has to use
+      # -skipbindings — Wails' bindings generator can't compile our
+      # //go:build windows main.go on the Linux host. The release-build
+      # job runs on windows-latest and produces the binary operators
+      # actually run, so that's what the smoke needs to exercise.
+      - name: download latest release exe
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = (gh release view --json tagName --jq '.tagName')
+          Write-Host "Latest release tag: $tag"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          gh release download $tag --pattern 'SerialHop-*.exe' --dir dist
+          # Normalise to dist\SerialHop.exe so the rest of the job is unchanged.
+          Get-ChildItem dist\SerialHop-*.exe | Select-Object -First 1 |
+            Rename-Item -NewName SerialHop.exe
 
       - name: launch panel and capture window
         # Windows PowerShell 5.1 (not pwsh / PS7) — the legacy .NET Framework
