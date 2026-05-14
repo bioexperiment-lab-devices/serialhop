@@ -130,11 +130,15 @@ jobs:
           path: dist
 
       - name: launch panel and capture window
-        shell: pwsh
+        # Windows PowerShell 5.1 (not pwsh / PS7) — the legacy .NET Framework
+        # has System.Drawing in the GAC, which pwsh's .NET 7+ split out.
+        shell: powershell
         run: |
           $exe = Resolve-Path dist/SerialHop.exe
           Write-Host "Launching $exe"
 
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
           Add-Type @"
             using System;
             using System.Drawing;
@@ -170,7 +174,7 @@ jobs:
                     return bmp;
                 }
             }
-          "@ -ReferencedAssemblies System.Drawing,System.Drawing.Common
+          "@ -ReferencedAssemblies System.Drawing
 
           $proc = Start-Process -FilePath $exe -PassThru
           Write-Host "Started pid=$($proc.Id); waiting 20s for WebView2 + React to mount"
@@ -227,7 +231,7 @@ jobs:
 
       - name: capture panel logs
         if: always()
-        shell: pwsh
+        shell: powershell
         run: |
           $logs = Join-Path $env:ProgramData "SerialHop\logs"
           New-Item -ItemType Directory -Force -Path captured-logs | Out-Null
