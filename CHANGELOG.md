@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.17.1...v0.18.0) (2026-05-14)
+
+
+### Features
+
+* **panel:** inline log detail + stretchable mono view + scroll fixes ([#97](https://github.com/bioexperiment-lab-devices/serialhop/issues/97)) ([a0281b1](https://github.com/bioexperiment-lab-devices/serialhop/commit/a0281b1ed252a5209a9ca64f3394556c6438f846))
+
 ## [0.17.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.17.0...v0.17.1) (2026-05-14)
 
 
