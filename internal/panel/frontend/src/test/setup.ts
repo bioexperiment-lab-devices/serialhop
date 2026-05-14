@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom";
 import { beforeEach, afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
 
 beforeEach(() => {
   if (!document.getElementById("popover-root")) {
@@ -10,5 +11,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Run React cleanup first so portals unmount before we clear the host node.
+  cleanup();
   document.getElementById("popover-root")?.replaceChildren();
 });

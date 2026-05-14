@@ -370,10 +370,6 @@ body {
 }
 
 .shp-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: -8px;
-  width: 280px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -381,7 +377,7 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.5;
-  z-index: 30;
+  z-index: 50;
   box-shadow: var(--shadow-popover);
   text-align: left;
   cursor: default;
@@ -389,12 +385,21 @@ body {
 .shp-popover::before {
   content: "";
   position: absolute;
-  top: -6px; left: 12px;
+  top: -6px;
+  left: var(--shp-arrow-left, 12px);
   width: 10px; height: 10px;
   background: var(--surface);
   border-left: 1px solid var(--border-strong);
   border-top: 1px solid var(--border-strong);
   transform: rotate(45deg);
+}
+.shp-popover[data-flipped="true"]::before {
+  top: auto;
+  bottom: -6px;
+  border-left: none;
+  border-top: none;
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
 }
 .shp-popover h5 {
   margin: 0 0 4px;
