@@ -151,6 +151,27 @@ func (a *App) emitServiceLamp() {
 	})
 }
 
+// markNetProbesChecking flips both network lamps to "Checking…" and emits.
+// Used right when a user action starts so the lamps don't keep showing
+// stale "Connected"/"Up" while the action runs.
+func (a *App) markNetProbesChecking() {
+	a.lamps.setServer(netLamp{kind: lampChecking})
+	a.lamps.setTunnel(netLamp{kind: lampChecking})
+	a.emitServerLamp()
+	a.emitTunnelLamp()
+}
+
+// kickNetProbes wakes the server and tunnel probe goroutines so they
+// re-run now instead of waiting for the next 30 s tick. Pairs with
+// markNetProbesChecking — the probe writes the real result into the
+// lamp state when it returns. trySend coalesces, so callers may invoke
+// freely from action handlers.
+func (a *App) kickNetProbes() {
+	a.markNetProbesChecking()
+	trySend(a.serverTrigger)
+	trySend(a.tunnelTrigger)
+}
+
 func (a *App) emitButtonState(s serviceLamp) {
 	btns := ComputeButtons(s.state, s.cfgValid)
 	a.emitEvent("buttons:state", ButtonStateDTO{

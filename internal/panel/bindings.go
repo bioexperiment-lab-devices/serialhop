@@ -116,6 +116,10 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
 	}
 	a.emitEvent("config:saved", nil)
+	// Saving may have changed lab_bridge.host/user/pass — re-probe so the
+	// Server / Tunnel lamps reflect the new credentials immediately
+	// instead of waiting up to 30 s for the next tick.
+	a.kickNetProbes()
 	return SaveResult{OK: true}
 }
 
@@ -172,8 +176,16 @@ func (a *App) RestartService() AdminResult   { return a.runAdmin("restart", "Ser
 // Emits footer events (work / err / ok) around the UAC subprocess; the
 // AdminResult fields (OK / Cancelled / ErrorMessage) drive whatever
 // post-action behavior the SPA needs (e.g., reloading device tables).
+//
+// Lamp refresh: the network lamps are flipped to "Checking…" before the
+// UAC subprocess (instant visual feedback that the user's click landed),
+// and re-probed after it returns regardless of outcome — so a cancelled
+// or failed action still recovers to the actual state instead of leaving
+// the lamps gray.
 func (a *App) runAdmin(action, successMsg string) AdminResult {
 	a.emitEvent("footer:set", map[string]string{"kind": "work", "text": "Working…"})
+	a.markNetProbesChecking()
+	defer a.kickNetProbes()
 	errMsg, err := RunElevatedAdminAction(action)
 	switch {
 	case errors.Is(err, ErrUserCancelled):
@@ -531,6 +543,8 @@ func ctlInstallEvent(a *App) AdminResult {
 	}
 	a.applyUpdateEvent(EvInstallStart)
 	a.emitEvent("footer:set", map[string]interface{}{"kind": "work", "text": "Installing update…"})
+	a.markNetProbesChecking()
+	defer a.kickNetProbes()
 
 	errMsg, err := RunElevatedAdminAction("update", "--update-src="+src)
 	switch {

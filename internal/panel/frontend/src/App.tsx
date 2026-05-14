@@ -10,7 +10,7 @@ import { ConfigTab, type ConfigTabHandle } from "./tabs/ConfigTab";
 import { DevicesTab } from "./tabs/DevicesTab";
 import { PortsTab } from "./tabs/PortsTab";
 import { LogsTab } from "./tabs/LogsTab";
-import { GetVersion, LoadConfigFromDisk } from "./wails/go/main/App";
+import { GetVersion, LoadConfigFromDisk, TriggerProbe } from "./wails/go/main/App";
 import { useGlobalUiState } from "./state/globalStore";
 
 // TODO(spec §5.10): also intercept window close. Wails v2 exposes
@@ -31,6 +31,15 @@ export function App() {
     LoadConfigFromDisk().then((cfg: { lab_bridge?: { user?: string; pass?: string } }) => {
       if (!cfg.lab_bridge?.user || !cfg.lab_bridge?.pass) setTab("config");
     });
+    // Ask the Go side to re-emit network lamp state. The probe goroutines
+    // run their initial probe within ~5 s of app startup; if their emit
+    // races ahead of the SPA's status:lamp subscription (registered in
+    // useGlobalUiState above, which runs before this effect), the lamps
+    // would otherwise stay grey "Checking…" until the next 30 s tick.
+    // TriggerProbe sets the lamp to Checking…, then re-probes — both
+    // events arrive after we've subscribed.
+    TriggerProbe("server");
+    TriggerProbe("tunnel");
   }, []);
 
   const requestTab = (next: TabId) => {
