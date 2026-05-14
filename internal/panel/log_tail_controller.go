@@ -20,16 +20,27 @@ type logTailController struct {
 	stream string
 }
 
-func (c *logTailController) start(streamID string, emit func(name string, data interface{})) {
+// logBacklogBytes is the size of the recent-history slice ReadBacklog
+// extracts from each log file before live tailing begins. 256 KB is
+// large enough to cover several minutes of normal slog output but
+// small enough to keep the panel's first paint snappy.
+const logBacklogBytes = 256 * 1024
+
+// start (re)attaches the controller to streamID. It returns the recent
+// backlog lines (oldest first) so the caller can deliver them to the UI
+// synchronously, atomically with the start of live streaming: the live
+// tailer attaches at the same byte offset the backlog read returned, so
+// there is no gap or overlap.
+func (c *logTailController) start(streamID string, emit func(name string, data interface{})) []map[string]interface{} {
 	c.stop()
 	path, ok := streamPath(streamID)
 	if !ok {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	parse := streamID == "service" // service log is slog JSON; others are raw
 
-	onLine := func(line string) {
+	encodeLine := func(line string) map[string]interface{} {
 		payload := map[string]interface{}{"stream": streamID}
 		if parse {
 			var rec map[string]interface{}
@@ -41,13 +52,25 @@ func (c *logTailController) start(streamID string, emit func(name string, data i
 		} else {
 			payload["raw"] = line
 		}
-		emit("log:line", payload)
+		return payload
+	}
+	onLine := func(line string) {
+		emit("log:line", encodeLine(line))
 	}
 	onRotate := func() {
 		emit("log:rotated", map[string]string{"stream": streamID})
 	}
 
 	tailer := NewFileTail(path, 500*time.Millisecond, onLine, onRotate)
+
+	// Capture backlog from the same file handle Run() is about to take
+	// over; ReadBacklog restores the EOF position so live tailing picks
+	// up exactly where the backlog ended.
+	backlogLines := tailer.ReadBacklog(logBacklogBytes)
+	backlog := make([]map[string]interface{}, 0, len(backlogLines))
+	for _, l := range backlogLines {
+		backlog = append(backlog, encodeLine(l))
+	}
 
 	c.mu.Lock()
 	c.cancel = cancel
@@ -56,6 +79,7 @@ func (c *logTailController) start(streamID string, emit func(name string, data i
 	c.mu.Unlock()
 
 	go tailer.Run(ctx)
+	return backlog
 }
 
 func (c *logTailController) stop() {

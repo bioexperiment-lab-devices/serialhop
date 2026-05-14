@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Help } from "../components/Help";
-import { StartLogStream, StopLogStream, OpenLogsFolder } from "../wails/go/main/App";
-import { EventsOn, EventsOff } from "../wails/runtime/runtime";
-import type { LogLinePayload } from "../types";
+import { OpenLogsFolder } from "../wails/go/main/App";
+import type { LogLinePayload, StreamID } from "../types";
+import type { LogStreamState } from "../state/globalStore";
 
-type StreamID = "service" | "stderr" | "panel";
 type LevelFilter = "all" | "debug" | "info" | "warn" | "error";
 
-const RING_CAPACITY = 5_000;
 const LEVEL_RANK: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 // v1 simplification: spec §9 requires per-entry help for the Stream dropdown.
@@ -30,31 +28,17 @@ const streamHelp: Record<StreamID, { title: string; what: string }> = {
   },
 };
 
-export function LogsTab() {
-  const [stream, setStream] = useState<StreamID>("service");
+// LogsTab is now a thin view over the App-level log streaming state. The
+// buffer and tailer subscription live in globalStore so they survive both
+// tab switches (LogsTab unmount/remount) and stream changes — see
+// useGlobalUiState for the lifecycle.
+export function LogsTab({ logState }: { logState: LogStreamState }) {
+  const { stream, setStream, lines } = logState;
   const [level, setLevel] = useState<LevelFilter>("all");
   const [follow, setFollow] = useState(true);
   const [search, setSearch] = useState("");
-  const [lines, setLines] = useState<LogLinePayload[]>([]);
   const [selected, setSelected] = useState<LogLinePayload | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setLines([]); setSelected(null);
-    StartLogStream(stream);
-    const onLine = (p: LogLinePayload) => {
-      if (p.stream !== stream) return;
-      setLines(prev => {
-        const next = [...prev, p];
-        if (next.length > RING_CAPACITY) next.splice(0, next.length - RING_CAPACITY);
-        return next;
-      });
-    };
-    const onRot = () => setLines(prev => [...prev, { stream, raw: "— rotated —" }]);
-    EventsOn("log:line", onLine);
-    EventsOn("log:rotated", onRot);
-    return () => { EventsOff("log:line"); EventsOff("log:rotated"); StopLogStream(); };
-  }, [stream]);
 
   useEffect(() => { if (follow) endRef.current?.scrollIntoView({ behavior: "auto" }); }, [lines, follow]);
 

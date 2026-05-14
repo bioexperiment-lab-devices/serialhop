@@ -16,8 +16,10 @@ export interface FooterPayload {
   progress?: number;
 }
 
+export type StreamID = "service" | "stderr" | "panel";
+
 export interface LogLinePayload {
-  stream: "service" | "stderr" | "panel";
+  stream: StreamID;
   raw?: string;
   record?: Record<string, unknown>;
 }

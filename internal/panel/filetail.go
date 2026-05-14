@@ -2,6 +2,7 @@ package panel
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -56,6 +57,65 @@ func NewFileTail(path string, pollEvery time.Duration, onLine func(string), onRo
 		}
 	}
 	return ft
+}
+
+// ReadBacklog reads the last maxBytes of the tailed file (or the whole
+// file if it is smaller) and returns the lines contained therein. The
+// first partial line (when the read does not start at offset 0) is
+// dropped so callers never see a truncated record.
+//
+// It uses the constructor-held file handle, which sits at EOF after
+// NewFileTail, and restores the handle to EOF before returning so the
+// subsequent Run() picks up exactly where the backlog left off — there
+// is no window in which writes can slip past unseen.
+//
+// No-op (returns nil) if the file did not exist at construction time;
+// Run will attach at offset 0 of the next-created file.
+func (t *FileTail) ReadBacklog(maxBytes int64) []string {
+	if t.initFile == nil || maxBytes <= 0 {
+		return nil
+	}
+	end, err := t.initFile.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil
+	}
+	start := end - maxBytes
+	if start < 0 {
+		start = 0
+	}
+	if _, err := t.initFile.Seek(start, io.SeekStart); err != nil {
+		return nil
+	}
+	buf := make([]byte, end-start)
+	n, _ := io.ReadFull(t.initFile, buf)
+	// Restore EOF for Run() to take over.
+	if _, err := t.initFile.Seek(end, io.SeekStart); err != nil {
+		return nil
+	}
+	if n == 0 {
+		return nil
+	}
+	chunk := buf[:n]
+	// Drop the partial first record when we didn't start at offset 0.
+	if start > 0 {
+		i := bytes.IndexByte(chunk, '\n')
+		if i < 0 {
+			return nil
+		}
+		chunk = chunk[i+1:]
+	}
+	if len(chunk) == 0 {
+		return nil
+	}
+	// Trim a trailing newline so we don't emit a spurious empty line.
+	chunk = bytes.TrimRight(chunk, "\n")
+	rawLines := bytes.Split(chunk, []byte{'\n'})
+	out := make([]string, 0, len(rawLines))
+	for _, l := range rawLines {
+		l = bytes.TrimRight(l, "\r")
+		out = append(out, string(l))
+	}
+	return out
 }
 
 // Close releases the file handle held by the constructor if Run was never

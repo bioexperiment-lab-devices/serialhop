@@ -68,6 +68,25 @@ export const App: Record<string, (...args: any[]) => Promise<any>> = {
 
   StartLogStream: async (id: string) => {
     store.activeLogStream = id as any;
+    // Synthesize fake backlog so the preview exercises the production
+    // seed-from-return-value codepath. The "service" stream mirrors the
+    // record-shaped payload the real Go side returns; the other streams
+    // are raw text.
+    if (id === "service") {
+      const now = Date.now();
+      return [0, 1, 2].map(i => ({
+        stream: "service",
+        record: {
+          time: new Date(now - (3 - i) * 1500).toISOString(),
+          level: "info",
+          msg: `(backlog) replay line ${i + 1}`,
+        },
+      }));
+    }
+    return [
+      { stream: id, raw: `[preview] backlog line #1 for ${id}` },
+      { stream: id, raw: `[preview] backlog line #2 for ${id}` },
+    ];
   },
   StopLogStream: async () => {
     store.activeLogStream = null;

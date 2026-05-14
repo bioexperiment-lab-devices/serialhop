@@ -22,7 +22,7 @@ export function App() {
   const [tab, setTab] = useState<TabId>("status");
   const [configDirty, setConfigDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<TabId | null>(null);
-  const { warn, footer, lamps, buttons } = useGlobalUiState();
+  const { warn, footer, lamps, buttons, logState } = useGlobalUiState();
   const configRef = useRef<ConfigTabHandle | null>(null);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export function App() {
           {tab === "config" && <ConfigTab ref={configRef} onDirtyChange={setConfigDirty} />}
           {tab === "devices" && <DevicesTab />}
           {tab === "ports" && <PortsTab />}
-          {tab === "logs" && <LogsTab />}
+          {tab === "logs" && <LogsTab logState={logState} />}
         </div>
       </div>
       <Footer {...footer} />
