@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.16.1...v0.17.0) (2026-05-14)
+
+
+### Features
+
+* **panel:** sticky logs filter bar + newest-first log order ([#92](https://github.com/bioexperiment-lab-devices/serialhop/issues/92)) ([a0ee2f6](https://github.com/bioexperiment-lab-devices/serialhop/commit/a0ee2f6c24f67db896713be8baa250726d832408))
+
+
+### Bug Fixes
+
+* **panel:** refresh status lamps after admin actions and on startup ([#93](https://github.com/bioexperiment-lab-devices/serialhop/issues/93)) ([a4b5d0b](https://github.com/bioexperiment-lab-devices/serialhop/commit/a4b5d0b1a64e77d783676ba12a181c5224dc1351))
+
 ## [0.16.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.16.0...v0.16.1) (2026-05-14)
 
 
