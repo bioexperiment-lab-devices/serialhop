@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -75,6 +76,17 @@ func TestFileTail_StartsFromEndOfFile(t *testing.T) {
 }
 
 func TestFileTail_DetectsRotationOnInodeReset(t *testing.T) {
+	// Windows refuses to rename or remove a file that another handle on
+	// the same machine holds open without FILE_SHARE_DELETE (Go's
+	// os.Open doesn't set it). That blocks every test mutation that
+	// would simulate inode-reset rotation while the tailer is running.
+	// The size-shrink branch of Run still detects rotation correctly on
+	// Windows (lumberjack on Windows actually rotates by truncating, not
+	// renaming), so production coverage isn't lost — only this specific
+	// inode-driven simulation is unix-only.
+	if runtime.GOOS == "windows" {
+		t.Skip("inode-reset simulation requires renaming a file held open by the tailer; Windows blocks that without FILE_SHARE_DELETE")
+	}
 	p := filepath.Join(t.TempDir(), "log")
 	if err := os.WriteFile(p, []byte("v1 line\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)

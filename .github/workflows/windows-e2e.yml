@@ -1,0 +1,73 @@
+name: Windows E2E
+
+# Runs the windows-only Go tests on a windows-latest runner so the panel
+# binding (the `*App` methods Wails exposes to the SPA, all gated behind
+# //go:build windows) is exercised end-to-end against a seeded bootstrap
+# cache + fake REST service. The pr.yml verify job uses ubuntu-latest
+# which excludes those files entirely; recurring reports of "Can't reach
+# the local service" in the Devices/Ports tabs slipped past every
+# previous CI gate because nothing actually invoked `App.GetPorts` /
+# `App.GetDevices` / `App.Discover` on Windows.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+concurrency:
+  group: windows-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  panel-binding-e2e:
+    name: panel binding e2e
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/panel/frontend/package-lock.json
+
+      # internal/panel/wails_app.go has `//go:embed all:frontend/dist`,
+      # so the Go compiler needs that directory to exist before it will
+      # build (or even vet) the package. Generate it once; the contents
+      # are irrelevant for the tests in this job — they exercise the
+      # binding methods directly without going through Wails.
+      - name: build frontend assets (for //go:embed)
+        run: |
+          npm ci
+          npm run build
+        working-directory: internal/panel/frontend
+
+      - name: go vet (windows GOOS, all packages)
+        run: go vet ./...
+
+      # The windows-tagged tests are the ones that matter — they cover
+      # the App methods Wails actually binds. Run them with -race so
+      # the bootstrap-cache lookup contending with HTTP calls is shaken.
+      - name: panel windows-only tests (race)
+        run: go test -race -count=1 -v ./internal/panel/...
+
+      # Full test sweep on the Windows runner too, so anything
+      # accidentally Windows-fragile (path separators, file locks)
+      # surfaces here rather than in the field. continue-on-error
+      # because internal/config has pre-existing Windows-incompat tests
+      # (golden-file LF/CRLF drift; a hardcoded /tmp path used as
+      # "absolute") that pr.yml's ubuntu-latest never caught. Those are
+      # tracked separately; we don't want them to block the
+      # panel-binding-e2e gate this workflow exists to provide.
+      - name: full test sweep
+        run: go test -race -count=1 ./...
+        continue-on-error: true

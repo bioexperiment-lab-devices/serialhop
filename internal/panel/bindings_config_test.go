@@ -15,7 +15,7 @@ func TestSaveConfig_WritesYAMLAndReadsBack(t *testing.T) {
 	cfgPath := filepath.Join(dir, "cfg.yaml")
 	t.Setenv("SERIALHOP_TEST_CONFIG_PATH", cfgPath)
 
-	app := newApp()
+	app := NewApp()
 	cfg := config.Default()
 	cfg.LabBridge.User = "alice"
 	cfg.LabBridge.Pass = "pw"
@@ -40,7 +40,7 @@ func TestSaveConfig_ValidationFailureSurfaces(t *testing.T) {
 	cfgPath := filepath.Join(dir, "cfg.yaml")
 	t.Setenv("SERIALHOP_TEST_CONFIG_PATH", cfgPath)
 
-	app := newApp()
+	app := NewApp()
 	cfg := config.Default() // user/pass empty → validation fails
 	res := app.SaveConfig(cfg)
 	if res.OK {
@@ -55,7 +55,7 @@ func TestSaveConfig_ValidationFailureSurfaces(t *testing.T) {
 }
 
 func TestValidateConfig_HappyPath(t *testing.T) {
-	app := newApp()
+	app := NewApp()
 	cfg := config.Default()
 	cfg.LabBridge.User = "alice"
 	cfg.LabBridge.Pass = "pw"
@@ -69,7 +69,7 @@ func TestLoadConfigFromDisk_ReturnsDefaultWhenMissing(t *testing.T) {
 	cfgPath := filepath.Join(dir, "nope.yaml")
 	t.Setenv("SERIALHOP_TEST_CONFIG_PATH", cfgPath)
 
-	got := newApp().LoadConfigFromDisk()
+	got := NewApp().LoadConfigFromDisk()
 	if got.LabBridge.Host != config.Default().LabBridge.Host {
 		t.Errorf("expected default; got %+v", got)
 	}
@@ -80,7 +80,7 @@ func TestVerifyCredentials_UnchangedSkipsVerify(t *testing.T) {
 	cfgPath := filepath.Join(dir, "cfg.yaml")
 	t.Setenv("SERIALHOP_TEST_CONFIG_PATH", cfgPath)
 
-	app := newApp()
+	app := NewApp()
 	cfg := config.Default()
 	cfg.LabBridge.Host = "h.example"
 	cfg.LabBridge.User = "alice"

@@ -54,6 +54,13 @@ export function Discover(): Promise<any> { return call<any>("Discover"); }
 export function DisconnectAll(): Promise<any> { return call<any>("DisconnectAll"); }
 export function GetPorts(): Promise<any> { return call<any>("GetPorts"); }
 
+// Diagnostics returns a snapshot of every input that gates the
+// Devices/Ports reachability check (cache contents, derived port URL,
+// configured user, log path). Bound for "Can't reach the local
+// service" reports so operators can paste a single JSON blob instead
+// of hunting under %ProgramData%\SerialHop\logs\.
+export function Diagnostics(): Promise<Record<string, unknown>> { return call<Record<string, unknown>>("Diagnostics"); }
+
 // StartLogStream attaches the Go-side tailer to the given stream and
 // returns the most recent backlog lines (oldest first). The frontend
 // seeds its in-memory buffer with these before subscribing to live
