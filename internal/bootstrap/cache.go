@@ -74,28 +74,48 @@ func WriteCache(path string, c Cache) error {
 // version-mismatched files are deleted as a side effect so the next
 // successful WriteCache starts from a clean slate.
 func ReadCache(path, user string) (Cache, error) {
+	c, err := ReadCacheUnchecked(path)
+	if err != nil {
+		// Normalize all underlying failure modes to ErrCacheMissing so
+		// existing callers that check `err == ErrCacheMissing` continue
+		// to work.
+		return Cache{}, ErrCacheMissing
+	}
+	if c.User != user {
+		slog.Info("bootstrap: cache user mismatch; ignoring", "cache_user", c.User, "cfg_user", user)
+		return Cache{}, ErrCacheMissing
+	}
+	return c, nil
+}
+
+// ReadCacheUnchecked is ReadCache without the user-anchor check, and
+// without collapsing every error into ErrCacheMissing — it returns the
+// concrete reason a read failed so diagnostic logging can surface the
+// actual root cause. Use it when only the local state in the cache
+// matters (ActualRestPort, ServerInfo) and not the identity of whoever
+// wrote it. Corrupt or version-mismatched files are still deleted.
+func ReadCacheUnchecked(path string) (Cache, error) {
+	if path == "" {
+		return Cache{}, fmt.Errorf("bootstrap: cache path empty (DataDir unavailable?)")
+	}
 	data, err := os.ReadFile(path) //nolint:gosec // path is paths.ServerInfoCachePath() under DataDir
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Cache{}, ErrCacheMissing
 		}
 		slog.Warn("bootstrap: read cache failed", "path", path, "err", err)
-		return Cache{}, ErrCacheMissing
+		return Cache{}, fmt.Errorf("bootstrap: read cache %s: %w", path, err)
 	}
 	var c Cache
 	if err := json.Unmarshal(data, &c); err != nil {
 		slog.Warn("bootstrap: cache corrupt; deleting", "path", path, "err", err)
 		_ = os.Remove(path)
-		return Cache{}, ErrCacheMissing
+		return Cache{}, fmt.Errorf("bootstrap: parse cache %s: %w", path, err)
 	}
 	if c.Version != cacheCurrentVersion {
 		slog.Warn("bootstrap: cache version mismatch; deleting", "path", path, "version", c.Version)
 		_ = os.Remove(path)
-		return Cache{}, ErrCacheMissing
-	}
-	if c.User != user {
-		slog.Info("bootstrap: cache user mismatch; ignoring", "cache_user", c.User, "cfg_user", user)
-		return Cache{}, ErrCacheMissing
+		return Cache{}, fmt.Errorf("bootstrap: cache version mismatch (got %d, want %d)", c.Version, cacheCurrentVersion)
 	}
 	return c, nil
 }

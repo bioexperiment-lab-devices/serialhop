@@ -36,35 +36,42 @@ const (
 // SerialHop service over 127.0.0.1:<ActualRestPort>. It reads the
 // bootstrap cache per call so a service restart while the panel is
 // open doesn't strand it on a stale port.
+//
+// The cache's user-anchor (lab_bridge.user) is intentionally NOT
+// enforced here: the field exists so the SERVICE can invalidate stale
+// server-info / creds across user changes, but the panel only needs
+// the local REST port and benefits from being robust against stale
+// or mismatched anchors (e.g. after a YAML edit that hasn't reached
+// the service yet).
 type ServiceCli struct {
 	cachePath string
-	userFn    func() string
 	hc        *http.Client
 }
 
 // NewServiceCli returns a client anchored to the given bootstrap-cache
-// path. userFn is called on every request to obtain the current
-// lab-bridge user; this lets the panel pick up credential changes
-// (e.g. first-run save) without restart — capturing the user value at
-// panel-startup time would otherwise leave the client anchored to ""
-// until the panel was reopened, breaking the Devices/Ports tabs.
-// The HTTP client has a 5s per-call timeout.
-func NewServiceCli(cachePath string, userFn func() string) *ServiceCli {
+// path. The HTTP client has a 5s per-call timeout.
+func NewServiceCli(cachePath string) *ServiceCli {
 	return &ServiceCli{
 		cachePath: cachePath,
-		userFn:    userFn,
 		hc:        &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
 // baseURL reads the cache and returns "http://127.0.0.1:<port>".
-// Returns StatusUnreachable on any cache-read failure or zero port.
+// Returns StatusUnreachable on any cache-read failure or zero port,
+// and appends a single diagnostic line to SerialHop_panel_error.log so
+// the actual reason (missing/parse/version/zero-port) is visible to
+// operators reporting "Can't reach the local service".
 func (c *ServiceCli) baseURL() (string, ServiceCliStatus) {
-	cache, err := bootstrap.ReadCache(c.cachePath, c.userFn())
+	cache, err := bootstrap.ReadCacheUnchecked(c.cachePath)
 	if err != nil {
+		writePanelDebugLog("reachability_cache_read", fmt.Errorf("path=%q: %w", c.cachePath, err))
 		return "", StatusUnreachable
 	}
 	if cache.ActualRestPort == 0 {
+		writePanelDebugLog("reachability_port_zero",
+			fmt.Errorf("path=%q cache_user=%q fetched_at=%s (service may still be starting; check SerialHop.log for 'rest listening')",
+				c.cachePath, cache.User, cache.FetchedAt))
 		return "", StatusUnreachable
 	}
 	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(cache.ActualRestPort)), StatusOK
