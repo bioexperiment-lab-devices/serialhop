@@ -253,7 +253,7 @@ body {
   color: var(--text-muted);
 }
 .shp-footer__progress {
-  width: 80px;
+  width: clamp(60px, 8vw, 140px);
   height: 4px;
   border-radius: 2px;
   background: var(--border);
@@ -782,7 +782,7 @@ body {
 .shp-table-wrap {
   border: 1px solid var(--border);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: auto;
   background: var(--surface);
 }
 
@@ -970,7 +970,7 @@ body {
   z-index: 40;
 }
 .shp-modal {
-  width: 420px;
+  width: min(420px, calc(100vw - 32px));
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
