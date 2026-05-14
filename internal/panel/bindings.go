@@ -360,12 +360,26 @@ func (a *App) Diagnostics() DiagnosticsDTO {
 	if _, err := os.Stat(d.CachePath); err == nil {
 		d.CacheExists = true
 	}
-	if c, err := bootstrap.ReadCacheUnchecked(d.CachePath); err != nil {
-		d.CacheReadError = err.Error()
-	} else {
-		d.CacheUser = c.User
-		d.CacheFetchedAt = c.FetchedAt
-		d.CacheActualRestPort = c.ActualRestPort
+	// Read the cache file directly so Diagnostics can report the
+	// cache_user as written by the SERVICE, independent of whether it
+	// matches the panel's currently-configured lab_bridge.user — that
+	// mismatch is itself useful debug info, and ReadCache would
+	// collapse it into ErrCacheMissing.
+	if d.CachePath != "" {
+		if data, err := os.ReadFile(d.CachePath); err != nil {
+			if !os.IsNotExist(err) {
+				d.CacheReadError = err.Error()
+			}
+		} else {
+			var c bootstrap.Cache
+			if jerr := json.Unmarshal(data, &c); jerr != nil {
+				d.CacheReadError = "parse: " + jerr.Error()
+			} else {
+				d.CacheUser = c.User
+				d.CacheFetchedAt = c.FetchedAt
+				d.CacheActualRestPort = c.ActualRestPort
+			}
+		}
 	}
 	if a.svc != nil {
 		base, st := a.svc.baseURL()
