@@ -38,9 +38,9 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
   const [follow, setFollow] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<LogLinePayload | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => { if (follow) endRef.current?.scrollIntoView({ behavior: "auto" }); }, [lines, follow]);
+  useEffect(() => { if (follow) topRef.current?.scrollIntoView({ behavior: "auto", block: "start" }); }, [lines, follow]);
 
   const filtered = lines.filter(l => {
     if (stream === "service" && level !== "all" && l.record) {
@@ -53,9 +53,11 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
     }
     return true;
   });
+  const display = filtered.slice().reverse();
 
   return (
     <>
+      <div ref={topRef} />
       <div className="shp-logs-controls">
         <label className="shp-row">
           <span style={{ marginRight: 4 }}>Stream:</span>
@@ -100,7 +102,7 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
           <table className="shp-table shp-logs-table">
             <thead><tr><th className="col-time">Time</th><th className="col-level">Level</th><th>Message</th></tr></thead>
             <tbody>
-              {filtered.map((l, i) => l.record && (
+              {display.map((l, i) => l.record && (
                 <tr key={i} onClick={() => setSelected(l)} data-selected={selected === l}>
                   <td className="col-time">{String(l.record.time || "")}</td>
                   <td className="col-level"><span className="shp-level-pill" data-level={String(l.record.level || "info").toLowerCase()}>{String(l.record.level || "")}</span></td>
@@ -112,10 +114,9 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
         </div>
       ) : (
         <pre className="shp-mono-view">
-          {filtered.map((l, i) => <div key={i}>{l.raw}</div>)}
+          {display.map((l, i) => <div key={i}>{l.raw}</div>)}
         </pre>
       )}
-      <div ref={endRef} />
       {selected?.record && (
         <pre className="shp-mono-view" style={{ height: "auto", maxHeight: 200, marginTop: 12 }}>
           {JSON.stringify(selected.record, null, 2)}

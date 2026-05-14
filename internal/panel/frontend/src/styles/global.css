@@ -876,8 +876,14 @@ body {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-bottom: 12px;
   flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  margin: -18px -20px 12px;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--border);
 }
 .shp-logs-controls .shp-select { width: auto; min-width: 0; padding-right: 26px; }
 .shp-logs-controls .shp-input {
