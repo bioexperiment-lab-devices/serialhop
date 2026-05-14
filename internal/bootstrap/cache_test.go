@@ -104,6 +104,38 @@ func TestWriteCache_IsAtomic(t *testing.T) {
 	}
 }
 
+func TestWriteCache_AndReadCache_RoundTripActualRestPort(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache()
+	in.ActualRestPort = 49283
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	got, err := ReadCache(p, "alice")
+	if err != nil {
+		t.Fatalf("ReadCache: %v", err)
+	}
+	if got.ActualRestPort != 49283 {
+		t.Errorf("ActualRestPort: got %d, want 49283", got.ActualRestPort)
+	}
+}
+
+func TestWriteCache_ActualRestPortJSONKey(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache()
+	in.ActualRestPort = 49283
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	data, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), `"actual_rest_port": 49283`) {
+		t.Errorf("missing actual_rest_port key; body:\n%s", data)
+	}
+}
+
 func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "cache.json")
 	if err := WriteCache(p, sampleCache()); err != nil {

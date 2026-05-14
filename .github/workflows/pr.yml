@@ -46,6 +46,27 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: internal/panel/frontend/package-lock.json
+
+      - name: install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: install frontend deps
+        run: npm ci
+        working-directory: internal/panel/frontend
+
+      - name: frontend build (typecheck + bundle)
+        run: npm run build
+        working-directory: internal/panel/frontend
+
+      - name: frontend tests
+        run: npm test
+        working-directory: internal/panel/frontend
+
       - name: gofmt
         run: |
           out=$(gofmt -l .)
@@ -69,12 +90,27 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@v1
 
-      - name: cross-compile windows binary
+      - name: reinstall + rebuild frontend (govulncheck-action wipes the worktree)
+        # govulncheck-action@v1 runs `git reset --hard HEAD` which nukes the
+        # gitignored dist/ AND node_modules/ produced by the earlier frontend
+        # steps. The wails build below uses -s to skip the frontend script,
+        # so we have to put dist/ back ourselves before //go:embed
+        # all:frontend/dist can find any files. npm install is faster than
+        # ci here because package-lock.json hasn't changed.
         run: |
-          GOOS=windows GOARCH=amd64 go build \
-            -trimpath \
-            -ldflags="-H windowsgui -X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'" \
-            -o /tmp/SerialHop.exe ./cmd/serialhop
+          npm install --prefer-offline --no-audit --no-fund
+          npm run build
+        working-directory: internal/panel/frontend
+
+      - name: cross-compile windows binary
+        # -skipbindings: the TS shims are committed under
+        # internal/panel/frontend/src/wails/ (see README there); Wails'
+        # bindings regen needs a project layout we don't match and isn't
+        # required for the resulting binary.
+        run: |
+          wails build -platform windows/amd64 -s -skipbindings -trimpath \
+            -ldflags="-X 'github.com/bioexperiment-lab-devices/serialhop/internal/version.Version=ci-pr-${{ github.event.pull_request.number }}'"
+          cp build/bin/SerialHop.exe /tmp/SerialHop.exe
 
       - name: upload artifact
         uses: actions/upload-artifact@v7

@@ -28,11 +28,12 @@ var ErrCacheMissing = errors.New("bootstrap: cache missing")
 // field anchors the cache to a specific identity so that changing
 // lab_bridge.user in the YAML invalidates stale data automatically.
 type Cache struct {
-	Version    int                  `json:"version"`
-	FetchedAt  string               `json:"fetched_at"`
-	User       string               `json:"user"`
-	ServerInfo labbridge.ServerInfo `json:"server_info"`
-	RemotePort int                  `json:"remote_port"`
+	Version        int                  `json:"version"`
+	FetchedAt      string               `json:"fetched_at"`
+	User           string               `json:"user"`
+	ServerInfo     labbridge.ServerInfo `json:"server_info"`
+	RemotePort     int                  `json:"remote_port"`
+	ActualRestPort int                  `json:"actual_rest_port"`
 }
 
 // WriteCache atomically writes c to path. Any existing file at path is
