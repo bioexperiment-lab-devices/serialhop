@@ -249,17 +249,51 @@ func toTabStatus(s ServiceCliStatus) ServiceTabStatusDTO {
 	return ServiceTabStatusDTO{Reachable: false, Reason: "unreachable"}
 }
 
-func (a *App) GetDevices(ctx context.Context) DevicesResult {
+// callCtx returns a context for one binding HTTP call. We do NOT take
+// context.Context as a method parameter on bound methods: Wails v2's
+// "auto-inject context as first arg" behavior does not fire for methods
+// reached through embedding (main.App embeds *panel.App). The JS-side
+// call passes no arguments, Wails sees a method that expects one, and
+// the bridge rejects with:
+//
+//	"error parsing arguments: received 0 arguments to method
+//	 'main.App.GetDevices', expected 1"
+//
+// — which is exactly what surfaced as "Can't reach the local service"
+// in the Devices/Ports tabs (the JS binding promise rejected, the tab
+// fell back to its initial reachable=false state, and the empty-state
+// banner happens to read "Can't reach...") and stayed broken across
+// three speculative cache-anchor fixes.
+//
+// Use a fresh background context with a 6s timeout (matches the
+// ServiceCli HTTP client's own 5s timeout with a small headroom).
+// Anchoring to a.ctx so the call cancels at panel shutdown rather
+// than the underlying socket lingering past Wails OnShutdown.
+func (a *App) callCtx() (context.Context, context.CancelFunc) {
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, 6*time.Second)
+}
+
+func (a *App) GetDevices() DevicesResult {
+	ctx, cancel := a.callCtx()
+	defer cancel()
 	resp, st, _ := a.svc.GetDevices(ctx)
 	return DevicesResult{DevicesResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) Discover(ctx context.Context) DevicesResult {
+func (a *App) Discover() DevicesResult {
+	ctx, cancel := a.callCtx()
+	defer cancel()
 	resp, st, _ := a.svc.Discover(ctx)
 	return DevicesResult{DevicesResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) DisconnectAll(ctx context.Context) DisconnectResult {
+func (a *App) DisconnectAll() DisconnectResult {
+	ctx, cancel := a.callCtx()
+	defer cancel()
 	resp, st, _ := a.svc.DisconnectAll(ctx)
 	if st == StatusOK {
 		a.emitEvent("footer:set", map[string]interface{}{
@@ -270,7 +304,9 @@ func (a *App) DisconnectAll(ctx context.Context) DisconnectResult {
 	return DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) GetPorts(ctx context.Context) PortsResult {
+func (a *App) GetPorts() PortsResult {
+	ctx, cancel := a.callCtx()
+	defer cancel()
 	resp, st, _ := a.svc.GetPorts(ctx)
 	return PortsResult{DetailedPortsResponse: resp, Status: toTabStatus(st)}
 }
