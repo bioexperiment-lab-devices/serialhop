@@ -1,21 +1,28 @@
-// Hand-written placeholders — replaced by Wails-generated runtime during
-// `wails build` (release) or `wails dev` (local dev). Committed so that
-// `tsc --noEmit` passes in PR CI without running `wails generate module`.
-// See internal/panel/frontend/src/wails/README.md for full rationale.
+// Type stubs that delegate to Wails' runtime globals at execution time.
+// `wails build` regenerates equivalent files at src/wails/wailsjs/runtime/
+// (skipped by tsconfig). See ../README.md for the rationale.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+interface WailsRuntime {
+  EventsOn(eventName: string, callback: (...data: any[]) => void): () => void;
+  EventsOff(...eventNames: string[]): void;
+  EventsEmit(eventName: string, ...data: any[]): void;
+}
+
+function rt(): WailsRuntime | null {
+  const w = window as unknown as { runtime?: WailsRuntime };
+  return w.runtime ?? null;
+}
+
 export function EventsOn(eventName: string, callback: (...data: any[]) => void): () => void {
-  void eventName;
-  void callback;
-  return () => {};
+  return rt()?.EventsOn(eventName, callback) ?? (() => {});
 }
 
 export function EventsOff(...eventNames: string[]): void {
-  void eventNames;
+  rt()?.EventsOff(...eventNames);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function EventsEmit(eventName: string, data?: any): void {
-  void eventName;
-  void data;
+  rt()?.EventsEmit(eventName, data);
 }
