@@ -54,5 +54,9 @@ export function Discover(): Promise<any> { return call<any>("Discover"); }
 export function DisconnectAll(): Promise<any> { return call<any>("DisconnectAll"); }
 export function GetPorts(): Promise<any> { return call<any>("GetPorts"); }
 
-export function StartLogStream(id: string): Promise<void> { return call("StartLogStream", id); }
+// StartLogStream attaches the Go-side tailer to the given stream and
+// returns the most recent backlog lines (oldest first). The frontend
+// seeds its in-memory buffer with these before subscribing to live
+// log:line events — see internal/panel/bindings.go for the rationale.
+export function StartLogStream(id: string): Promise<unknown[]> { return call("StartLogStream", id); }
 export function StopLogStream(): Promise<void> { return call("StopLogStream"); }

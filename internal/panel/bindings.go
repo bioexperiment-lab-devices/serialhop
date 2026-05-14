@@ -261,11 +261,17 @@ func (a *App) GetPorts(ctx context.Context) PortsResult {
 	return PortsResult{DetailedPortsResponse: resp, Status: toTabStatus(st)}
 }
 
-func (a *App) StartLogStream(id string) {
+// StartLogStream attaches the panel's log tailer to the given stream and
+// returns the recent backlog (oldest first). The SPA prepends these lines
+// to its in-memory ring before subscribing to subsequent log:line events
+// — backlog comes back via the return value rather than as events to
+// avoid a race where the events fire before the SPA's EventsOn handler
+// is registered.
+func (a *App) StartLogStream(id string) []map[string]interface{} {
 	if a.logTail == nil {
 		a.logTail = &logTailController{}
 	}
-	a.logTail.start(id, a.emitEvent)
+	return a.logTail.start(id, a.emitEvent)
 }
 
 func (a *App) StopLogStream() {
