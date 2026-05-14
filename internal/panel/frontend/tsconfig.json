@@ -15,5 +15,7 @@
     "isolatedModules": true,
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "//exclude": "Wails build regenerates src/wails/wailsjs/ alongside the committed stubs at src/wails/go/. The SPA imports from the stubs path; the wailsjs/ output contains namespace references (e.g. 'api.DeviceDTO') that Wails fails to fully emit when result structs embed types from other Go packages. We don't consume those files at compile time, so skip them.",
+  "exclude": ["src/wails/wailsjs"]
 }
