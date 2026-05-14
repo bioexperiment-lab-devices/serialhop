@@ -249,7 +249,7 @@ body {
   color: var(--text-muted);
 }
 .shp-footer__progress {
-  width: 80px;
+  width: clamp(60px, 8vw, 140px);
   height: 4px;
   border-radius: 2px;
   background: var(--border);
@@ -586,12 +586,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-width: 880px;
+  width: 100%;
 }
 .shp-field {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(160px, 18ch) 1fr;
   gap: 14px;
   align-items: start;
+}
+@media (max-width: 720px) {
+  .shp-field {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .shp-field__label { padding-top: 0; }
 }
 .shp-field__label {
   display: flex;
@@ -769,7 +778,7 @@ body {
 .shp-table-wrap {
   border: 1px solid var(--border);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: auto;
   background: var(--surface);
 }
 
@@ -839,7 +848,12 @@ body {
   flex-wrap: wrap;
 }
 .shp-logs-controls .shp-select { width: auto; min-width: 0; padding-right: 26px; }
-.shp-logs-controls .shp-input { width: 200px; }
+.shp-logs-controls .shp-input {
+  width: auto;
+  min-width: 160px;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
 
 .shp-toggle {
   display: inline-flex;
@@ -952,7 +966,7 @@ body {
   z-index: 40;
 }
 .shp-modal {
-  width: 420px;
+  width: min(420px, calc(100vw - 32px));
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
