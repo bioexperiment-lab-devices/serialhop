@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.14.0...v0.14.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **frontend:** make Wails binding stubs delegate to runtime globals ([#70](https://github.com/bioexperiment-lab-devices/serialhop/issues/70)) ([9ea0293](https://github.com/bioexperiment-lab-devices/serialhop/commit/9ea0293cf8b640118d8a500e717a5dcff47ad451))
+
 ## [0.14.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.13.0...v0.14.0) (2026-05-14)
 
 
