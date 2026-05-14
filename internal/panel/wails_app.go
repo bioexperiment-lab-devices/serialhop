@@ -6,10 +6,12 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"path/filepath"
 	"net/http"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
@@ -199,6 +201,25 @@ func (a *App) scmPollLoop(ctx context.Context) {
 // Replaces the walk-based panel from panel.go (kept as walkRun for now).
 func Run() error {
 	app := newApp()
+
+	// Make sure %ProgramData%\SerialHop\logs exists before we try to point a
+	// FileLogger at it. We swallow the error here because the panel works
+	// without a log file too — it's only diagnostic.
+	_ = paths.EnsureDirs()
+
+	// Wails internal log → file in our logs dir. The panel runs as a
+	// windowsgui binary so stdout/stderr are /dev/null; without this,
+	// every diagnostic Wails emits (asset 404s, binding generation
+	// problems, WebView2 init errors) is silently discarded.
+	wailsLogPath := ""
+	if dir := paths.LogsDir(); dir != "" {
+		wailsLogPath = filepath.Join(dir, "SerialHop_wails.log")
+	}
+	var wailsLogger logger.Logger
+	if wailsLogPath != "" {
+		wailsLogger = logger.NewFileLogger(wailsLogPath)
+	}
+
 	err := wails.Run(&options.App{
 		Title:     "SerialHop v" + version.Base(),
 		Width:     980,
@@ -208,9 +229,12 @@ func Run() error {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup:  app.startup,
-		OnShutdown: app.shutdown,
-		Bind:       []interface{}{app},
+		Logger:             wailsLogger,
+		LogLevel:           logger.DEBUG,
+		LogLevelProduction: logger.DEBUG,
+		OnStartup:          app.startup,
+		OnShutdown:         app.shutdown,
+		Bind:               []interface{}{app},
 		// EnableDefaultContextMenu turns on the WebView2 right-click menu in
 		// production. Operators get cut+copy+paste; we get a fighting chance
 		// at diagnostics — `Inspect` is included, which opens DevTools.
