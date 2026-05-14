@@ -40,25 +40,37 @@ export function DevicesTab() {
   const banner = pickBanner(resp.status, empty, "devices");
 
   return (
-    <div className="devices-tab">
-      <div className="banner-row">
-        <span>{resp.discovered_at ? `Discovered at ${fmtTime(resp.discovered_at)}` : "Never run"}</span>
+    <>
+      <div className="shp-toolbar">
+        <div className="shp-toolbar__banner">
+          {resp.discovered_at ? <>Discovered at <code>{fmtTime(resp.discovered_at)}</code></> : <span>Never run</span>}
+        </div>
+        <div className="shp-btn-row">
+          <Button onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
+          <Button onClick={disconnect} disabled={busy || !resp.status.reachable || empty}>Disconnect all</Button>
+          <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
+        </div>
       </div>
-      <div className="actions">
-        <Button onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
-        <Button onClick={disconnect} disabled={busy || !resp.status.reachable || empty}>Disconnect all</Button>
-        <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
-      </div>
-      {banner && <div className="empty-banner">{banner}</div>}
-      <table className="devices-table">
-        <thead><tr><th>ID</th><th>Type</th><th>Port</th></tr></thead>
-        <tbody>
-          {[...resp.devices].sort((a, b) => a.id.localeCompare(b.id)).map(d => (
-            <tr key={d.id}><td>{d.id}</td><td>{d.type}</td><td>{d.port}</td></tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+      {!resp.status.reachable && banner ? (
+        <div className="shp-empty">
+          <div className="shp-empty__body">{banner}</div>
+        </div>
+      ) : (
+        <>
+          {banner && <div className="shp-toolbar__banner" style={{ marginBottom: 8 }}>{banner}</div>}
+          <div className="shp-table-wrap">
+            <table className="shp-table">
+              <thead><tr><th>ID</th><th>Type</th><th>Port</th></tr></thead>
+              <tbody>
+                {[...resp.devices].sort((a, b) => a.id.localeCompare(b.id)).map(d => (
+                  <tr key={d.id}><td>{d.id}</td><td>{d.type}</td><td>{d.port}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

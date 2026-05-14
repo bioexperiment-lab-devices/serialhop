@@ -107,7 +107,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   };
 
   return (
-    <div className="config-tab">
+    <>
       {credsMissing && (
         <div className="shp-banner" data-tone="info">
           Enter your lab-bridge credentials to enable the service.
@@ -289,7 +289,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         </Field>
       </Section>
 
-      <div className="config-actions">
+      <div className="shp-btn-row" style={{ marginTop: 16 }}>
         <Button variant="primary" disabled={!dirty} onClick={() => save(false)}>Save</Button>
         <Button variant="primary" elevated disabled={!dirty} onClick={() => save(true)}>Save &amp; restart</Button>
         <Button variant="ghost" disabled={!dirty} onClick={discard}>Discard changes</Button>
@@ -311,7 +311,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           <p>Couldn&apos;t reach the server to verify the credentials ({pendingConfirm.detail}). Save anyway?</p>
         </Modal>
       )}
-    </div>
+    </>
   );
 });
 
@@ -331,9 +331,9 @@ interface ListFieldProps {
 function ListField({ label, values, onChange, disabled, note, helpComponent }: ListFieldProps) {
   return (
     <Field label={label} hint={note} disabled={disabled} helpComponent={helpComponent}>
-      <div className="list-field">
+      <div className="shp-form-section__body" style={{ padding: 0, gap: 8 }}>
         {values.map((v, i) => (
-          <div key={i} className="list-field__row">
+          <div key={i} className="shp-listrow">
             <input value={v} disabled={disabled}
               onChange={e => { const copy = [...values]; copy[i] = e.target.value; onChange(copy); }} />
             <Button small disabled={disabled}

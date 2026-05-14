@@ -13,6 +13,13 @@ type Lamps = Record<LampWhich, { tone: Tone; label: string; sub?: string }>;
 
 interface Props { lamps: Lamps; buttons: ButtonStatePayload; configDirty?: boolean; }
 
+function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
+  if (s === UpdateState.Installed) return "green";
+  if (s === UpdateState.DownloadFailed || s === UpdateState.InstallFailed) return "red";
+  if (s === UpdateState.Available || s === UpdateState.Downloading || s === UpdateState.Ready || s === UpdateState.Installing) return "blue";
+  return undefined;
+}
+
 export function StatusTab({ lamps, buttons, configDirty }: Props) {
   const [update, setUpdate] = useState<UpdateStatePayload>({ state: UpdateState.Idle, release_tag: "" });
   const [busy, setBusy] = useState(false);
@@ -34,8 +41,8 @@ export function StatusTab({ lamps, buttons, configDirty }: Props) {
   };
 
   return (
-    <div className="status-tab">
-      <section className="lamps">
+    <>
+      <section className="shp-lamps">
         <Lamp name="Service" tone={lamps.service.tone} label={lamps.service.label} sub={lamps.service.sub}>
           <Help title="Service" what="Local SerialHop Windows service state." />
         </Lamp>
@@ -47,25 +54,27 @@ export function StatusTab({ lamps, buttons, configDirty }: Props) {
         </Lamp>
       </section>
 
-      <section className="actions">
+      <div className="shp-btn-row" style={{ marginTop: 16 }}>
         <Button elevated disabled={busy || !buttons.install} onClick={() => adminAction(InstallService)}>Install</Button>
         <Button elevated disabled={busy || !buttons.uninstall} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
         <Button elevated disabled={busy || !buttons.restart} onClick={() => adminAction(RestartService, true)}>Restart</Button>
-      </section>
+      </div>
 
       {update.state !== UpdateState.Idle && (
-        <section className="update-row">
-          <UpdateLabel update={update} />
-          <UpdateButtons
-            update={update}
-            onDownload={() => DownloadUpdate()}
-            onCancel={() => CancelDownload()}
-            onInstall={() => InstallUpdate()}
-            onReleaseNotes={() => OpenReleaseNotes()}
-          />
-        </section>
+        <div className="shp-update" data-tone={updateTone(update.state)}>
+          <div className="shp-update__msg"><UpdateLabel update={update} /></div>
+          <div className="shp-update__actions">
+            <UpdateButtons
+              update={update}
+              onDownload={() => DownloadUpdate()}
+              onCancel={() => CancelDownload()}
+              onInstall={() => InstallUpdate()}
+              onReleaseNotes={() => OpenReleaseNotes()}
+            />
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -96,7 +105,7 @@ function UpdateButtons(props: {
 }) {
   const s = props.update.state;
   return (
-    <div className="update-buttons">
+    <>
       {s === UpdateState.Available && <>
         <Button variant="primary" onClick={props.onDownload}>Download</Button>
         <Button variant="ghost" onClick={props.onReleaseNotes}>Release notes</Button>
@@ -108,6 +117,6 @@ function UpdateButtons(props: {
         <Button variant="ghost" onClick={props.onReleaseNotes}>Release notes</Button>
       </>}
       {s === UpdateState.InstallFailed && <Button variant="primary" elevated onClick={props.onInstall}>Retry</Button>}
-    </div>
+    </>
   );
 }
