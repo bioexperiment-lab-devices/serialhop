@@ -106,10 +106,10 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 }
 
 // onDomReady runs once the WebView has parsed the HTML. We use it to:
-//   1. Write a marker line to the wails log so we know the DOM was reached.
-//   2. Inject a tiny JS snippet that captures uncaught errors / unhandled
-//      promise rejections / window.onerror events and forwards them via
-//      the LogJS binding to the Go-side diagnostic log.
+//  1. Write a marker line to the wails log so we know the DOM was reached.
+//  2. Inject a tiny JS snippet that captures uncaught errors / unhandled
+//     promise rejections / window.onerror events and forwards them via
+//     the LogJS binding to the Go-side diagnostic log.
 func (a *App) onDomReady(ctx context.Context) {
 	wailsruntime.LogPrint(ctx, "[panel] DOM ready")
 	wailsruntime.WindowExecJS(ctx, `
