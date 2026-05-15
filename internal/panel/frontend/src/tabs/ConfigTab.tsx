@@ -30,6 +30,8 @@ export interface ConfigTabHandle {
   save: () => Promise<boolean>;
   /** Resets form to last-loaded state. */
   discard: () => void;
+  /** Returns human-readable labels of fields whose value differs from disk. */
+  getChangedFields: () => string[];
 }
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -73,7 +75,8 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
       return true;
     },
     discard,
-  }), [form, discard]);
+    getChangedFields: () => (loaded && form ? diffFieldLabels(loaded, form) : []),
+  }), [form, loaded, discard]);
 
   if (!form || !loaded) return <div>Loading…</div>;
 
@@ -82,6 +85,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   ) => setForm(prev => prev && { ...prev, [sec]: { ...(prev[sec] as object), [key]: v } } as ConfigDTO);
 
   const credsMissing = !form.lab_bridge.user || !form.lab_bridge.pass;
+  const includeActive = form.discovery.include.length > 0;
+  const excludeActive = form.discovery.exclude.length > 0;
+  const flashOff = !form.flashing.enabled;
 
   const save = async (alsoRestart: boolean) => {
     const vErrs = await ValidateConfig(form);
@@ -110,15 +116,23 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
     <>
       {credsMissing && (
         <div className="shp-banner" data-tone="info">
-          Enter your lab-bridge credentials to enable the service.
+          <span className="shp-banner__chip">First launch</span>
+          <span>Enter your lab-bridge credentials to enable the service.</span>
         </div>
       )}
 
-      <Section title="Lab-bridge">
+      <Section
+        title="Lab-bridge"
+        helpComponent={<Help title="Lab-bridge" what="The remote server this machine tunnels into so the rest of the lab network can reach the devices on this host." />}
+      >
         <Field label="Host" helpComponent={<Help title="Host" what="lab-bridge VPS host." defaultVal="111.88.145.138" />}>
-          <input value={form.lab_bridge.host} onChange={e => setNested("lab_bridge", "host", e.target.value)} />
+          <input className="shp-input shp-input--mono"
+            value={form.lab_bridge.host}
+            data-error={!!errFor(errors, "lab_bridge.host") || undefined}
+            onChange={e => setNested("lab_bridge", "host", e.target.value)} />
+          {errFor(errors, "lab_bridge.host") && <div className="shp-error">{errFor(errors, "lab_bridge.host")}</div>}
         </Field>
-        <Field label="Username" hint={errFor(errors, "lab_bridge.user")}
+        <Field label="Username"
           helpComponent={
             <Help
               title="Username"
@@ -126,9 +140,13 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               when="Save will verify these credentials against the lab-bridge."
             />
           }>
-          <input value={form.lab_bridge.user} onChange={e => setNested("lab_bridge", "user", e.target.value)} />
+          <input className="shp-input"
+            value={form.lab_bridge.user}
+            data-error={!!errFor(errors, "lab_bridge.user") || undefined}
+            onChange={e => setNested("lab_bridge", "user", e.target.value)} />
+          {errFor(errors, "lab_bridge.user") && <div className="shp-error">{errFor(errors, "lab_bridge.user")}</div>}
         </Field>
-        <Field label="Password" hint={errFor(errors, "lab_bridge.pass")}
+        <Field label="Password"
           helpComponent={
             <Help
               title="Password"
@@ -136,23 +154,37 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               when="Save will verify these credentials against the lab-bridge."
             />
           }>
-          <input value={form.lab_bridge.pass} onChange={e => setNested("lab_bridge", "pass", e.target.value)} />
+          <input className="shp-input shp-input--mono"
+            value={form.lab_bridge.pass}
+            data-error={!!errFor(errors, "lab_bridge.pass") || undefined}
+            onChange={e => setNested("lab_bridge", "pass", e.target.value)} />
+          {errFor(errors, "lab_bridge.pass") && <div className="shp-error">{errFor(errors, "lab_bridge.pass")}</div>}
         </Field>
       </Section>
 
-      <Section title="REST">
+      <Section
+        title="REST"
+        helpComponent={<Help title="REST" what="The local HTTP server other lab tools on this machine talk to." />}
+      >
         <Field label="Port" helpComponent={<Help title="REST port" what="Local TCP port the SerialHop service binds." defaultVal="0 (OS-assigned)" />}>
-          <input type="number" min={0} max={65535} value={form.rest.port}
+          <input className="shp-input shp-input--mono" type="number" min={0} max={65535}
+            value={form.rest.port}
+            style={{ maxWidth: 120 }}
             onChange={e => setNested("rest", "port", Number(e.target.value) || 0)} />
+          <div className="shp-field__hint">0 = OS picks a free port</div>
         </Field>
       </Section>
 
-      <Section title="Discovery">
+      <Section
+        title="Discovery"
+        helpComponent={<Help title="Discovery" what="How the service searches the local serial ports for known device types." />}
+      >
         <ListField label="Include"
           values={form.discovery.include}
           onChange={v => setNested("discovery", "include", v)}
-          disabled={form.discovery.exclude.length > 0}
-          note={form.discovery.exclude.length > 0 ? "Include and Exclude can't be used together" : undefined}
+          disabled={excludeActive}
+          placeholder="COM3"
+          note={excludeActive ? "Include and Exclude can't be used together." : undefined}
           helpComponent={
             <Help
               title="Include"
@@ -165,8 +197,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         <ListField label="Exclude"
           values={form.discovery.exclude}
           onChange={v => setNested("discovery", "exclude", v)}
-          disabled={form.discovery.include.length > 0}
-          note={form.discovery.include.length > 0 ? "Include and Exclude can't be used together" : undefined}
+          disabled={includeActive}
+          placeholder="COM7"
+          note={includeActive ? "Include and Exclude can't be used together." : undefined}
           helpComponent={
             <Help
               title="Exclude"
@@ -176,7 +209,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             />
           }
         />
-        <Field label="Post-open settle (ms)"
+        <Field label="Post-open settle"
           helpComponent={
             <Help
               title="Post-open settle (ms)"
@@ -184,12 +217,19 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               defaultVal="2000."
             />
           }>
-          <input type="number" min={0} value={form.discovery.post_open_settle_ms}
-            onChange={e => setNested("discovery", "post_open_settle_ms", Number(e.target.value) || 0)} />
+          <div className="shp-input-row" style={{ maxWidth: 220 }}>
+            <input className="shp-input shp-input--mono" type="number" min={0}
+              value={form.discovery.post_open_settle_ms}
+              onChange={e => setNested("discovery", "post_open_settle_ms", Number(e.target.value) || 0)} />
+            <span className="shp-muted">ms</span>
+          </div>
         </Field>
       </Section>
 
-      <Section title="Log">
+      <Section
+        title="Log"
+        helpComponent={<Help title="Log" what="Verbosity of the service's structured log." />}
+      >
         <Field label="Level"
           helpComponent={
             <Help
@@ -199,7 +239,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               when="Increase to debug when triaging a problem; warn or error in production if logs are too noisy."
             />
           }>
-          <select value={form.log.level} onChange={e => setNested("log", "level", e.target.value)}>
+          <select className="shp-select" style={{ width: 160 }}
+            value={form.log.level}
+            onChange={e => setNested("log", "level", e.target.value)}>
             <option>debug</option><option>info</option><option>warn</option><option>error</option>
           </select>
         </Field>
@@ -214,8 +256,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             when="Enable only when actively probing the wire."
           />
         }>
-        <Field label="">
-          <Checkbox label="Enabled" checked={form.raw_serial.enabled}
+        <Field label="Enabled">
+          <Checkbox label="Allow raw passthrough on discovered ports"
+            checked={form.raw_serial.enabled}
             onChange={v => setNested("raw_serial", "enabled", v)} />
         </Field>
       </Section>
@@ -228,8 +271,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             defaultVal="on."
           />
         }>
-        <Field label="">
-          <Checkbox label="Enabled" checked={form.auto_update.enabled}
+        <Field label="Enabled">
+          <Checkbox label="Check for updates automatically"
+            checked={form.auto_update.enabled}
             onChange={v => setNested("auto_update", "enabled", v)} />
         </Field>
       </Section>
@@ -242,11 +286,14 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             defaultVal="off."
           />
         }>
-        <p className="shp-section__info">
-          Firmware flashing is higher risk than raw serial — a bad .hex bricks
-          the board (ISP recovery required). Leave disabled unless you&apos;re
-          actively flashing devices.
-        </p>
+        <div className="shp-info-block">
+          <span className="shp-info-block__icon">&#x26A0;</span>
+          <span>
+            Firmware flashing is higher risk than raw serial — a bad .hex bricks
+            the board (ISP recovery required). Leave disabled unless you&apos;re
+            actively flashing devices.
+          </span>
+        </div>
         <Field label="Enabled"
           helpComponent={
             <Help
@@ -255,10 +302,11 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               defaultVal="off."
             />
           }>
-          <Checkbox label="" checked={form.flashing.enabled}
+          <Checkbox label="Allow firmware flashing through the service"
+            checked={form.flashing.enabled}
             onChange={v => setNested("flashing", "enabled", v)} />
         </Field>
-        <Field label="Backup directory" disabled={!form.flashing.enabled}
+        <Field label="Backup directory" disabled={flashOff}
           helpComponent={
             <Help
               title="Backup directory"
@@ -266,15 +314,20 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               defaultVal="%ProgramData%\\SerialHop\\backups."
             />
           }>
-          <input value={form.flashing.backup_dir}
-            disabled={!form.flashing.enabled}
-            onChange={e => setNested("flashing", "backup_dir", e.target.value)} />
-          <Button small disabled={!form.flashing.enabled}
-            onClick={async () => { const d = await PickBackupDir(); if (d) setNested("flashing", "backup_dir", d); }}>
-            Pick…
-          </Button>
+          <div className="shp-input-row">
+            <input className="shp-input shp-input--mono"
+              value={form.flashing.backup_dir}
+              disabled={flashOff}
+              data-error={!!errFor(errors, "flashing.backup_dir") || undefined}
+              onChange={e => setNested("flashing", "backup_dir", e.target.value)} />
+            <Button small disabled={flashOff}
+              onClick={async () => { const d = await PickBackupDir(); if (d) setNested("flashing", "backup_dir", d); }}>
+              Choose…
+            </Button>
+          </div>
+          {errFor(errors, "flashing.backup_dir") && <div className="shp-error">{errFor(errors, "flashing.backup_dir")}</div>}
         </Field>
-        <Field label="Keep N backups" disabled={!form.flashing.enabled}
+        <Field label="Keep N backups" disabled={flashOff}
           helpComponent={
             <Help
               title="Keep N backups"
@@ -283,22 +336,29 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               when="0 keeps all backups indefinitely."
             />
           }>
-          <input type="number" min={0} value={form.flashing.keep_n}
-            disabled={!form.flashing.enabled}
+          <input className="shp-input shp-input--mono" type="number" min={0}
+            value={form.flashing.keep_n}
+            disabled={flashOff}
+            style={{ maxWidth: 100 }}
             onChange={e => setNested("flashing", "keep_n", Number(e.target.value) || 0)} />
         </Field>
       </Section>
 
-      <div className="shp-btn-row" style={{ marginTop: 16 }}>
+      <div
+        className="shp-btn-row"
+        style={{ marginTop: 14, paddingTop: 4, borderTop: "1px solid var(--border)" }}
+      >
         <Button variant="primary" disabled={!dirty} onClick={() => save(false)}>Save</Button>
         <Button variant="primary" elevated disabled={!dirty} onClick={() => save(true)}>Save &amp; restart</Button>
-        <Button variant="ghost" disabled={!dirty} onClick={discard}>Discard changes</Button>
-        <Button variant="ghost" onClick={() => OpenConfigInEditor()}>Open in editor</Button>
+        <Button disabled={!dirty} onClick={discard}>Discard changes</Button>
+        <span className="shp-gap" />
+        <Button variant="ghost" onClick={() => OpenConfigInEditor()}>Open in editor ↗</Button>
       </div>
 
       {pendingConfirm !== null && (
         <Modal
-          title="Couldn't verify credentials"
+          title="Couldn't reach the lab-bridge"
+          sub="Save credentials without verifying?"
           actions={
             <>
               <Button variant="ghost" onClick={() => setPendingConfirm(null)}>Cancel</Button>
@@ -308,7 +368,14 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             </>
           }
         >
-          <p>Couldn&apos;t reach the server to verify the credentials ({pendingConfirm.detail}). Save anyway?</p>
+          <p>
+            The panel couldn&apos;t reach <code>{form.lab_bridge.host}</code> to verify the new credentials
+            {pendingConfirm.detail ? <> (<code>{pendingConfirm.detail}</code>)</> : null}.
+          </p>
+          <p>
+            You can save them anyway and the service will retry on its next start. If the credentials
+            are wrong, the Tunnel lamp will turn red once the server comes back.
+          </p>
         </Modal>
       )}
     </>
@@ -319,28 +386,56 @@ function errFor(errs: FieldErrorDTO[], field: string): string | undefined {
   return errs.find(e => e.field === field)?.detail;
 }
 
+// Human labels for diff'd fields surfaced in the unsaved-changes modal.
+// Order matches the on-screen rendering so the list reads top-to-bottom.
+const FIELD_LABELS: { path: (c: ConfigDTO) => unknown; label: string }[] = [
+  { path: c => c.lab_bridge.host, label: "Host" },
+  { path: c => c.lab_bridge.user, label: "Username" },
+  { path: c => c.lab_bridge.pass, label: "Password" },
+  { path: c => c.rest.port, label: "REST port" },
+  { path: c => c.discovery.include.join(","), label: "Include" },
+  { path: c => c.discovery.exclude.join(","), label: "Exclude" },
+  { path: c => c.discovery.post_open_settle_ms, label: "Post-open settle" },
+  { path: c => c.log.level, label: "Log level" },
+  { path: c => c.raw_serial.enabled, label: "Raw serial" },
+  { path: c => c.auto_update.enabled, label: "Auto-update" },
+  { path: c => c.flashing.enabled, label: "Firmware flashing" },
+  { path: c => c.flashing.backup_dir, label: "Backup directory" },
+  { path: c => c.flashing.keep_n, label: "Keep N backups" },
+];
+
+function diffFieldLabels(a: ConfigDTO, b: ConfigDTO): string[] {
+  return FIELD_LABELS.filter(f => f.path(a) !== f.path(b)).map(f => f.label);
+}
+
 interface ListFieldProps {
   label: string;
   values: string[];
   onChange: (v: string[]) => void;
   disabled?: boolean;
   note?: string;
+  placeholder?: string;
   helpComponent?: React.ReactNode;
 }
 
-function ListField({ label, values, onChange, disabled, note, helpComponent }: ListFieldProps) {
+function ListField({ label, values, onChange, disabled, note, placeholder, helpComponent }: ListFieldProps) {
   return (
-    <Field label={label} hint={note} disabled={disabled} helpComponent={helpComponent}>
-      <div className="shp-form-section__body" style={{ padding: 0, gap: 8 }}>
+    <Field label={label} disabled={disabled} helpComponent={helpComponent}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {values.map((v, i) => (
           <div key={i} className="shp-listrow">
-            <input value={v} disabled={disabled}
+            <input className="shp-input shp-input--mono"
+              value={v} disabled={disabled} placeholder={placeholder}
+              style={{ maxWidth: 200 }}
               onChange={e => { const copy = [...values]; copy[i] = e.target.value; onChange(copy); }} />
-            <Button small disabled={disabled}
+            <Button small variant="ghost" disabled={disabled}
               onClick={() => onChange(values.filter((_, j) => j !== i))}>Remove</Button>
           </div>
         ))}
-        <Button small disabled={disabled} onClick={() => onChange([...values, ""])}>Add row</Button>
+        <Button small variant="ghost" disabled={disabled}
+          style={{ alignSelf: "flex-start" }}
+          onClick={() => onChange([...values, ""])}>+ Add row</Button>
+        {note && <div className="shp-disabled-note">{note}</div>}
       </div>
     </Field>
   );

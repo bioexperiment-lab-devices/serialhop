@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Help } from "../components/Help";
-import { DiagnosticsDetails } from "../components/DiagnosticsDetails";
 import { GetPorts, Discover } from "../wails/go/main/App";
 
 interface DetailedPortDTO {
@@ -35,6 +34,8 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
+type EmptyKind = "service-down" | "no-ports" | "unreachable" | "binding-error";
+
 export function PortsTab() {
   // `loaded` distinguishes initial state from "first call returned
   // saying unreachable". The original code rendered the same "Can't
@@ -44,6 +45,7 @@ export function PortsTab() {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
   const refresh = async () => {
     setBusy(true);
@@ -67,64 +69,118 @@ export function PortsTab() {
 
   useEffect(() => { refresh(); }, []);
 
-  const banner = callError
-    ? `Binding error: ${callError}. Show diagnostics below for details.`
-    : !loaded
-        ? "Loading…"
-        : !resp.status.reachable
-            ? (resp.status.reason === "service_down"
-                ? "Service is not running. Start it from the Status tab."
-                : "Can't reach the local service. It may have just started — wait a few seconds and click Refresh.")
-            : resp.ports.length === 0 ? "No serial ports detected on this machine." : null;
+  const total = resp.ports.length;
+  const matched = resp.ports.filter(p => p.discovered).length;
+
+  let banner: React.ReactNode = null;
+  if (callError) {
+    banner = `Binding error: ${callError}`;
+  } else if (!loaded) {
+    banner = "Loading…";
+  } else if (!resp.status.reachable && resp.status.reason === "service_down") {
+    banner = "Service is not running. Start it from the Status tab.";
+  } else if (!resp.status.reachable) {
+    banner = "Can't reach the local service. It may have just started — wait a few seconds and click Refresh.";
+  } else if (total === 0) {
+    banner = "No serial ports detected on this machine.";
+  } else {
+    banner = <><b>{total}</b> ports enumerated by the OS · <b>{matched}</b> matched to a device</>;
+  }
+
+  const emptyKind: EmptyKind | null = callError
+    ? "binding-error"
+    : !resp.status.reachable && resp.status.reason === "service_down"
+      ? "service-down"
+      : !resp.status.reachable
+        ? "unreachable"
+        : loaded && total === 0
+          ? "no-ports"
+          : null;
 
   return (
     <>
-      <div className="shp-btn-row" style={{ marginBottom: 12 }}>
-        <Button variant="ghost" onClick={refresh} disabled={busy}>Refresh</Button>
-        <Button onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
-      </div>
-      {!resp.status.reachable && banner ? (
-        <div className="shp-empty">
-          <div className="shp-empty__body">
-            {banner}
-            <DiagnosticsDetails />
-          </div>
+      <div className="shp-toolbar">
+        <div className="shp-toolbar__banner">{banner}</div>
+        <div className="shp-btn-row">
+          <Button onClick={refresh} disabled={busy}>↻ Refresh</Button>
+          <Button variant="primary" onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
         </div>
+      </div>
+      {emptyKind ? (
+        <PortsEmpty kind={emptyKind} />
       ) : (
-        <>
-          {banner && <div className="shp-toolbar__banner" style={{ marginBottom: 8 }}>{banner}</div>}
-          <div className="shp-table-wrap">
-            <table className="shp-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>USB</th>
-                  <th>VID <Help title="VID" what="USB vendor ID in hexadecimal." /></th>
-                  <th>PID <Help title="PID" what="USB product ID in hexadecimal." /></th>
-                  <th>Serial <Help title="Serial number" what="USB serial string if the device reports one." /></th>
-                  <th>Product <Help title="Product" what="USB product descriptor string." /></th>
-                  <th>Discovered <Help title="Discovered" what="True if discovery matched a SerialHop device on this port." /></th>
-                  <th>Device ID <Help title="Device ID" what="The logical device ID this port was bound to during the last discovery." /></th>
+        <div className="shp-table-wrap">
+          <table className="shp-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>USB</th>
+                <th>VID <Help title="VID" what="USB vendor ID in hexadecimal." /></th>
+                <th>PID <Help title="PID" what="USB product ID in hexadecimal." /></th>
+                <th>Serial № <Help title="Serial number" what="USB serial string if the device reports one." /></th>
+                <th>Product <Help title="Product" what="USB product descriptor string." /></th>
+                <th>Discovered <Help title="Discovered" what="True if discovery matched a SerialHop device on this port." /></th>
+                <th>Device ID <Help title="Device ID" what="The logical device ID this port was bound to during the last discovery." /></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...resp.ports].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                <tr
+                  key={p.name}
+                  data-selected={selected === p.name ? true : undefined}
+                  onClick={() => setSelected(prev => (prev === p.name ? null : p.name))}
+                  style={{ cursor: "pointer" }}
+                >
+                  <td><b style={{ color: "var(--text)" }}>{p.name}</b></td>
+                  <td>{p.is_usb ? <span className="shp-check">✓</span> : <span className="shp-dim">—</span>}</td>
+                  <td>{p.vid || <span className="shp-dim">—</span>}</td>
+                  <td>{p.pid || <span className="shp-dim">—</span>}</td>
+                  <td>{p.serial_number || <span className="shp-dim">—</span>}</td>
+                  <td style={{ whiteSpace: "normal", fontFamily: "'IBM Plex Sans', system-ui, sans-serif" }}>
+                    {p.product || <span className="shp-dim">—</span>}
+                  </td>
+                  <td>{p.discovered ? <span className="shp-check">✓</span> : <span className="shp-dim">—</span>}</td>
+                  <td>{p.device_id || <span className="shp-dim">—</span>}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {[...resp.ports].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-                  <tr key={p.name}>
-                    <td>{p.name}</td>
-                    <td>{p.is_usb ? <span className="shp-check">✓</span> : <span className="shp-dim">—</span>}</td>
-                    <td>{p.vid}</td>
-                    <td>{p.pid}</td>
-                    <td>{p.serial_number}</td>
-                    <td>{p.product}</td>
-                    <td>{p.discovered ? <span className="shp-check">✓</span> : <span className="shp-dim">—</span>}</td>
-                    <td>{p.device_id || <span className="shp-dim">—</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
+  );
+}
+
+const EMPTY_COPY: Record<EmptyKind, { icon: string; title: string; body: string }> = {
+  "service-down": {
+    icon: "○ ○ ○",
+    title: "Service is not running.",
+    body: "Start the SerialHop service from the Status tab. Ports will appear once discovery has completed.",
+  },
+  "no-ports": {
+    icon: "—",
+    title: "No serial ports detected on this machine.",
+    body: "Plug in a USB-to-serial adapter or development board and click Refresh.",
+  },
+  "unreachable": {
+    icon: "?",
+    title: "Can't reach the local service.",
+    body: "It may have just started. Wait a few seconds and click Refresh. If the problem persists, check the service from the Status tab.",
+  },
+  "binding-error": {
+    icon: "!",
+    title: "Couldn't talk to the panel backend.",
+    body: "A binding call failed. Use Refresh to retry. If it keeps happening, restart the panel from the system tray.",
+  },
+};
+
+function PortsEmpty({ kind }: { kind: EmptyKind }) {
+  const m = EMPTY_COPY[kind];
+  return (
+    <div className="shp-empty">
+      <div className="shp-empty__icon">{m.icon}</div>
+      <div className="shp-empty__title">{m.title}</div>
+      <div className="shp-empty__body">{m.body}</div>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar, type TabId } from "./components/TabBar";
 import { Warning } from "./components/Warning";
@@ -13,6 +13,14 @@ import { PortsTab } from "./tabs/PortsTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { GetVersion, LoadConfigFromDisk, TriggerProbe } from "./wails/go/main/App";
 import { useGlobalUiState } from "./state/globalStore";
+
+const TAB_LABELS: Record<TabId, string> = {
+  status: "Status",
+  config: "Config",
+  devices: "Devices",
+  ports: "Ports",
+  logs: "Logs",
+};
 
 // TODO(spec §5.10): also intercept window close. Wails v2 exposes
 // OnBeforeClose; needs a Go-side bridge to ask the frontend whether
@@ -101,19 +109,61 @@ export function App() {
       <Footer {...footer} />
 
       {pendingTab && (
-        <Modal
-          title="Discard unsaved configuration changes?"
-          actions={
-            <>
-              <Button variant="ghost" onClick={() => setPendingTab(null)}>Cancel</Button>
-              <Button variant="ghost" onClick={onDiscardAndSwitch}>Discard</Button>
-              <Button variant="primary" onClick={onSaveAndSwitch}>Save</Button>
-            </>
-          }
-        >
-          <p>You have unsaved configuration changes. Save them, discard them, or cancel?</p>
-        </Modal>
+        <UnsavedGuardModal
+          configRef={configRef}
+          nextTab={pendingTab}
+          onCancel={() => setPendingTab(null)}
+          onDiscard={onDiscardAndSwitch}
+          onSave={onSaveAndSwitch}
+        />
       )}
     </div>
+  );
+}
+
+interface UnsavedGuardModalProps {
+  configRef: RefObject<ConfigTabHandle | null>;
+  nextTab: TabId;
+  onCancel: () => void;
+  onDiscard: () => void;
+  onSave: () => void;
+}
+
+function UnsavedGuardModal({ configRef, nextTab, onCancel, onDiscard, onSave }: UnsavedGuardModalProps) {
+  const changed = configRef.current?.getChangedFields?.() ?? [];
+  const n = changed.length;
+  const sub = n > 0
+    ? `You've edited ${n} field${n === 1 ? "" : "s"} since the last save.`
+    : "You have unsaved configuration changes.";
+  return (
+    <Modal
+      title="Discard unsaved configuration changes?"
+      sub={sub}
+      actions={
+        <>
+          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button variant="danger" onClick={onDiscard}>Discard</Button>
+          <Button variant="primary" onClick={onSave}>Save</Button>
+        </>
+      }
+    >
+      <p>
+        You&apos;re about to switch to the <b>{TAB_LABELS[nextTab]}</b> tab.{" "}
+        {n > 0 ? (
+          <>
+            Your pending edits to {changed.map((label, i) => (
+              <span key={label}>
+                {i > 0 && (i === changed.length - 1
+                  ? (changed.length === 2 ? " and " : ", and ")
+                  : ", ")}
+                <b>{label}</b>
+              </span>
+            ))} haven&apos;t been written yet — choose what to do with them before continuing.
+          </>
+        ) : (
+          <>Your pending edits haven&apos;t been written yet — choose what to do with them before continuing.</>
+        )}
+      </p>
+    </Modal>
   );
 }
