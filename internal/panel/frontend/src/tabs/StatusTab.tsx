@@ -55,8 +55,8 @@ export function StatusTab({ lamps, buttons, configDirty }: Props) {
       </section>
 
       <div className="shp-btn-row" style={{ marginTop: 16 }}>
-        <Button elevated disabled={busy || !buttons.install} onClick={() => adminAction(InstallService)}>Install</Button>
-        <Button elevated disabled={busy || !buttons.uninstall} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
+        <Button variant="primary" elevated disabled={busy || !buttons.install} onClick={() => adminAction(InstallService)}>Install</Button>
+        <Button variant="danger" elevated disabled={busy || !buttons.uninstall} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
         <Button elevated disabled={busy || !buttons.restart} onClick={() => adminAction(RestartService, true)}>Restart</Button>
       </div>
 
@@ -107,16 +107,16 @@ function UpdateButtons(props: {
   return (
     <>
       {s === UpdateState.Available && <>
+        <Button onClick={props.onReleaseNotes}>Release notes</Button>
         <Button variant="primary" onClick={props.onDownload}>Download</Button>
-        <Button variant="ghost" onClick={props.onReleaseNotes}>Release notes</Button>
       </>}
-      {s === UpdateState.Downloading && <Button variant="ghost" onClick={props.onCancel}>Cancel</Button>}
-      {s === UpdateState.DownloadFailed && <Button variant="primary" onClick={props.onDownload}>Retry</Button>}
+      {s === UpdateState.Downloading && <Button variant="danger" onClick={props.onCancel}>Cancel</Button>}
+      {s === UpdateState.DownloadFailed && <Button onClick={props.onDownload}>Retry</Button>}
       {s === UpdateState.Ready && <>
+        <Button onClick={props.onReleaseNotes}>Release notes</Button>
         <Button variant="primary" elevated onClick={props.onInstall}>Install update</Button>
-        <Button variant="ghost" onClick={props.onReleaseNotes}>Release notes</Button>
       </>}
-      {s === UpdateState.InstallFailed && <Button variant="primary" elevated onClick={props.onInstall}>Retry</Button>}
+      {s === UpdateState.InstallFailed && <Button elevated onClick={props.onInstall}>Retry</Button>}
     </>
   );
 }

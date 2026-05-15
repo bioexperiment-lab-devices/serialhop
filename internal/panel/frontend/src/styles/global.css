@@ -237,12 +237,14 @@ body {
 .shp-content__pad {
   padding: 18px 20px 20px;
 }
-.shp-content__pad[data-tab="logs"] {
+.shp-content__pad[data-tab="logs"],
+.shp-content__pad[data-tab="status"] {
   min-height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
+.shp-content__pad[data-tab="status"] > .shp-update { margin-top: auto; }
 
 /* ===== Footer ===== */
 .shp-footer {
