@@ -3,6 +3,7 @@ package winsvc
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,29 +61,61 @@ func RunAdminAction(action, errorFile, updateSrc string) int {
 }
 
 // runUpdate validates updateSrc, derives the target install path from the
-// running exe, and dispatches to updateBinary.
+// running exe, and dispatches to runUpdateWithDeps with production
+// timeouts and the real filesystem.
 func runUpdate(scm SCMConn, updateSrc string) error {
-	if updateSrc == "" {
-		return fmt.Errorf("update action requires --update-src")
-	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
 	}
-	installDir := filepath.Dir(exePath)
-	srcDir := filepath.Dir(updateSrc)
-	if !strings.EqualFold(filepath.Clean(srcDir), filepath.Clean(installDir)) {
-		return fmt.Errorf("update-src must live in install dir (%q); got %q", installDir, updateSrc)
+	return runUpdateWithDeps(scm, realFS{}, updateSrc, exePath,
+		productionStartTimeout, productionPollInterval, 250*time.Millisecond)
+}
+
+// runUpdateWithDeps is the testable form of runUpdate. The panel stages
+// downloads under %LOCALAPPDATA%\SerialHop\updates\, which is on a
+// different directory (and possibly volume) from the install dir
+// (typically C:\Program Files\SerialHop\). When updateSrc lives outside
+// the install dir, we copy it in (cross-volume safe) and run the swap
+// against the copy; the original is left in place so the panel can
+// resume-from-disk on the next launch.
+//
+// If updateSrc is already in the install dir (operator-staged), we skip
+// the copy and rename in place — preserving the pre-installer code path.
+func runUpdateWithDeps(scm SCMConn, fs FS, updateSrc, exePath string,
+	opTimeout, pollInterval, renameBackoff time.Duration) error {
+	if updateSrc == "" {
+		return fmt.Errorf("update action requires --update-src")
 	}
 	base := filepath.Base(updateSrc)
 	if !strings.HasPrefix(base, "SerialHop-v") || !strings.HasSuffix(base, ".exe") {
 		return fmt.Errorf("update-src filename must match SerialHop-v*.exe (got %q)", base)
 	}
-	if _, err := os.Stat(updateSrc); err != nil {
+	exists, err := fs.Stat(updateSrc)
+	if err != nil {
 		return fmt.Errorf("update-src not accessible: %w", err)
 	}
-	return updateBinary(scm, realFS{}, updateSrc, exePath,
-		productionStartTimeout, productionPollInterval, 250*time.Millisecond)
+	if !exists {
+		return fmt.Errorf("update-src not accessible: %w", os.ErrNotExist)
+	}
+
+	installDir := filepath.Dir(exePath)
+	renameSrc := updateSrc
+	if !strings.EqualFold(filepath.Clean(filepath.Dir(updateSrc)), filepath.Clean(installDir)) {
+		dst := filepath.Join(installDir, base)
+		if err := fs.Copy(updateSrc, dst); err != nil {
+			// Best-effort: make sure no half-written copy is left behind in
+			// the install dir. (realFS.Copy is stage-and-rename so a partial
+			// already cleans itself up, but defense-in-depth against alternate
+			// FS implementations that may not.)
+			_ = fs.Remove(dst)
+			return fmt.Errorf("copy update-src into install dir: %w", err)
+		}
+		renameSrc = dst
+	}
+
+	return updateBinary(scm, fs, renameSrc, exePath,
+		opTimeout, pollInterval, renameBackoff)
 }
 
 func install(scm SCMConn, exePath string) error {
@@ -177,6 +210,12 @@ type FS interface {
 	Rename(from, to string) error
 	Remove(path string) error
 	Stat(path string) (exists bool, err error)
+	// Copy duplicates `from` to `to`. The implementation must be
+	// atomic-on-success — partial writes must not leave a file at `to`.
+	// Used by runUpdateWithDeps to move the panel-staged binary from
+	// %LOCALAPPDATA% into the install dir before the same-volume rename
+	// swap; both volumes may differ, so os.Rename isn't sufficient.
+	Copy(from, to string) error
 }
 
 type realFS struct{}
@@ -192,6 +231,39 @@ func (realFS) Stat(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+func (realFS) Copy(from, to string) error {
+	in, err := os.Open(from) //nolint:gosec // from is the elevated child's caller-validated update-src path.
+	if err != nil {
+		return err
+	}
+	defer in.Close() //nolint:errcheck // close on a read-only handle; error cannot meaningfully be handled here.
+
+	partial := to + ".partial"
+	out, err := os.OpenFile(partial, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec // partial = to + ".partial"; to is the install-dir destination derived by the elevated child.
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(partial)
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		_ = out.Close()
+		_ = os.Remove(partial)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(partial)
+		return err
+	}
+	if err := os.Rename(partial, to); err != nil {
+		_ = os.Remove(partial)
+		return err
+	}
+	return nil
 }
 
 // Compile-time assertion: realFS satisfies FS.

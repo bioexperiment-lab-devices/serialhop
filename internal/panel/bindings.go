@@ -557,12 +557,15 @@ func (a *App) applyUpdateEvent(ev UpdateEvent) {
 // version, and emits the appropriate events. Body lifted from runUpdateCheck in
 // panel.go, with apply() callbacks replaced by a.applyUpdateEvent().
 func runUpdateCheckEvent(a *App) {
-	exePath, err := os.Executable()
+	// Stage downloads under %LOCALAPPDATA%\SerialHop\updates\. The install
+	// dir (typically C:\Program Files\SerialHop\) isn't user-writable in
+	// a default install, so we keep staging out of it; the elevated child
+	// copies into place at install time.
+	stagingDir, err := paths.EnsurePanelUpdateStagingDir()
 	if err != nil {
-		writePanelDebugLog("update_check_exe_failed", err)
+		writePanelDebugLog("update_check_staging_dir_failed", err)
 		return
 	}
-	installDir := filepath.Dir(exePath)
 
 	updateUA := "SerialHop/" + version.Base() + " (auto-update; +https://github.com/bioexperiment-lab-devices/serialhop)"
 
@@ -595,10 +598,10 @@ func runUpdateCheckEvent(a *App) {
 		return
 	}
 
-	// Resume-from-disk: if a staged file under <installDir>/<assetName>
+	// Resume-from-disk: if a staged file under <stagingDir>/<assetName>
 	// already exists, re-verify it against the current sums file. If it
 	// matches, jump straight to UpdateReady.
-	stagedPath := filepath.Join(installDir, exeAsset.Name)
+	stagedPath := filepath.Join(stagingDir, exeAsset.Name)
 	if _, err := os.Stat(stagedPath); err == nil {
 		sumsAsset := rel.AssetByName("SHA256SUMS.txt")
 		if sumsAsset != nil {
@@ -612,7 +615,7 @@ func runUpdateCheckEvent(a *App) {
 				a.applyUpdateEvent(EvUpdateAvailable)
 				a.applyUpdateEvent(EvDownloadStart)
 				a.applyUpdateEvent(EvDownloadOK)
-				cleanupStaleStagedFiles(installDir, exeAsset.Name)
+				cleanupStaleStagedFiles(stagingDir, exeAsset.Name)
 				return
 			}
 		}
@@ -620,7 +623,7 @@ func runUpdateCheckEvent(a *App) {
 		_ = os.Remove(stagedPath)
 	}
 
-	cleanupStaleStagedFiles(installDir, exeAsset.Name)
+	cleanupStaleStagedFiles(stagingDir, exeAsset.Name)
 
 	a.updateCh.mu.Lock()
 	a.updateCh.release = rel
@@ -634,12 +637,12 @@ func runUpdateCheckEvent(a *App) {
 func ctlDownloadEvent(a *App) {
 	updateUA := "SerialHop/" + version.Base() + " (auto-update; +https://github.com/bioexperiment-lab-devices/serialhop)"
 
-	exePath, err := os.Executable()
+	stagingDir, err := paths.EnsurePanelUpdateStagingDir()
 	if err != nil {
-		writePanelDebugLog("update_download_exe_failed", err)
+		writePanelDebugLog("update_download_staging_dir_failed", err)
+		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
-	installDir := filepath.Dir(exePath)
 
 	a.updateCh.mu.Lock()
 	rel := a.updateCh.release
@@ -662,7 +665,7 @@ func ctlDownloadEvent(a *App) {
 
 	a.applyUpdateEvent(EvDownloadStart)
 
-	dest := filepath.Join(installDir, asset.Name)
+	dest := filepath.Join(stagingDir, asset.Name)
 	var lastReport time.Time
 	progress := func(received, total int64) {
 		if time.Since(lastReport) < 200*time.Millisecond && (total <= 0 || received < total) {

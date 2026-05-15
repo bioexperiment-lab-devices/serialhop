@@ -48,6 +48,9 @@ type options struct {
 
 // fsOps abstracts the filesystem ops the install flow needs. Production wires
 // realFS{} which delegates to the os package; tests inject fakeFS{}.
+//
+// The (Rename, Remove, Stat, Copy) subset is the same surface as winsvc.FS
+// so the installer can pass r.FS directly to winsvc.InstallOrUpgrade.
 type fsOps interface {
 	MkdirAll(path string, mode uint32) error
 	WriteFile(path string, data []byte, mode uint32) error
@@ -55,6 +58,7 @@ type fsOps interface {
 	Rename(from, to string) error
 	Remove(path string) error
 	Stat(path string) (exists bool, err error)
+	Copy(from, to string) error
 }
 
 // versionReader abstracts reading the PE FileVersion. Production wires
