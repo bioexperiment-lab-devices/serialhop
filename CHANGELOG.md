@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.24.0...v0.25.0) (2026-05-15)
+
+
+### Features
+
+* **panel:** default save flow to Save & restart, footer hint after Save ([#127](https://github.com/bioexperiment-lab-devices/serialhop/issues/127)) ([ed7833f](https://github.com/bioexperiment-lab-devices/serialhop/commit/ed7833fc21b3129f1e2fb601df24623fdc421d93))
+* **panel:** persistent update row + relaunch on install + ports filter ([#126](https://github.com/bioexperiment-lab-devices/serialhop/issues/126)) ([51494d4](https://github.com/bioexperiment-lab-devices/serialhop/commit/51494d4574838d67957bbd756cece9f3d0a7fb7c))
+
 ## [0.24.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.23.0...v0.24.0) (2026-05-15)
 
 
