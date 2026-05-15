@@ -9,6 +9,7 @@ import {
   LoadConfigFromDisk, SaveConfig, ValidateConfig, VerifyCredentials,
   OpenConfigInEditor, PickBackupDir, RestartService,
 } from "../wails/go/main/App";
+import { EventsEmit } from "../wails/runtime/runtime";
 import type { FieldErrorDTO } from "../types";
 
 // Mirrors internal/config.Config — keep field names exactly as Wails generates them
@@ -154,6 +155,14 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
       }
       setLoaded(clone(payload));
       setForm(clone(payload));
+      // Imperative save() is the path used by the unsaved-guard modal
+      // when the operator picks "Save" while switching tabs — same
+      // restart-required reminder applies.
+      EventsEmit("footer:set", {
+        kind: "ok",
+        text: "<b>Saved.</b> Restart the service to apply.",
+        time: new Date().toISOString(),
+      });
       return true;
     },
     discard,
@@ -212,7 +221,20 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
     }
     setLoaded(clone(payload));
     setForm(clone(payload));
-    if (alsoRestart) await RestartService();
+    if (alsoRestart) {
+      // The elevated RestartService action emits its own footer states
+      // ("Working…", "Service restarted", failure), so don't pre-empt them.
+      await RestartService();
+      return;
+    }
+    // Save-only path: the new YAML is on disk but the running service is
+    // still using the previous config. Surface a footer reminder so the
+    // operator knows a restart is needed for the change to take effect.
+    EventsEmit("footer:set", {
+      kind: "ok",
+      text: "<b>Saved.</b> Restart the service to apply.",
+      time: new Date().toISOString(),
+    });
   };
 
   const onHostBlur = (v: string) => {
@@ -467,8 +489,8 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         className="shp-btn-row"
         style={{ marginTop: 14, paddingTop: 4, borderTop: "1px solid var(--border)" }}
       >
-        <Button variant="primary" disabled={!dirty} onClick={() => save(false)}>Save</Button>
         <Button variant="primary" elevated disabled={!dirty} onClick={() => save(true)}>Save &amp; restart</Button>
+        <Button variant="primary" disabled={!dirty} onClick={() => save(false)}>Save</Button>
         <Button disabled={!dirty} onClick={discard}>Discard changes</Button>
         <span className="shp-gap" />
         <Button variant="ghost" onClick={() => OpenConfigInEditor()}>Open in editor ↗</Button>
