@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,9 +12,6 @@ import (
 	internalversion "github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 )
-
-//go:embed payload/SerialHop.exe
-var payload []byte
 
 const defaultInstallDir = `C:\Program Files\SerialHop`
 
@@ -32,6 +28,9 @@ func main() {
 	flag.Parse()
 
 	if *flagVersion {
+		// Installer + payload share a version by construction (CI bumps both
+		// version.json files atomically). The output prints them separately so
+		// a future decoupling is straightforward.
 		fmt.Printf("SerialHop Installer v%s (payload v%s)\n",
 			internalversion.Base(), internalversion.Base())
 		return

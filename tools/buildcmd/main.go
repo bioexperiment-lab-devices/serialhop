@@ -1,6 +1,11 @@
-// buildcmd is the cross-platform driver for `task build`. It reads
-// assets/version.json for the base version, runs `git describe` for the
-// suffix, and execs `wails build` with the resulting `-ldflags -X` injection.
+// buildcmd is the cross-platform driver for `task build` and `task installer`.
+// It reads assets/version.json for the base version, runs `git describe` for
+// the suffix, and execs the appropriate build command with the resulting
+// `-ldflags -X` injection.
+//
+// When called with a positional package argument (e.g. ./tools/installer) it
+// uses plain `go build` (suitable for non-Wails binaries). Without a package
+// argument it defaults to `wails build` for the main panel binary.
 //
 // This exists as a Go program rather than an inline shell pipeline because
 // Task's embedded sh interpreter has Windows-specific quoting quirks that
@@ -33,6 +38,7 @@ func main() {
 	goos := flag.String("goos", os.Getenv("GOOS"), "GOOS for the build")
 	goarch := flag.String("goarch", os.Getenv("GOARCH"), "GOARCH for the build")
 	skipFrontend := flag.Bool("s", false, "skip frontend build (frontend already built)")
+	tags := flag.String("tags", "", "comma-separated build tags forwarded to go build / wails build")
 	flag.Parse()
 
 	raw, err := os.ReadFile("assets/version.json")
@@ -66,6 +72,39 @@ func main() {
 	}
 	version := vf.StringFileInfo.FileVersion + "+" + suffix
 
+	ldflags := fmt.Sprintf("-X %s.Version=%s", versionPkg, version)
+
+	// When a positional package path is provided (e.g. ./tools/installer), use
+	// plain `go build` with GOOS/GOARCH set in the environment. This path is
+	// used for non-Wails binaries that still need the version ldflags injection.
+	if pkg := flag.Arg(0); pkg != "" {
+		destDir := filepath.Dir(*out)
+		if destDir != "" && destDir != "." {
+			if err := os.MkdirAll(destDir, 0o750); err != nil {
+				fail("mkdir %s: %v", destDir, err)
+			}
+		}
+		args := []string{"build", "-trimpath", "-ldflags=" + ldflags, "-o", *out}
+		if *tags != "" {
+			args = append(args, "-tags="+*tags)
+		}
+		args = append(args, pkg)
+		cmd := exec.Command("go", args...) //nolint:gosec // args derived from build inputs; build-tool subprocess
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Env = append(os.Environ(), "GOOS="+*goos, "GOARCH="+*goarch)
+		if err := cmd.Run(); err != nil {
+			var ee *exec.ExitError
+			if errors.As(err, &ee) {
+				os.Exit(ee.ExitCode())
+			}
+			fail("go build: %v", err)
+		}
+		return
+	}
+
+	// No package argument: build the Wails panel binary.
+	//
 	// Determine the wails output path and final destination.
 	// wails build always places the binary under build/bin/<name>[.exe].
 	// We rename it to the caller-specified -o path after a successful build.
@@ -85,13 +124,15 @@ func main() {
 	// `packageApplicationForWindows` would produce a second .syso in the same
 	// directory as main.go, causing `too many .rsrc sections` at link time.
 	// Skip Wails packaging; ours is already in place.
-	ldflags := fmt.Sprintf("-X %s.Version=%s", versionPkg, version)
-	args := []string{"build", "-platform", platform, "-nopackage", "-trimpath", "-ldflags=" + ldflags}
+	wailsArgs := []string{"build", "-platform", platform, "-nopackage", "-trimpath", "-ldflags=" + ldflags}
+	if *tags != "" {
+		wailsArgs = append(wailsArgs, "-tags="+*tags)
+	}
 	if *skipFrontend {
-		args = append(args, "-s")
+		wailsArgs = append(wailsArgs, "-s")
 	}
 
-	cmd := exec.Command("wails", args...) //nolint:gosec // args derived from build inputs (version.json, git describe, caller flags); this is a build-tool subprocess, not user-input handling
+	cmd := exec.Command("wails", wailsArgs...) //nolint:gosec // args derived from build inputs (version.json, git describe, caller flags); this is a build-tool subprocess, not user-input handling
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	// wails reads GOOS/GOARCH from -platform, not from env; keep env clean.

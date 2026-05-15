@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
@@ -101,11 +102,18 @@ type Result struct {
 
 // Run executes the install flow. See spec §4.4 (dispatch) and §5 (flow).
 func (r *Runner) Run(opts options) Result {
+	started := time.Now()
 	targetExe := filepath.Join(opts.InstallDir, "SerialHop.exe")
+
+	slog.Info("installer_started",
+		"bundled_version", r.BundledVersion,
+		"target_dir", opts.InstallDir)
 
 	state, installedVer, err := r.detectState(targetExe)
 	if err != nil {
-		return Result{Err: fmt.Errorf("detect installed version: %w", err), ExitCode: 1}
+		res := Result{Err: fmt.Errorf("detect installed version: %w", err), ExitCode: 1}
+		r.logFinish(started, res)
+		return res
 	}
 
 	slog.Info("version_check",
@@ -113,12 +121,13 @@ func (r *Runner) Run(opts options) Result {
 		"bundled", r.BundledVersion,
 		"decision", state.String())
 
+	var res Result
 	switch state {
 	case StateSame:
-		return r.runSameVersion(opts, targetExe, installedVer)
+		res = r.runSameVersion(opts, targetExe, installedVer)
 	case StateDowngrade:
 		if !opts.AllowDowngrade {
-			return Result{
+			res = Result{
 				State:        state,
 				InstalledVer: installedVer,
 				BundledVer:   r.BundledVersion,
@@ -128,13 +137,29 @@ func (r *Runner) Run(opts options) Result {
 					installedVer, r.BundledVersion),
 				ExitCode: 1,
 			}
+			break
 		}
 		fallthrough
 	case StateFresh, StateUpgrade:
-		return r.runInstallOrUpgrade(opts, targetExe, state, installedVer)
+		res = r.runInstallOrUpgrade(opts, targetExe, state, installedVer)
 	default:
-		return Result{Err: fmt.Errorf("unknown state %v", state), ExitCode: 1}
+		res = Result{Err: fmt.Errorf("unknown state %v", state), ExitCode: 1}
 	}
+	r.logFinish(started, res)
+	return res
+}
+
+// logFinish emits the installer_finished event with status + duration. Spec §11.
+func (r *Runner) logFinish(started time.Time, res Result) {
+	status := "success"
+	if res.Err != nil {
+		status = "error"
+	} else if res.State == StateSame {
+		status = "already_installed"
+	}
+	slog.Info("installer_finished",
+		"status", status,
+		"duration_ms", time.Since(started).Milliseconds())
 }
 
 // detectState checks whether targetExe exists and, if so, reads its PE version.
@@ -216,7 +241,11 @@ func (r *Runner) runInstallOrUpgrade(opts options, targetExe string, state State
 		res.ExitCode = 1
 		return res
 	}
-	slog.Info("payload_extracted", "path", stagedPath, "size", len(r.Payload))
+	sum := sha256.Sum256(r.Payload)
+	slog.Info("payload_extracted",
+		"path", stagedPath,
+		"size", len(r.Payload),
+		"sha256", fmt.Sprintf("%x", sum))
 
 	// Steps 5-6: connect to SCM, stop service if running, rename payload into
 	// place, restart service. We drive the SCM and file rename ourselves so
