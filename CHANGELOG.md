@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.22.0...v0.22.1) (2026-05-15)
+
+
+### Bug Fixes
+
+* prevent Devices tab UI blank-out when service is not installed ([#114](https://github.com/bioexperiment-lab-devices/serialhop/issues/114)) ([222b80c](https://github.com/bioexperiment-lab-devices/serialhop/commit/222b80cc9ed5969d1e949f0a45d05f982c87cfc6))
+
 ## [0.22.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.21.0...v0.22.0) (2026-05-15)
 
 
