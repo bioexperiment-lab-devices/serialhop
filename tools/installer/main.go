@@ -62,6 +62,7 @@ func main() {
 	configureLogging()
 
 	if *flagSilent {
+		attachParentConsole()
 		os.Exit(runSilent(opts))
 		return
 	}
