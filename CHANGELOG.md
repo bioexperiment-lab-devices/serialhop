@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.22.1...v0.22.2) (2026-05-15)
+
+
+### Bug Fixes
+
+* **panel:** stage auto-update downloads under %LOCALAPPDATA% ([#120](https://github.com/bioexperiment-lab-devices/serialhop/issues/120)) ([0949297](https://github.com/bioexperiment-lab-devices/serialhop/commit/094929754ae96e495ba976e962a9b6bfcbd20d98))
+
 ## [0.22.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.22.0...v0.22.1) (2026-05-15)
 
 
