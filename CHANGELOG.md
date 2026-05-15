@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.19.0...v0.20.0) (2026-05-15)
+
+
+### Features
+
+* **installer:** replace walk dialog with Wails-styled window; auto-close on launch ([#109](https://github.com/bioexperiment-lab-devices/serialhop/issues/109)) ([3f3cc86](https://github.com/bioexperiment-lab-devices/serialhop/commit/3f3cc86418d2e8917ee54ab0cf5ec4b64f0cc0a6))
+
 ## [0.19.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.3...v0.19.0) (2026-05-15)
 
 
