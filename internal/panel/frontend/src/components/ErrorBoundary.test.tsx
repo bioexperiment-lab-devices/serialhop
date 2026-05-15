@@ -93,6 +93,28 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText(/kaboom/)).toBeInTheDocument();
   });
 
+  it("humanizes the scope in the heading", () => {
+    render(
+      <ErrorBoundary scope="tab:devices">
+        <Boom when={true} />
+      </ErrorBoundary>,
+    );
+    expect(
+      screen.getByText(/Something went wrong in the Devices view\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to 'panel' for non-tab scopes", () => {
+    render(
+      <ErrorBoundary scope="app">
+        <Boom when={true} />
+      </ErrorBoundary>,
+    );
+    expect(
+      screen.getByText(/Something went wrong in the panel\./i),
+    ).toBeInTheDocument();
+  });
+
   it("Sibling chrome outside the boundary stays mounted on child throw", () => {
     render(
       <div>
