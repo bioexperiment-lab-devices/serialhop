@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.23.0...v0.24.0) (2026-05-15)
+
+
+### Features
+
+* **panel:** config validation + lamp sub lines + minor UI parity ([#124](https://github.com/bioexperiment-lab-devices/serialhop/issues/124)) ([d53740b](https://github.com/bioexperiment-lab-devices/serialhop/commit/d53740baf1f5446af8b92c5f29d28b6daf2800e6))
+
 ## [0.23.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.22.2...v0.23.0) (2026-05-15)
 
 
