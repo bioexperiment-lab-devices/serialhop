@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.20.0...v0.21.0) (2026-05-15)
+
+
+### Features
+
+* panel crash safety net (error boundary + crash journal) ([#113](https://github.com/bioexperiment-lab-devices/serialhop/issues/113)) ([4d93400](https://github.com/bioexperiment-lab-devices/serialhop/commit/4d93400e8760dbd3938b8c34a96deb1ad329364a))
+
+
+### Bug Fixes
+
+* **panel:** apply design button variants and reposition log/update affordances ([#111](https://github.com/bioexperiment-lab-devices/serialhop/issues/111)) ([5f9701e](https://github.com/bioexperiment-lab-devices/serialhop/commit/5f9701e9794f63ca9e0fc71bc1163dc2f28c1eb8))
+
 ## [0.20.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.19.0...v0.20.0) (2026-05-15)
 
 
