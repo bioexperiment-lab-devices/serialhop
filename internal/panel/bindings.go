@@ -19,7 +19,6 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
-	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
