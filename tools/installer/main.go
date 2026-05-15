@@ -99,7 +99,7 @@ func configureLogging() {
 	// Diagnostic log file in %TEMP%. Spec §11.
 	tmp := os.TempDir()
 	logPath := filepath.Join(tmp, fmt.Sprintf("SerialHop-installer-%s.log", internalversion.Base()))
-	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600) //nolint:gosec // logPath = os.TempDir() + baked-in version constant, not user input
 	if err != nil {
 		// Logging is best-effort; if we can't write the file, fall back to stderr.
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
@@ -115,7 +115,7 @@ func (realFS) MkdirAll(path string, mode uint32) error { return os.MkdirAll(path
 func (realFS) WriteFile(path string, data []byte, mode uint32) error {
 	return os.WriteFile(path, data, os.FileMode(mode))
 }
-func (realFS) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
+func (realFS) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) } //nolint:gosec // path is supplied by the admin-run installer's own dispatch logic, not user input
 func (realFS) Rename(from, to string) error         { return os.Rename(from, to) }
 func (realFS) Remove(path string) error             { return os.Remove(path) }
 func (realFS) Stat(path string) (bool, error) {
