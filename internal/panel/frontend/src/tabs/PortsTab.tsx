@@ -50,7 +50,9 @@ export function PortsTab() {
     setCallError(null);
     try {
       const r = await withTimeout(GetPorts(), BINDING_TIMEOUT_MS, "GetPorts");
-      setResp(r);
+      // Defense in depth: see DevicesTab for the same rationale. The Go
+      // binding now guarantees non-nil `ports`.
+      setResp({ ...r, ports: r.ports ?? [] });
     } catch (e) {
       setCallError(e instanceof Error ? e.message : String(e));
     } finally {
