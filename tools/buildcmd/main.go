@@ -39,6 +39,7 @@ func main() {
 	goarch := flag.String("goarch", os.Getenv("GOARCH"), "GOARCH for the build")
 	skipFrontend := flag.Bool("s", false, "skip frontend build (frontend already built)")
 	tags := flag.String("tags", "", "comma-separated build tags forwarded to go build / wails build")
+	extraLdflags := flag.String("extra-ldflags", "", "additional ldflags appended to the internal version-injection string (e.g. '-H windowsgui')")
 	flag.Parse()
 
 	raw, err := os.ReadFile("assets/version.json")
@@ -73,6 +74,9 @@ func main() {
 	version := vf.StringFileInfo.FileVersion + "+" + suffix
 
 	ldflags := fmt.Sprintf("-X %s.Version=%s", versionPkg, version)
+	if *extraLdflags != "" {
+		ldflags = ldflags + " " + *extraLdflags
+	}
 
 	// When a positional package path is provided (e.g. ./tools/installer), use
 	// plain `go build` with GOOS/GOARCH set in the environment. This path is
