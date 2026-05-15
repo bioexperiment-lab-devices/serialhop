@@ -92,15 +92,18 @@ func runDialog(opts *options) int {
 	app := &InstallerApp{opts: opts}
 
 	err := wails.Run(&wailsopts.App{
-		Title:            "SerialHop Installer",
-		Width:            480,
-		Height:           300,
-		MinWidth:         480,
-		MinHeight:        300,
-		MaxWidth:         480,
-		MaxHeight:        300,
-		DisableResize:    true,
-		Frameless:        false,                                               // framed window with native title bar (per spec §3)
+		Title:         "SerialHop Installer",
+		Width:         480,
+		Height:        300,
+		MinWidth:      480,
+		MinHeight:     300,
+		MaxWidth:      480,
+		MaxHeight:     300,
+		DisableResize: true,
+		// Frameless: the SPA owns the title bar (close button + drag region)
+		// to match the panel's chrome. The HTML at frontend/dist/index.html
+		// renders a .shp-titlebar that mirrors the panel's TitleBar component.
+		Frameless:        true,
 		BackgroundColour: &wailsopts.RGBA{R: 0xEC, G: 0xE9, B: 0xE0, A: 0xFF}, // --bg-page
 		AssetServer: &assetserver.Options{
 			Assets: frontendAssets,

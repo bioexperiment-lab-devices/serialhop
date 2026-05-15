@@ -42,9 +42,10 @@ Out of scope (deliberately YAGNI):
 - A shared design-system package between the panel and the installer.
   The small CSS duplication is acceptable for now; we extract later if the
   two surfaces diverge.
-- Frameless window with custom title bar. The panel uses a frameless
-  shell with a custom-drawn title bar; the installer's window will be
-  framed for simplicity (matches Windows installer conventions anyway).
+- A separate design system. The installer reuses the panel's existing
+  title-bar HTML + CSS (the `.shp-titlebar` element from `TitleBar.tsx`
+  + `global.css`) so the chrome matches without introducing a shared
+  component package.
 - Changes to the install dispatch logic, version check, payload extract,
   shortcut writer, or SCM interaction. `Runner.Run` and the existing
   cross-platform test matrix stay untouched.
@@ -98,7 +99,7 @@ err := wails.Run(&options.App{
     MaxHeight:         300,
     DisableResize:     true,
     Fullscreen:        false,
-    Frameless:         false, // framed window with native title bar
+    Frameless:         true,  // SPA owns the chrome via .shp-titlebar (matches panel)
     StartHidden:       false,
     BackgroundColour:  &options.RGBA{R: 245, G: 245, B: 247, A: 255}, // panel's --bg
     AssetServer:       &assetserver.Options{Assets: frontendAssets},
@@ -110,9 +111,11 @@ err := wails.Run(&options.App{
 - **Size 480×300** with all four `{Min,Max}{Width,Height}` set equal and
   `DisableResize: true` produces a fixed-size dialog. Operators can't
   resize, maximize, or full-screen it.
-- **Framed** (`Frameless: false`) gives the native Windows title bar with
-  the system close button. The panel is frameless with a custom title
-  bar; the installer is intentionally simpler.
+- **Frameless** (`Frameless: true`) hands the chrome to the SPA. The
+  HTML's `.shp-titlebar` element renders the title and a close button
+  that calls `InstallerApp.Cancel` (which fires `wailsruntime.Quit`).
+  The drag region uses `--wails-draggable: drag` on the title text
+  container, matching the panel.
 - **BackgroundColour** matches the panel's `--bg` token so there's no
   flash of a different background while the WebView2 control initializes.
 
@@ -449,6 +452,8 @@ markers. No changes to version metadata or release-please config.
   justified. Decided in brainstorming Q (a).
 - **Auto-close timing**: 1500ms after the panel launch step succeeds.
   Decided in brainstorming Q (b).
-- **Framed vs frameless window**: framed (native title bar). Matches
-  Windows installer convention; simpler than the panel's custom title
-  bar; avoids needing drag handles in HTML.
+- **Framed vs frameless window**: frameless. The SPA renders the same
+  `.shp-titlebar` markup the panel uses so the chrome is visually
+  consistent across both apps. Initial draft proposed framed for
+  simplicity; revised to frameless after user feedback during the
+  preview iteration.
