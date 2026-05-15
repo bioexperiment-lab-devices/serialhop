@@ -76,8 +76,8 @@ export function applyScenario(s: ScenarioId): void {
   switch (s) {
     case "default":
       store.lamps.service = { tone: "green", label: "Running" };
-      store.lamps.server  = { tone: "green", label: "Reachable" };
-      store.lamps.tunnel  = { tone: "green", label: "Connected" };
+      store.lamps.server  = { tone: "green", label: "Up", sub: "111.88.145.138" };
+      store.lamps.tunnel  = { tone: "green", label: "Connected", sub: "remote port 29017" };
       store.buttons = { install: false, uninstall: true, restart: true };
       store.warn = null;
       store.update = { state: UpdateState.Idle, release_tag: "" };
@@ -90,7 +90,7 @@ export function applyScenario(s: ScenarioId): void {
       break;
     case "config-invalid":
       store.warn = "⚠ Config file is malformed (line 12: unexpected indentation).";
-      store.lamps.service = { tone: "yellow", label: "Running (config invalid)" };
+      store.lamps.service = { tone: "red", label: "Not installed", sub: "config invalid" };
       break;
     case "update-available":
       store.update = { state: UpdateState.Available, release_tag: "v0.15.0" };

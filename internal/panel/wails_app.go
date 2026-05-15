@@ -116,32 +116,34 @@ func (a *App) shutdown(_ context.Context) {
 
 func (a *App) emitServerLamp() {
 	_, srv, _ := a.lamps.snapshot()
-	color, text := serverLampPresentation(srv)
-	a.emitEvent("status:lamp", map[string]string{
-		"which": "server",
-		"tone":  toneString(color),
-		"label": text,
-	})
+	color, text, sub := serverLampPresentation(srv)
+	a.emitLamp("server", color, text, sub)
 }
 
 func (a *App) emitTunnelLamp() {
 	_, _, tun := a.lamps.snapshot()
-	color, text := tunnelLampPresentation(tun)
-	a.emitEvent("status:lamp", map[string]string{
-		"which": "tunnel",
-		"tone":  toneString(color),
-		"label": text,
-	})
+	color, text, sub := tunnelLampPresentation(tun)
+	a.emitLamp("tunnel", color, text, sub)
 }
 
 func (a *App) emitServiceLamp() {
 	svc, _, _ := a.lamps.snapshot()
-	color, text := serviceLampPresentation(svc)
-	a.emitEvent("status:lamp", map[string]string{
-		"which": "service",
+	color, text, sub := serviceLampPresentation(svc)
+	a.emitLamp("service", color, text, sub)
+}
+
+// emitLamp is the single status:lamp emitter. `sub` is omitted from the
+// payload when empty so the SPA's `sub && <span>` render path stays clean.
+func (a *App) emitLamp(which string, color StatusColor, label, sub string) {
+	payload := map[string]string{
+		"which": which,
 		"tone":  toneString(color),
-		"label": text,
-	})
+		"label": label,
+	}
+	if sub != "" {
+		payload["sub"] = sub
+	}
+	a.emitEvent("status:lamp", payload)
 }
 
 // markNetProbesChecking flips both network lamps to "Checking…" and emits.

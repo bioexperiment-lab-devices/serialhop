@@ -102,8 +102,8 @@ export function PortsTab() {
       <div className="shp-toolbar">
         <div className="shp-toolbar__banner">{banner}</div>
         <div className="shp-btn-row">
-          <Button onClick={refresh} disabled={busy}>↻ Refresh</Button>
-          <Button variant="primary" onClick={rediscover} disabled={busy || !resp.status.reachable}>Rediscover</Button>
+          <Button variant="primary" onClick={rediscover} disabled={busy || !resp.status.reachable}>↻ Rediscover</Button>
+          <Button onClick={refresh} disabled={busy}>Refresh</Button>
         </div>
       </div>
       {emptyKind ? (

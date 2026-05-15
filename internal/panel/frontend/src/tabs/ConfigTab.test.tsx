@@ -44,13 +44,16 @@ describe("ConfigTab", () => {
     await waitFor(() => expect(onDirty).toHaveBeenCalledWith(false));
   });
 
-  it("shows inline error when verifyCredentials returns unauthorized", async () => {
+  it("shows the rejection message under both Username and Password when verifyCredentials returns unauthorized", async () => {
     (App.VerifyCredentials as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ outcome: "unauthorized" });
     render(<ConfigTab onDirtyChange={() => {}} />);
     await waitFor(() => screen.getByDisplayValue("alice"));
     fireEvent.change(screen.getByDisplayValue("alice"), { target: { value: "bob" } });
     fireEvent.click(screen.getByText("Save"));
-    await waitFor(() => screen.getByText(/rejected these credentials/));
+    await waitFor(() => {
+      const hits = screen.getAllByText(/rejected these credentials/);
+      expect(hits.length).toBe(2);
+    });
     expect(App.SaveConfig).not.toHaveBeenCalled();
   });
 

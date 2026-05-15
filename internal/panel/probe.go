@@ -3,7 +3,9 @@ package panel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
@@ -14,8 +16,9 @@ import (
 const probeTimeout = 5 * time.Second
 
 // mapServerResult turns a (Health, error) pair from labbridge.FetchHealth
-// into a netLamp for the Server row.
-func mapServerResult(h labbridge.Health, err error) netLamp {
+// into a netLamp for the Server row. `host` is the user-visible host string
+// surfaced as the lamp's sub line on a successful probe.
+func mapServerResult(h labbridge.Health, err error, host string) netLamp {
 	if err != nil {
 		// All error classes (network, 5xx, parse) collapse to Unreachable
 		// for the Server lamp — the operator just needs to know the server
@@ -23,9 +26,9 @@ func mapServerResult(h labbridge.Health, err error) netLamp {
 		return netLamp{kind: lampUnreachable, detail: err.Error()}
 	}
 	if h.ChiselOK {
-		return netLamp{kind: lampOK}
+		return netLamp{kind: lampOK, sub: host}
 	}
-	return netLamp{kind: lampChiselDown, detail: h.Detail}
+	return netLamp{kind: lampChiselDown, detail: h.Detail, sub: host}
 }
 
 // mapTunnelResult turns a (ClientInfo, error) pair from labbridge.FetchClient
@@ -39,10 +42,21 @@ func mapTunnelResult(info labbridge.ClientInfo, err error) netLamp {
 	case err != nil:
 		return netLamp{kind: lampUnreachable, detail: err.Error()}
 	case info.Connected:
-		return netLamp{kind: lampOK}
+		return netLamp{kind: lampOK, sub: fmt.Sprintf("remote port %d", info.Port)}
 	default:
 		return netLamp{kind: lampDisconnected}
 	}
+}
+
+// hostFromBase extracts the bare host (no scheme, no path) from a base URL
+// so it can be rendered as the Server-lamp sub line. Empty in → empty out.
+func hostFromBase(base string) string {
+	s := strings.TrimPrefix(base, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+	return s
 }
 
 // runServerProbe performs one /api/public/health request (or short-circuits
@@ -55,7 +69,7 @@ func runServerProbe(ctx context.Context, hc *http.Client, base, userAgent string
 	cctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	h, err := labbridge.FetchHealth(cctx, hc, base, userAgent)
-	state.setServer(mapServerResult(h, err))
+	state.setServer(mapServerResult(h, err, hostFromBase(base)))
 }
 
 // runTunnelProbe performs one /api/public/clients/{user} request, or

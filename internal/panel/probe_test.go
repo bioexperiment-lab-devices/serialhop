@@ -15,45 +15,68 @@ import (
 )
 
 func TestMapServerResult(t *testing.T) {
+	const host = "lab.example.com"
 	cases := []struct {
-		name string
-		h    labbridge.Health
-		err  error
-		want lampKind
+		name    string
+		h       labbridge.Health
+		err     error
+		want    lampKind
+		wantSub string
 	}{
-		{"chisel ok", labbridge.Health{ChiselOK: true}, nil, lampOK},
-		{"chisel down", labbridge.Health{ChiselOK: false, Detail: "connection refused"}, nil, lampChiselDown},
-		{"server error", labbridge.Health{}, fmt.Errorf("wrap: %w", labbridge.ErrServerError), lampUnreachable},
-		{"network error", labbridge.Health{}, errors.New("dial: connection refused"), lampUnreachable},
+		{"chisel ok", labbridge.Health{ChiselOK: true}, nil, lampOK, host},
+		{"chisel down", labbridge.Health{ChiselOK: false, Detail: "connection refused"}, nil, lampChiselDown, host},
+		{"server error", labbridge.Health{}, fmt.Errorf("wrap: %w", labbridge.ErrServerError), lampUnreachable, ""},
+		{"network error", labbridge.Health{}, errors.New("dial: connection refused"), lampUnreachable, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mapServerResult(tc.h, tc.err)
+			got := mapServerResult(tc.h, tc.err, host)
 			if got.kind != tc.want {
 				t.Errorf("kind: got %v, want %v", got.kind, tc.want)
+			}
+			if got.sub != tc.wantSub {
+				t.Errorf("sub: got %q, want %q", got.sub, tc.wantSub)
 			}
 		})
 	}
 }
 
+func TestHostFromBase(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://lab.example.com", "lab.example.com"},
+		{"http://1.2.3.4:8443/api", "1.2.3.4:8443"},
+		{"lab.example.com", "lab.example.com"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := hostFromBase(tc.in); got != tc.want {
+			t.Errorf("hostFromBase(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestMapTunnelResult(t *testing.T) {
 	cases := []struct {
-		name string
-		info labbridge.ClientInfo
-		err  error
-		want lampKind
+		name    string
+		info    labbridge.ClientInfo
+		err     error
+		want    lampKind
+		wantSub string
 	}{
-		{"connected", labbridge.ClientInfo{Port: 8089, Connected: true}, nil, lampOK},
-		{"disconnected", labbridge.ClientInfo{Port: 8089, Connected: false}, nil, lampDisconnected},
-		{"unauthorized", labbridge.ClientInfo{}, fmt.Errorf("wrap: %w", labbridge.ErrUnauthorized), lampAuthFailed},
-		{"server error", labbridge.ClientInfo{}, fmt.Errorf("wrap: %w", labbridge.ErrServerError), lampServerError},
-		{"network error", labbridge.ClientInfo{}, errors.New("dial: connection refused"), lampUnreachable},
+		{"connected", labbridge.ClientInfo{Port: 8089, Connected: true}, nil, lampOK, "remote port 8089"},
+		{"disconnected", labbridge.ClientInfo{Port: 8089, Connected: false}, nil, lampDisconnected, ""},
+		{"unauthorized", labbridge.ClientInfo{}, fmt.Errorf("wrap: %w", labbridge.ErrUnauthorized), lampAuthFailed, ""},
+		{"server error", labbridge.ClientInfo{}, fmt.Errorf("wrap: %w", labbridge.ErrServerError), lampServerError, ""},
+		{"network error", labbridge.ClientInfo{}, errors.New("dial: connection refused"), lampUnreachable, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := mapTunnelResult(tc.info, tc.err)
 			if got.kind != tc.want {
 				t.Errorf("kind: got %v, want %v", got.kind, tc.want)
+			}
+			if got.sub != tc.wantSub {
+				t.Errorf("sub: got %q, want %q", got.sub, tc.wantSub)
 			}
 		})
 	}
