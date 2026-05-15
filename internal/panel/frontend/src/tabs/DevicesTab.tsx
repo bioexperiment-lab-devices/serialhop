@@ -37,7 +37,12 @@ export function DevicesTab() {
     setCallError(null);
     try {
       const r = await withTimeout(GetDevices(), BINDING_TIMEOUT_MS, "GetDevices");
-      setResp(r);
+      // Defense in depth: the Go binding now guarantees `devices` is a
+      // non-nil array (see internal/panel/bindings_helpers.go), but if a
+      // stale build or future refactor regresses to `null`, normalize on
+      // the way into state so the render path can't throw on
+      // `null.length` and blank the window.
+      setResp({ ...r, devices: r.devices ?? [] });
     } catch (e) {
       setCallError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -51,7 +56,12 @@ export function DevicesTab() {
     setCallError(null);
     try {
       const r = await withTimeout(Discover(), BINDING_TIMEOUT_MS, "Discover");
-      setResp(r);
+      // Defense in depth: the Go binding now guarantees `devices` is a
+      // non-nil array (see internal/panel/bindings_helpers.go), but if a
+      // stale build or future refactor regresses to `null`, normalize on
+      // the way into state so the render path can't throw on
+      // `null.length` and blank the window.
+      setResp({ ...r, devices: r.devices ?? [] });
     } catch (e) {
       setCallError(e instanceof Error ? e.message : String(e));
     } finally {

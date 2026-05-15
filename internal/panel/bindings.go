@@ -281,14 +281,20 @@ func (a *App) GetDevices() DevicesResult {
 	ctx, cancel := a.callCtx()
 	defer cancel()
 	resp, st, _ := a.svc.GetDevices(ctx)
-	return DevicesResult{DevicesResponse: resp, Status: toTabStatus(st)}
+	return DevicesResult{
+		DevicesResponse: normalizeDevicesResponse(resp),
+		Status:          toTabStatus(st),
+	}
 }
 
 func (a *App) Discover() DevicesResult {
 	ctx, cancel := a.callCtx()
 	defer cancel()
 	resp, st, _ := a.svc.Discover(ctx)
-	return DevicesResult{DevicesResponse: resp, Status: toTabStatus(st)}
+	return DevicesResult{
+		DevicesResponse: normalizeDevicesResponse(resp),
+		Status:          toTabStatus(st),
+	}
 }
 
 func (a *App) DisconnectAll() DisconnectResult {
@@ -308,7 +314,10 @@ func (a *App) GetPorts() PortsResult {
 	ctx, cancel := a.callCtx()
 	defer cancel()
 	resp, st, _ := a.svc.GetPorts(ctx)
-	return PortsResult{DetailedPortsResponse: resp, Status: toTabStatus(st)}
+	return PortsResult{
+		DetailedPortsResponse: normalizeDetailedPortsResponse(resp),
+		Status:                toTabStatus(st),
+	}
 }
 
 // DiagnosticsDTO is the support-bundle the panel exposes to the SPA
