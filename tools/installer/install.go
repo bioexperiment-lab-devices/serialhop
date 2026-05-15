@@ -238,7 +238,7 @@ func (r *Runner) runInstallOrUpgrade(opts options, targetExe string, state State
 	}
 	defer func() { _ = scm.Disconnect() }()
 
-	if err := r.swapBinary(scm, stagedPath, targetExe); err != nil {
+	if err := winsvc.InstallOrUpgrade(scm, r.FS, stagedPath, targetExe); err != nil {
 		res.Err = fmt.Errorf("install/upgrade failed: %w", err)
 		res.ExitCode = 1
 		return res
@@ -253,73 +253,6 @@ func (r *Runner) runInstallOrUpgrade(opts options, targetExe string, state State
 		res.Message = fmt.Sprintf("Installed SerialHop v%s to %s.", r.BundledVersion, opts.InstallDir)
 	}
 	return res
-}
-
-// swapBinary stops the service (if present and running), renames src → target
-// using r.FS (so tests with fakeFS participate fully), then restarts the
-// service. This mirrors the rename-with-rollback logic in winsvc.updateBinary
-// but operates through the injected fsOps so the install flow is unit-testable
-// on macOS/Linux.
-func (r *Runner) swapBinary(scm winsvc.SCMConn, src, target string) error {
-	oldPath := target + ".old"
-
-	// Query and optionally stop the service.
-	svc, svcErr := scm.OpenService(winsvc.ServiceName)
-	var (
-		hadService        bool
-		serviceWasRunning bool
-	)
-	if svcErr == nil {
-		hadService = true
-		defer func() { _ = svc.Close() }()
-		state, err := svc.Query()
-		if err != nil {
-			return fmt.Errorf("query service: %w", err)
-		}
-		if state == winsvc.StateRunning || state == winsvc.StateStartPending {
-			serviceWasRunning = true
-			if err := svc.Stop(); err != nil {
-				return fmt.Errorf("stop service: %w", err)
-			}
-		}
-	} else if !errors.Is(svcErr, winsvc.ErrServiceMissing) {
-		return fmt.Errorf("open service: %w", svcErr)
-	}
-
-	// Best-effort clean up any stale .old.
-	_ = r.FS.Remove(oldPath)
-
-	// Preserve existing target as .old (if it exists).
-	targetExists, err := r.FS.Stat(target)
-	if err != nil {
-		return fmt.Errorf("stat target: %w", err)
-	}
-	if targetExists {
-		if err := r.FS.Rename(target, oldPath); err != nil {
-			return fmt.Errorf("rename %s → %s: %w", target, oldPath, err)
-		}
-	}
-
-	// Rename staged payload into final position.
-	if err := r.FS.Rename(src, target); err != nil {
-		// Rollback: restore old binary.
-		_ = r.FS.Rename(oldPath, target)
-		return fmt.Errorf("rename %s → %s: %w", src, target, err)
-	}
-
-	// Restart service if it was running before.
-	if hadService && serviceWasRunning {
-		if err := svc.Start(); err != nil {
-			// Rollback the rename.
-			_ = r.FS.Rename(target, src)
-			_ = r.FS.Rename(oldPath, target)
-			return fmt.Errorf("start service after swap: %w", err)
-		}
-	}
-
-	// Best-effort cleanup of .old.
-	_ = r.FS.Remove(oldPath)
-	return nil
 }
 
 // maybeShortcut creates the desktop shortcut unless --no-shortcut. Failures

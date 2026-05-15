@@ -170,9 +170,10 @@ func restart(scm SCMConn, timeout, pollInterval time.Duration) error {
 	return nil
 }
 
-// fsOps abstracts the file operations updateBinary needs so tests can
-// substitute a fake. Production uses realFS{}, which calls os.Rename/os.Remove/os.Stat.
-type fsOps interface {
+// FS is the small subset of filesystem operations updateBinary needs.
+// Exported so callers in other packages (notably tools/installer) can supply
+// their own implementation and reuse the rename-with-rollback machinery.
+type FS interface {
 	Rename(from, to string) error
 	Remove(path string) error
 	Stat(path string) (exists bool, err error)
@@ -193,8 +194,14 @@ func (realFS) Stat(path string) (bool, error) {
 	return false, err
 }
 
-// Compile-time assertion: realFS satisfies fsOps.
-var _ fsOps = realFS{}
+// Compile-time assertion: realFS satisfies FS.
+var _ FS = realFS{}
+
+// RealFS returns a production FS that delegates all calls to the os package.
+// Pass this to InstallOrUpgrade from non-test code paths.
+func RealFS() FS {
+	return realFS{}
+}
 
 // updateBinary performs the in-place .exe swap described in
 // docs/superpowers/specs/2026-05-11-auto-update-design.md §5.
@@ -208,7 +215,7 @@ var _ fsOps = realFS{}
 // On failure at any step after stop, the function rolls back as far as
 // possible and restarts the service so the operator isn't left with a
 // stopped service.
-func updateBinary(scm SCMConn, fs fsOps, src, target string, opTimeout, pollInterval, renameBackoff time.Duration) error {
+func updateBinary(scm SCMConn, fs FS, src, target string, opTimeout, pollInterval, renameBackoff time.Duration) error {
 	oldPath := target + ".old"
 
 	// --- step 1: query service, stop if running ---
@@ -298,7 +305,7 @@ func updateBinary(scm SCMConn, fs fsOps, src, target string, opTimeout, pollInte
 	return nil
 }
 
-func renameWithRetry(fs fsOps, from, to string, attempts int, backoff time.Duration) error {
+func renameWithRetry(fs FS, from, to string, attempts int, backoff time.Duration) error {
 	var lastErr error
 	for i := 0; i < attempts; i++ {
 		if err := fs.Rename(from, to); err == nil {
@@ -329,15 +336,18 @@ func waitForState(s SCMService, target ServiceState, timeout, poll time.Duration
 }
 
 // InstallOrUpgrade extracts the in-place update sequence into a public entry
-// point so the installer binary can reuse the same rename-with-rollback
-// machinery the panel's auto-update relies on. updateBinary gracefully
-// handles the "service not yet installed" case (it skips the SCM stop and
-// start), so this single call covers both first-install and upgrade.
+// point so callers can reuse the rename-with-rollback machinery the panel's
+// auto-update relies on. updateBinary gracefully handles the "service not
+// yet installed" case (it skips the SCM stop and start), so this single call
+// covers both first-install and upgrade.
 //
 // src must already exist at the desired path and live in the same directory
 // as target (same-volume rename requirement). target is the canonical install
-// location (e.g., C:\Program Files\SerialHop\SerialHop.exe).
-func InstallOrUpgrade(scm SCMConn, src, target string) error {
-	return updateBinary(scm, realFS{}, src, target,
+// location (e.g., C:\Program Files\SerialHop\SerialHop.exe). The fs parameter
+// lets tests and unconventional callers substitute their own filesystem
+// implementation; production callers pass winsvc.RealFS() or assemble one
+// that satisfies the FS interface.
+func InstallOrUpgrade(scm SCMConn, fs FS, src, target string) error {
+	return updateBinary(scm, fs, src, target,
 		productionStartTimeout, productionPollInterval, 250*time.Millisecond)
 }

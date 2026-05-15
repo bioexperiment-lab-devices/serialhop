@@ -501,7 +501,7 @@ func TestInstallOrUpgrade_FreshInstall_NoService(t *testing.T) {
 		t.Fatalf("write src: %v", err)
 	}
 
-	if err := InstallOrUpgrade(scm, src, target); err != nil {
+	if err := InstallOrUpgrade(scm, realFS{}, src, target); err != nil {
 		t.Fatalf("InstallOrUpgrade: %v", err)
 	}
 	if _, err := os.Stat(target); err != nil {
@@ -536,7 +536,7 @@ func TestInstallOrUpgrade_UpgradeWithRunningService(t *testing.T) {
 		t.Fatalf("write target: %v", err)
 	}
 
-	if err := InstallOrUpgrade(scm, src, target); err != nil {
+	if err := InstallOrUpgrade(scm, realFS{}, src, target); err != nil {
 		t.Fatalf("InstallOrUpgrade: %v", err)
 	}
 	got, err := os.ReadFile(target) //nolint:gosec // target is a t.TempDir()-rooted path
