@@ -62,3 +62,43 @@ func TestNormalizeDetailedPortsResponse_PreservesNonNilSliceIdentity(t *testing.
 		t.Fatalf("non-nil slice should pass through unchanged: %+v", got)
 	}
 }
+
+func TestFilterDetailedPorts(t *testing.T) {
+	sample := api.DetailedPortsResponse{Ports: []api.DetailedPortDTO{
+		{Name: "COM1"}, {Name: "COM3"}, {Name: "COM4"}, {Name: "COM7"},
+	}}
+	cases := []struct {
+		name             string
+		include, exclude []string
+		wantNamesInOrder []string
+	}{
+		{"empty config returns unchanged", nil, nil, []string{"COM1", "COM3", "COM4", "COM7"}},
+		{"include keeps only listed", []string{"COM3", "COM7"}, nil, []string{"COM3", "COM7"}},
+		{"exclude drops listed", nil, []string{"COM1", "COM4"}, []string{"COM3", "COM7"}},
+		{"include wins when both set", []string{"COM3"}, []string{"COM7"}, []string{"COM3"}},
+		{"include with no matches → empty result", []string{"COM99"}, nil, []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := filterDetailedPorts(sample, tc.include, tc.exclude)
+			if len(got.Ports) != len(tc.wantNamesInOrder) {
+				t.Fatalf("len: got %d, want %d (%+v)", len(got.Ports), len(tc.wantNamesInOrder), got.Ports)
+			}
+			for i, n := range tc.wantNamesInOrder {
+				if got.Ports[i].Name != n {
+					t.Errorf("ports[%d]: got %q, want %q", i, got.Ports[i].Name, n)
+				}
+			}
+		})
+	}
+}
+
+func TestFilterDetailedPorts_DoesNotMutateInput(t *testing.T) {
+	in := api.DetailedPortsResponse{Ports: []api.DetailedPortDTO{
+		{Name: "COM1"}, {Name: "COM3"},
+	}}
+	_ = filterDetailedPorts(in, []string{"COM3"}, nil)
+	if len(in.Ports) != 2 || in.Ports[0].Name != "COM1" || in.Ports[1].Name != "COM3" {
+		t.Fatalf("input mutated: %+v", in.Ports)
+	}
+}

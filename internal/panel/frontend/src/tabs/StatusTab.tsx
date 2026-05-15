@@ -6,12 +6,18 @@ import { UpdateState, type ButtonStatePayload, type LampWhich, type Tone, type U
 import {
   InstallService, UninstallService, RestartService,
   DownloadUpdate, CancelDownload, InstallUpdate, OpenReleaseNotes,
+  RelaunchPanel,
 } from "../wails/go/main/App";
-import { EventsOn, EventsOff, EventsEmit } from "../wails/runtime/runtime";
+import { EventsEmit } from "../wails/runtime/runtime";
 
 type Lamps = Record<LampWhich, { tone: Tone; label: string; sub?: string }>;
 
-interface Props { lamps: Lamps; buttons: ButtonStatePayload; configDirty?: boolean; }
+interface Props {
+  lamps: Lamps;
+  buttons: ButtonStatePayload;
+  update: UpdateStatePayload;
+  configDirty?: boolean;
+}
 
 function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
   if (s === UpdateState.Installed) return "green";
@@ -20,15 +26,17 @@ function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
   return undefined;
 }
 
-export function StatusTab({ lamps, buttons, configDirty }: Props) {
-  const [update, setUpdate] = useState<UpdateStatePayload>({ state: UpdateState.Idle, release_tag: "" });
+export function StatusTab({ lamps, buttons, update, configDirty }: Props) {
   const [busy, setBusy] = useState(false);
 
+  // When the install pipeline reaches Installed, ask the Go side to
+  // spawn the new exe and quit this one. A brief delay lets the
+  // operator see the success row before the window goes away.
   useEffect(() => {
-    const h = (p: UpdateStatePayload) => setUpdate(p);
-    EventsOn("update:state", h);
-    return () => EventsOff("update:state");
-  }, []);
+    if (update.state !== UpdateState.Installed) return;
+    const t = window.setTimeout(() => { RelaunchPanel(); }, 1200);
+    return () => window.clearTimeout(t);
+  }, [update.state]);
 
   const adminAction = async (fn: () => Promise<{ ok: boolean; error_message?: string }>, isRestart = false) => {
     setBusy(true);
@@ -103,7 +111,7 @@ function UpdateLabel({ update }: { update: UpdateStatePayload }) {
     case UpdateState.DownloadFailed: return <><b>{tag}</b> — download failed.</>;
     case UpdateState.Ready:          return <><b>{tag}</b> ready to install.</>;
     case UpdateState.Installing:     return <>Installing… service will restart automatically.</>;
-    case UpdateState.Installed:      return <>Updated to <b>{tag}</b>. Close and reopen this window to load the new panel.</>;
+    case UpdateState.Installed:      return <>Updated to <b>{tag}</b>. Restarting…</>;
     case UpdateState.InstallFailed:  return <>Update failed — service restored to previous version.</>;
     default:                         return null;
   }

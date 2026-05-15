@@ -101,7 +101,14 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   const [pendingConfirm, setPendingConfirm] = useState<{ detail: string; alsoRestart: boolean } | null>(null);
 
   useEffect(() => {
-    LoadConfigFromDisk().then((cfg: ConfigDTO) => { setLoaded(clone(cfg)); setForm(clone(cfg)); });
+    LoadConfigFromDisk().then((cfg: ConfigDTO) => {
+      setLoaded(clone(cfg));
+      setForm(clone(cfg));
+      // Flag a saved-invalid host immediately, before the operator
+      // even touches the field. Empty host is left silent (the field
+      // is still pristine in the first-launch flow).
+      if (cfg.lab_bridge?.host) setHostError(validateHostInput(cfg.lab_bridge.host));
+    });
   }, []);
 
   const dirty = !!(loaded && form && JSON.stringify(loaded) !== JSON.stringify(form));
@@ -134,11 +141,15 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
       setErrors([]);
       const verify = await VerifyCredentials(payload.lab_bridge.host, payload.lab_bridge.user, payload.lab_bridge.pass);
       if (verify.outcome === "unauthorized") {
+        // Paint both Username and Password red, but show the rejection
+        // text only once — under Password. The empty `detail` on Username
+        // is a sentinel for "decorate without rendering a message" and is
+        // honored by the helpers `errMsg` / `hasError` below.
         setErrors([
-          { field: "lab_bridge.user", detail: CRED_REJECTED_MSG },
+          { field: "lab_bridge.user", detail: "" },
           { field: "lab_bridge.pass", detail: CRED_REJECTED_MSG },
         ]);
-        scrollToField("lab_bridge.user");
+        scrollToField("lab_bridge.pass");
         return false;
       }
       if (verify.outcome === "needs_confirm") {
@@ -180,9 +191,16 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   const excludeActive = form.discovery.exclude.length > 0;
   const flashOff = !form.flashing.enabled;
 
-  // Local form-level errFor uses `renderErrors` so that the on-blur
-  // host validator decorates the row even before a Save is attempted.
-  const e = (field: string) => renderErrors.find(x => x.field === field)?.detail;
+  // Local form-level helpers use `renderErrors` so that the on-blur host
+  // validator decorates the row even before a Save is attempted. We split
+  // "row is errored" from "show this message" because the credential-
+  // rejected case paints both Username and Password red but renders the
+  // message only under Password (empty detail = decorate-only sentinel).
+  const errMsg = (field: string): string | undefined => {
+    const v = renderErrors.find(x => x.field === field)?.detail;
+    return v ? v : undefined;
+  };
+  const hasError = (field: string): boolean => renderErrors.some(x => x.field === field);
 
   const save = async (alsoRestart: boolean) => {
     const payload = cleanForSave(form);
@@ -197,10 +215,10 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
     const verify = await VerifyCredentials(payload.lab_bridge.host, payload.lab_bridge.user, payload.lab_bridge.pass);
     if (verify.outcome === "unauthorized") {
       setErrors([
-        { field: "lab_bridge.user", detail: CRED_REJECTED_MSG },
+        { field: "lab_bridge.user", detail: "" },
         { field: "lab_bridge.pass", detail: CRED_REJECTED_MSG },
       ]);
-      scrollToField("lab_bridge.user");
+      scrollToField("lab_bridge.pass");
       return;
     }
     if (verify.outcome === "needs_confirm") {
@@ -249,6 +267,16 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
     }
     if (hostError) setHostError(null);
   };
+  // Editing either credential field clears the rejection-state decoration
+  // on BOTH user and pass rows — credential-rejected is a paired error, so
+  // a fix attempt on either side should give the operator a fresh slate
+  // before the next Save round-trip.
+  const onUserOrPassChange = (which: "user" | "pass", v: string) => {
+    setNested("lab_bridge", which, v);
+    if (errors.some(x => x.field === "lab_bridge.user" || x.field === "lab_bridge.pass")) {
+      setErrors(errors.filter(x => x.field !== "lab_bridge.user" && x.field !== "lab_bridge.pass"));
+    }
+  };
 
   return (
     <>
@@ -267,10 +295,10 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           helpComponent={<Help title="Host" what="lab-bridge VPS host." defaultVal="111.88.145.138" />}>
           <input className="shp-input shp-input--mono"
             value={form.lab_bridge.host}
-            data-error={!!e("lab_bridge.host") || undefined}
+            data-error={hasError("lab_bridge.host") || undefined}
             onChange={ev => onHostChange(ev.target.value)}
             onBlur={ev => onHostBlur(ev.target.value)} />
-          {e("lab_bridge.host") && <div className="shp-error">{e("lab_bridge.host")}</div>}
+          {errMsg("lab_bridge.host") && <div className="shp-error">{errMsg("lab_bridge.host")}</div>}
         </Field>
         <Field label="Username" dataField="lab_bridge.user"
           helpComponent={
@@ -282,9 +310,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           }>
           <input className="shp-input"
             value={form.lab_bridge.user}
-            data-error={!!e("lab_bridge.user") || undefined}
-            onChange={ev => setNested("lab_bridge", "user", ev.target.value)} />
-          {e("lab_bridge.user") && <div className="shp-error">{e("lab_bridge.user")}</div>}
+            data-error={hasError("lab_bridge.user") || undefined}
+            onChange={ev => onUserOrPassChange("user", ev.target.value)} />
+          {errMsg("lab_bridge.user") && <div className="shp-error">{errMsg("lab_bridge.user")}</div>}
         </Field>
         <Field label="Password" dataField="lab_bridge.pass"
           helpComponent={
@@ -296,9 +324,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           }>
           <input className="shp-input shp-input--mono"
             value={form.lab_bridge.pass}
-            data-error={!!e("lab_bridge.pass") || undefined}
-            onChange={ev => setNested("lab_bridge", "pass", ev.target.value)} />
-          {e("lab_bridge.pass") && <div className="shp-error">{e("lab_bridge.pass")}</div>}
+            data-error={hasError("lab_bridge.pass") || undefined}
+            onChange={ev => onUserOrPassChange("pass", ev.target.value)} />
+          {errMsg("lab_bridge.pass") && <div className="shp-error">{errMsg("lab_bridge.pass")}</div>}
         </Field>
       </Section>
 
@@ -459,14 +487,14 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             <input className="shp-input shp-input--mono"
               value={form.flashing.backup_dir}
               disabled={flashOff}
-              data-error={!!e("flashing.backup_dir") || undefined}
+              data-error={hasError("flashing.backup_dir") || undefined}
               onChange={ev => setNested("flashing", "backup_dir", ev.target.value)} />
             <Button small disabled={flashOff}
               onClick={async () => { const d = await PickBackupDir(); if (d) setNested("flashing", "backup_dir", d); }}>
               Choose…
             </Button>
           </div>
-          {e("flashing.backup_dir") && <div className="shp-error">{e("flashing.backup_dir")}</div>}
+          {errMsg("flashing.backup_dir") && <div className="shp-error">{errMsg("flashing.backup_dir")}</div>}
         </Field>
         <Field label="Keep N backups" dataField="flashing.keep_n" disabled={flashOff}
           helpComponent={

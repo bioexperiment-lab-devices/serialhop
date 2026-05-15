@@ -31,7 +31,7 @@ export function App() {
   const [tab, setTab] = useState<TabId>("status");
   const [configDirty, setConfigDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<TabId | null>(null);
-  const { warn, footer, lamps, buttons, logState } = useGlobalUiState();
+  const { warn, footer, lamps, buttons, update, logState } = useGlobalUiState();
   const configRef = useRef<ConfigTabHandle | null>(null);
 
   useEffect(() => {
@@ -80,7 +80,7 @@ export function App() {
           <div className="shp-content__pad" data-tab={tab}>
             {tab === "status" && (
               <ErrorBoundary scope="tab:status" version={version}>
-                <StatusTab lamps={lamps} buttons={buttons} configDirty={configDirty} />
+                <StatusTab lamps={lamps} buttons={buttons} update={update} configDirty={configDirty} />
               </ErrorBoundary>
             )}
             {tab === "config" && (
