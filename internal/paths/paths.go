@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	ConfigFileName          = "SerialHop_config.yaml"
-	ServiceLogFileName      = "SerialHop.log"
-	StderrLogFileName       = "SerialHop_stderr.log"
-	PanelErrorLogFileName   = "SerialHop_panel_error.log"
+	ConfigFileName        = "SerialHop_config.yaml"
+	ServiceLogFileName    = "SerialHop.log"
+	StderrLogFileName     = "SerialHop_stderr.log"
+	PanelErrorLogFileName = "SerialHop_panel_error.log"
 	// PanelCrashJournalFileName is the on-disk name of the JSON-lines
 	// crash journal the panel writes via RecordFrontendCrash. One line
 	// per caught JS-side error; the file is capped at ~64 KiB by
