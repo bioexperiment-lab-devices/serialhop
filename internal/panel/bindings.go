@@ -456,6 +456,21 @@ func (a *App) StopLogStream() {
 	a.logTail.stop()
 }
 
+// RecordFrontendCrash appends one JSON line to the panel crash journal.
+// Called by the React ErrorBoundary fallback and the JS-side global
+// `error` / `unhandledrejection` listeners.
+//
+// String-only parameters by design. The method MUST NOT take
+// context.Context — methods on *panel.App reached via main.App
+// embedding don't get auto-injection (see
+// TestBindings_NoMethodTakesContextContext for the regression gate).
+// The journal write is fully synchronous and best-effort; failures are
+// swallowed inside appendCrashJournal so the safety net itself can never
+// throw inside a crash-recording path.
+func (a *App) RecordFrontendCrash(message, source, stack string) {
+	appendCrashJournal(message, source, stack, version.Base(), time.Now().UTC())
+}
+
 // --- Helpers ---
 
 // resolveConfigPath returns paths.ConfigPath() unless the test hook is

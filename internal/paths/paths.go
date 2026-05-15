@@ -19,11 +19,16 @@ import (
 )
 
 const (
-	ConfigFileName          = "SerialHop_config.yaml"
-	ServiceLogFileName      = "SerialHop.log"
-	StderrLogFileName       = "SerialHop_stderr.log"
-	PanelErrorLogFileName   = "SerialHop_panel_error.log"
-	ServerInfoCacheFileName = "server-info.cache.json"
+	ConfigFileName        = "SerialHop_config.yaml"
+	ServiceLogFileName    = "SerialHop.log"
+	StderrLogFileName     = "SerialHop_stderr.log"
+	PanelErrorLogFileName = "SerialHop_panel_error.log"
+	// PanelCrashJournalFileName is the on-disk name of the JSON-lines
+	// crash journal the panel writes via RecordFrontendCrash. One line
+	// per caught JS-side error; the file is capped at ~64 KiB by
+	// appendCapped in internal/panel/crash_journal.go.
+	PanelCrashJournalFileName = "SerialHop_panel_crash.log"
+	ServerInfoCacheFileName   = "server-info.cache.json"
 )
 
 // DataDir returns the SerialHop root data directory.
@@ -92,6 +97,18 @@ func PanelErrorLogPath() string {
 		return ""
 	}
 	return filepath.Join(d, PanelErrorLogFileName)
+}
+
+// PanelCrashJournalPath returns <LogsDir>/SerialHop_panel_crash.log,
+// or "" if LogsDir is empty. Callers must treat "" as "no journal here"
+// and silently no-op — the binding swallows write errors anyway, so a
+// missing DataDir must not surface as an exception.
+func PanelCrashJournalPath() string {
+	d := LogsDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, PanelCrashJournalFileName)
 }
 
 // ServerInfoCachePath returns <DataDir>/server-info.cache.json, or ""
