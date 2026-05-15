@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.21.0...v0.22.0) (2026-05-15)
+
+
+### Chores
+
+* force release 0.22.0 (Release-As trailer) ([#117](https://github.com/bioexperiment-lab-devices/serialhop/issues/117)) ([0a4b703](https://github.com/bioexperiment-lab-devices/serialhop/commit/0a4b703e4641f789fede80deb1abf9c23762bd24))
+
 ## [0.21.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.20.0...v0.21.0) (2026-05-15)
 
 
