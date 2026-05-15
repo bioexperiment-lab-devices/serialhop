@@ -25,7 +25,8 @@ const (
 // netLamp is the state of a network-probed lamp (Server or Tunnel).
 type netLamp struct {
 	kind   lampKind
-	detail string // optional human-readable extra info (currently unused; reserved for tooltip)
+	detail string // raw error / chisel detail (internal; not shown to operators)
+	sub    string // operator-visible sub line (host, "remote port 29017", etc.)
 }
 
 // serviceLamp is the state of the local-service lamp.
@@ -72,55 +73,55 @@ func (s *lampState) setTunnel(v netLamp) {
 	s.mu.Unlock()
 }
 
-// serverLampPresentation maps a netLamp to the color and label text shown
-// in the Server row.
-func serverLampPresentation(v netLamp) (StatusColor, string) {
+// serverLampPresentation maps a netLamp to the color, label, and operator-
+// visible sub line shown in the Server row.
+func serverLampPresentation(v netLamp) (StatusColor, string, string) {
 	switch v.kind {
 	case lampChecking:
-		return ColorGrey, "Checking…"
+		return ColorGrey, "Checking…", ""
 	case lampOK:
-		return ColorGreen, "Up"
+		return ColorGreen, "Up", v.sub
 	case lampChiselDown:
-		return ColorRed, "Chisel down"
+		return ColorRed, "Chisel down", v.sub
 	case lampUnreachable:
-		return ColorGrey, "Unreachable"
+		return ColorGrey, "Unreachable", v.sub
 	default:
 		// lampDisconnected / lampAuthFailed / lampServerError / lampNotConfigured
 		// are tunnel-only states; fall back to "Unreachable" if we somehow get
 		// them in a server context.
-		return ColorGrey, "Unreachable"
+		return ColorGrey, "Unreachable", ""
 	}
 }
 
-// tunnelLampPresentation maps a netLamp to the color and label text shown
-// in the Tunnel row.
-func tunnelLampPresentation(v netLamp) (StatusColor, string) {
+// tunnelLampPresentation maps a netLamp to the color, label, and sub line
+// shown in the Tunnel row.
+func tunnelLampPresentation(v netLamp) (StatusColor, string, string) {
 	switch v.kind {
 	case lampChecking:
-		return ColorGrey, "Checking…"
+		return ColorGrey, "Checking…", ""
 	case lampOK:
-		return ColorGreen, "Connected"
+		return ColorGreen, "Connected", v.sub
 	case lampDisconnected:
-		return ColorRed, "Disconnected"
+		return ColorRed, "Disconnected", ""
 	case lampAuthFailed:
-		return ColorRed, "Auth failed"
+		return ColorRed, "Auth failed", ""
 	case lampServerError:
-		return ColorYellow, "Server error"
+		return ColorYellow, "Server error", ""
 	case lampUnreachable:
-		return ColorGrey, "Unreachable"
+		return ColorGrey, "Unreachable", ""
 	case lampNotConfigured:
-		return ColorGrey, "Not configured"
+		return ColorGrey, "Not configured", ""
 	default:
-		return ColorGrey, "Unreachable"
+		return ColorGrey, "Unreachable", ""
 	}
 }
 
-// serviceLampPresentation maps a serviceLamp to the color and label text
-// shown in the Service row. Reuses StatusIndicator() for the color
+// serviceLampPresentation maps a serviceLamp to the color, label, and sub
+// line shown in the Service row. Reuses StatusIndicator() for the color
 // (which already encodes "red iff not-installed-and-config-invalid").
-func serviceLampPresentation(v serviceLamp) (StatusColor, string) {
+func serviceLampPresentation(v serviceLamp) (StatusColor, string, string) {
 	color := StatusIndicator(v.state, v.cfgValid)
-	var text string
+	var text, sub string
 	switch v.state {
 	case winsvc.StateRunning:
 		text = "Running"
@@ -132,8 +133,11 @@ func serviceLampPresentation(v serviceLamp) (StatusColor, string) {
 		text = "Stopped"
 	case winsvc.StateNotInstalled:
 		text = "Not installed"
+		if !v.cfgValid {
+			sub = "config invalid"
+		}
 	default:
 		text = v.state.String()
 	}
-	return color, text
+	return color, text, sub
 }

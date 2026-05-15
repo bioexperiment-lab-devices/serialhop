@@ -27,6 +27,12 @@ const STICKY_EVENTS = new Set([
   "warn:clear",
 ]);
 
+// `status:lamp` is unusual: every call carries a different `which` value
+// (service / server / tunnel), so keeping a single last-emitted slot loses
+// state. We mirror it into a per-`which` map and replay every entry on
+// subscribe, so a late subscriber sees the full lamp triple.
+const lastLampPerWhich = new Map<string, unknown[]>();
+
 export const runtime = {
   EventsOn(name: string, cb: Listener) {
     if (!listeners.has(name)) listeners.set(name, new Set());
@@ -35,7 +41,11 @@ export const runtime = {
     // initial state. Fire on a microtask so the caller's render finishes
     // before the listener runs (matches the timing developers expect from
     // event-bus subscriptions).
-    if (STICKY_EVENTS.has(name) && lastEmitted.has(name)) {
+    if (name === "status:lamp" && lastLampPerWhich.size > 0) {
+      for (const args of lastLampPerWhich.values()) {
+        queueMicrotask(() => { try { cb(...args); } catch (e) { console.error("[preview] replay error:", e); } });
+      }
+    } else if (STICKY_EVENTS.has(name) && lastEmitted.has(name)) {
       const args = lastEmitted.get(name)!;
       queueMicrotask(() => { try { cb(...args); } catch (e) { console.error("[preview] replay error:", e); } });
     }
@@ -59,6 +69,10 @@ export const runtime = {
 
 export function emit(name: string, ...data: any[]): void {
   if (STICKY_EVENTS.has(name)) lastEmitted.set(name, data);
+  if (name === "status:lamp") {
+    const which = (data[0] as { which?: string } | undefined)?.which;
+    if (which) lastLampPerWhich.set(which, data);
+  }
   const set = listeners.get(name);
   if (!set) return;
   for (const cb of [...set]) {

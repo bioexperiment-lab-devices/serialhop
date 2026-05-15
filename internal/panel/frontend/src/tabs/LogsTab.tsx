@@ -73,12 +73,12 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
       <div className="shp-logs-controls">
         <label className="shp-row" style={{ gap: 6 }}>
           <span className="shp-muted" style={LABEL_STYLE}>Stream</span>
+          <Help title={streamHelp[stream].title} what={streamHelp[stream].what} />
           <select className="shp-select" value={stream} onChange={e => setStream(e.target.value as StreamID)} style={{ width: 160 }}>
             <option value="service">Service log</option>
             <option value="stderr">Stderr</option>
             <option value="panel">Panel errors</option>
           </select>
-          <Help title={streamHelp[stream].title} what={streamHelp[stream].what} />
         </label>
         <label className="shp-row" style={{ gap: 6 }}>
           <span className="shp-muted" style={LABEL_STYLE}>Level</span>

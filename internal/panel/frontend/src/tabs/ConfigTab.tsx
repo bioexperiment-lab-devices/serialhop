@@ -36,10 +36,67 @@ export interface ConfigTabHandle {
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
+const CRED_REJECTED_MSG = "Server rejected these credentials. Check the username and password.";
+
+// Strip blank rows from include/exclude before validation/save so an
+// operator who clicked "+ Add row" but never filled it in doesn't ship
+// empty strings into config.yaml.
+function cleanForSave(cfg: ConfigDTO): ConfigDTO {
+  const trim = (xs: string[]) => xs.map(s => s.trim()).filter(s => s !== "");
+  return {
+    ...cfg,
+    discovery: {
+      ...cfg.discovery,
+      include: trim(cfg.discovery.include),
+      exclude: trim(cfg.discovery.exclude),
+    },
+  };
+}
+
+// Lightweight host check used for the on-blur inline validator. Accepts
+// IPv4 dotted-quad (each octet 0-255) or an RFC1123-ish hostname.
+// Server-side ValidateConfig is still authoritative on save.
+function validateHostInput(s: string): string | null {
+  const v = s.trim();
+  if (!v) return "Host is required.";
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) {
+    const ok = v.split(".").every(n => { const x = Number(n); return x >= 0 && x <= 255; });
+    return ok ? null : "Must be a hostname or IPv4 address.";
+  }
+  const HOST_RE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+  return HOST_RE.test(v) ? null : "Must be a hostname or IPv4 address.";
+}
+
+function scrollToField(field: string) {
+  // Defer to next frame so React has actually rendered the error decoration
+  // (data-error attributes, .shp-error nodes) before we measure positions.
+  requestAnimationFrame(() => {
+    const node = document.querySelector(`[data-field="${field}"]`) as HTMLElement | null;
+    if (!node) return;
+    // jsdom doesn't implement scrollIntoView; guard so unit tests don't
+    // throw during the deferred rAF callback.
+    if (typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    const input = node.querySelector("input, select, textarea") as HTMLElement | null;
+    if (input) input.focus();
+  });
+}
+
+// Pick the field to scroll to: explicit override wins, otherwise the
+// first error in the list. Returns null when there's nothing to do.
+function firstErrorField(errs: FieldErrorDTO[]): string | null {
+  return errs.length > 0 ? errs[0].field : null;
+}
+
 export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({ onDirtyChange }, ref) {
   const [loaded, setLoaded] = useState<ConfigDTO | null>(null);
   const [form, setForm] = useState<ConfigDTO | null>(null);
   const [errors, setErrors] = useState<FieldErrorDTO[]>([]);
+  // hostError is the client-side, on-blur validation of the Host input.
+  // Merged with `errors` at render time so the host row decorates the
+  // same way whether the error came from local validation or the backend.
+  const [hostError, setHostError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ detail: string; alsoRestart: boolean } | null>(null);
 
   useEffect(() => {
@@ -50,18 +107,37 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
 
   const discard = () => {
-    if (loaded) { setForm(clone(loaded)); setErrors([]); }
+    if (loaded) { setForm(clone(loaded)); setErrors([]); setHostError(null); }
   };
+
+  // Effective error list seen by the renderer: backend errors plus the
+  // inline host error (de-duped — backend error wins if both exist for
+  // the same field).
+  const renderErrors: FieldErrorDTO[] = (() => {
+    if (!hostError) return errors;
+    if (errors.some(e => e.field === "lab_bridge.host")) return errors;
+    return [{ field: "lab_bridge.host", detail: hostError }, ...errors];
+  })();
 
   useImperativeHandle(ref, () => ({
     save: async () => {
       if (!form) return false;
-      const vErrs = await ValidateConfig(form);
-      if (vErrs && vErrs.length) { setErrors(vErrs); return false; }
+      const payload = cleanForSave(form);
+      const vErrs = await ValidateConfig(payload);
+      if (vErrs && vErrs.length) {
+        setErrors(vErrs);
+        const f = firstErrorField(vErrs);
+        if (f) scrollToField(f);
+        return false;
+      }
       setErrors([]);
-      const verify = await VerifyCredentials(form.lab_bridge.host, form.lab_bridge.user, form.lab_bridge.pass);
+      const verify = await VerifyCredentials(payload.lab_bridge.host, payload.lab_bridge.user, payload.lab_bridge.pass);
       if (verify.outcome === "unauthorized") {
-        setErrors([{ field: "lab_bridge.user", detail: "Server rejected these credentials. Check the username and password." }]);
+        setErrors([
+          { field: "lab_bridge.user", detail: CRED_REJECTED_MSG },
+          { field: "lab_bridge.pass", detail: CRED_REJECTED_MSG },
+        ]);
+        scrollToField("lab_bridge.user");
         return false;
       }
       if (verify.outcome === "needs_confirm") {
@@ -69,9 +145,15 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         setPendingConfirm({ detail: verify.detail || "", alsoRestart: false });
         return false;
       }
-      const res = await SaveConfig(form);
-      if (!res.ok) { setErrors(res.field_errors || []); return false; }
-      setLoaded(clone(form));
+      const res = await SaveConfig(payload);
+      if (!res.ok) {
+        setErrors(res.field_errors || []);
+        const f = firstErrorField(res.field_errors || []);
+        if (f) scrollToField(f);
+        return false;
+      }
+      setLoaded(clone(payload));
+      setForm(clone(payload));
       return true;
     },
     discard,
@@ -89,13 +171,27 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   const excludeActive = form.discovery.exclude.length > 0;
   const flashOff = !form.flashing.enabled;
 
+  // Local form-level errFor uses `renderErrors` so that the on-blur
+  // host validator decorates the row even before a Save is attempted.
+  const e = (field: string) => renderErrors.find(x => x.field === field)?.detail;
+
   const save = async (alsoRestart: boolean) => {
-    const vErrs = await ValidateConfig(form);
-    if (vErrs && vErrs.length) { setErrors(vErrs); return; }
+    const payload = cleanForSave(form);
+    const vErrs = await ValidateConfig(payload);
+    if (vErrs && vErrs.length) {
+      setErrors(vErrs);
+      const f = firstErrorField(vErrs);
+      if (f) scrollToField(f);
+      return;
+    }
     setErrors([]);
-    const verify = await VerifyCredentials(form.lab_bridge.host, form.lab_bridge.user, form.lab_bridge.pass);
+    const verify = await VerifyCredentials(payload.lab_bridge.host, payload.lab_bridge.user, payload.lab_bridge.pass);
     if (verify.outcome === "unauthorized") {
-      setErrors([{ field: "lab_bridge.user", detail: "Server rejected these credentials. Check the username and password." }]);
+      setErrors([
+        { field: "lab_bridge.user", detail: CRED_REJECTED_MSG },
+        { field: "lab_bridge.pass", detail: CRED_REJECTED_MSG },
+      ]);
+      scrollToField("lab_bridge.user");
       return;
     }
     if (verify.outcome === "needs_confirm") {
@@ -106,10 +202,30 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   };
 
   const doSave = async (alsoRestart: boolean) => {
-    const res = await SaveConfig(form);
-    if (!res.ok) { setErrors(res.field_errors || []); return; }
-    setLoaded(clone(form));
+    const payload = cleanForSave(form);
+    const res = await SaveConfig(payload);
+    if (!res.ok) {
+      setErrors(res.field_errors || []);
+      const f = firstErrorField(res.field_errors || []);
+      if (f) scrollToField(f);
+      return;
+    }
+    setLoaded(clone(payload));
+    setForm(clone(payload));
     if (alsoRestart) await RestartService();
+  };
+
+  const onHostBlur = (v: string) => {
+    setHostError(validateHostInput(v));
+  };
+  // When the user starts editing the host again, clear backend host errors
+  // so the row doesn't stay red while the operator types a fix.
+  const onHostChange = (v: string) => {
+    setNested("lab_bridge", "host", v);
+    if (errors.some(x => x.field === "lab_bridge.host")) {
+      setErrors(errors.filter(x => x.field !== "lab_bridge.host"));
+    }
+    if (hostError) setHostError(null);
   };
 
   return (
@@ -125,14 +241,16 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         title="Lab-bridge"
         helpComponent={<Help title="Lab-bridge" what="The remote server this machine tunnels into so the rest of the lab network can reach the devices on this host." />}
       >
-        <Field label="Host" helpComponent={<Help title="Host" what="lab-bridge VPS host." defaultVal="111.88.145.138" />}>
+        <Field label="Host" dataField="lab_bridge.host"
+          helpComponent={<Help title="Host" what="lab-bridge VPS host." defaultVal="111.88.145.138" />}>
           <input className="shp-input shp-input--mono"
             value={form.lab_bridge.host}
-            data-error={!!errFor(errors, "lab_bridge.host") || undefined}
-            onChange={e => setNested("lab_bridge", "host", e.target.value)} />
-          {errFor(errors, "lab_bridge.host") && <div className="shp-error">{errFor(errors, "lab_bridge.host")}</div>}
+            data-error={!!e("lab_bridge.host") || undefined}
+            onChange={ev => onHostChange(ev.target.value)}
+            onBlur={ev => onHostBlur(ev.target.value)} />
+          {e("lab_bridge.host") && <div className="shp-error">{e("lab_bridge.host")}</div>}
         </Field>
-        <Field label="Username"
+        <Field label="Username" dataField="lab_bridge.user"
           helpComponent={
             <Help
               title="Username"
@@ -142,11 +260,11 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           }>
           <input className="shp-input"
             value={form.lab_bridge.user}
-            data-error={!!errFor(errors, "lab_bridge.user") || undefined}
-            onChange={e => setNested("lab_bridge", "user", e.target.value)} />
-          {errFor(errors, "lab_bridge.user") && <div className="shp-error">{errFor(errors, "lab_bridge.user")}</div>}
+            data-error={!!e("lab_bridge.user") || undefined}
+            onChange={ev => setNested("lab_bridge", "user", ev.target.value)} />
+          {e("lab_bridge.user") && <div className="shp-error">{e("lab_bridge.user")}</div>}
         </Field>
-        <Field label="Password"
+        <Field label="Password" dataField="lab_bridge.pass"
           helpComponent={
             <Help
               title="Password"
@@ -156,9 +274,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           }>
           <input className="shp-input shp-input--mono"
             value={form.lab_bridge.pass}
-            data-error={!!errFor(errors, "lab_bridge.pass") || undefined}
-            onChange={e => setNested("lab_bridge", "pass", e.target.value)} />
-          {errFor(errors, "lab_bridge.pass") && <div className="shp-error">{errFor(errors, "lab_bridge.pass")}</div>}
+            data-error={!!e("lab_bridge.pass") || undefined}
+            onChange={ev => setNested("lab_bridge", "pass", ev.target.value)} />
+          {e("lab_bridge.pass") && <div className="shp-error">{e("lab_bridge.pass")}</div>}
         </Field>
       </Section>
 
@@ -166,11 +284,12 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         title="REST"
         helpComponent={<Help title="REST" what="The local HTTP server other lab tools on this machine talk to." />}
       >
-        <Field label="Port" helpComponent={<Help title="REST port" what="Local TCP port the SerialHop service binds." defaultVal="0 (OS-assigned)" />}>
+        <Field label="Port" dataField="rest.port"
+          helpComponent={<Help title="REST port" what="Local TCP port the SerialHop service binds." defaultVal="0 (OS-assigned)" />}>
           <input className="shp-input shp-input--mono" type="number" min={0} max={65535}
             value={form.rest.port}
             style={{ maxWidth: 120 }}
-            onChange={e => setNested("rest", "port", Number(e.target.value) || 0)} />
+            onChange={ev => setNested("rest", "port", Number(ev.target.value) || 0)} />
           <div className="shp-field__hint">0 = OS picks a free port</div>
         </Field>
       </Section>
@@ -179,7 +298,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         title="Discovery"
         helpComponent={<Help title="Discovery" what="How the service searches the local serial ports for known device types." />}
       >
-        <ListField label="Include"
+        <ListField label="Include" dataField="discovery.include"
           values={form.discovery.include}
           onChange={v => setNested("discovery", "include", v)}
           disabled={excludeActive}
@@ -194,7 +313,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             />
           }
         />
-        <ListField label="Exclude"
+        <ListField label="Exclude" dataField="discovery.exclude"
           values={form.discovery.exclude}
           onChange={v => setNested("discovery", "exclude", v)}
           disabled={includeActive}
@@ -209,7 +328,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             />
           }
         />
-        <Field label="Post-open settle"
+        <Field label="Post-open settle" dataField="discovery.post_open_settle_ms"
           helpComponent={
             <Help
               title="Post-open settle (ms)"
@@ -220,7 +339,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           <div className="shp-input-row" style={{ maxWidth: 220 }}>
             <input className="shp-input shp-input--mono" type="number" min={0}
               value={form.discovery.post_open_settle_ms}
-              onChange={e => setNested("discovery", "post_open_settle_ms", Number(e.target.value) || 0)} />
+              onChange={ev => setNested("discovery", "post_open_settle_ms", Number(ev.target.value) || 0)} />
             <span className="shp-muted">ms</span>
           </div>
         </Field>
@@ -230,7 +349,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         title="Log"
         helpComponent={<Help title="Log" what="Verbosity of the service's structured log." />}
       >
-        <Field label="Level"
+        <Field label="Level" dataField="log.level"
           helpComponent={
             <Help
               title="Level"
@@ -241,7 +360,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
           }>
           <select className="shp-select" style={{ width: 160 }}
             value={form.log.level}
-            onChange={e => setNested("log", "level", e.target.value)}>
+            onChange={ev => setNested("log", "level", ev.target.value)}>
             <option>debug</option><option>info</option><option>warn</option><option>error</option>
           </select>
         </Field>
@@ -256,7 +375,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             when="Enable only when actively probing the wire."
           />
         }>
-        <Field label="Enabled">
+        <Field label="Enabled" dataField="raw_serial.enabled">
           <Checkbox label="Allow raw passthrough on discovered ports"
             checked={form.raw_serial.enabled}
             onChange={v => setNested("raw_serial", "enabled", v)} />
@@ -271,7 +390,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             defaultVal="on."
           />
         }>
-        <Field label="Enabled">
+        <Field label="Enabled" dataField="auto_update.enabled">
           <Checkbox label="Check for updates automatically"
             checked={form.auto_update.enabled}
             onChange={v => setNested("auto_update", "enabled", v)} />
@@ -294,7 +413,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             actively flashing devices.
           </span>
         </div>
-        <Field label="Enabled"
+        <Field label="Enabled" dataField="flashing.enabled"
           helpComponent={
             <Help
               title="Enabled"
@@ -306,7 +425,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             checked={form.flashing.enabled}
             onChange={v => setNested("flashing", "enabled", v)} />
         </Field>
-        <Field label="Backup directory" disabled={flashOff}
+        <Field label="Backup directory" dataField="flashing.backup_dir" disabled={flashOff}
           helpComponent={
             <Help
               title="Backup directory"
@@ -318,16 +437,16 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             <input className="shp-input shp-input--mono"
               value={form.flashing.backup_dir}
               disabled={flashOff}
-              data-error={!!errFor(errors, "flashing.backup_dir") || undefined}
-              onChange={e => setNested("flashing", "backup_dir", e.target.value)} />
+              data-error={!!e("flashing.backup_dir") || undefined}
+              onChange={ev => setNested("flashing", "backup_dir", ev.target.value)} />
             <Button small disabled={flashOff}
               onClick={async () => { const d = await PickBackupDir(); if (d) setNested("flashing", "backup_dir", d); }}>
               Choose…
             </Button>
           </div>
-          {errFor(errors, "flashing.backup_dir") && <div className="shp-error">{errFor(errors, "flashing.backup_dir")}</div>}
+          {e("flashing.backup_dir") && <div className="shp-error">{e("flashing.backup_dir")}</div>}
         </Field>
-        <Field label="Keep N backups" disabled={flashOff}
+        <Field label="Keep N backups" dataField="flashing.keep_n" disabled={flashOff}
           helpComponent={
             <Help
               title="Keep N backups"
@@ -340,7 +459,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             value={form.flashing.keep_n}
             disabled={flashOff}
             style={{ maxWidth: 100 }}
-            onChange={e => setNested("flashing", "keep_n", Number(e.target.value) || 0)} />
+            onChange={ev => setNested("flashing", "keep_n", Number(ev.target.value) || 0)} />
         </Field>
       </Section>
 
@@ -382,10 +501,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   );
 });
 
-function errFor(errs: FieldErrorDTO[], field: string): string | undefined {
-  return errs.find(e => e.field === field)?.detail;
-}
-
 // Human labels for diff'd fields surfaced in the unsaved-changes modal.
 // Order matches the on-screen rendering so the list reads top-to-bottom.
 const FIELD_LABELS: { path: (c: ConfigDTO) => unknown; label: string }[] = [
@@ -415,19 +530,20 @@ interface ListFieldProps {
   disabled?: boolean;
   note?: string;
   placeholder?: string;
+  dataField?: string;
   helpComponent?: React.ReactNode;
 }
 
-function ListField({ label, values, onChange, disabled, note, placeholder, helpComponent }: ListFieldProps) {
+function ListField({ label, values, onChange, disabled, note, placeholder, dataField, helpComponent }: ListFieldProps) {
   return (
-    <Field label={label} disabled={disabled} helpComponent={helpComponent}>
+    <Field label={label} disabled={disabled} dataField={dataField} helpComponent={helpComponent}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {values.map((v, i) => (
           <div key={i} className="shp-listrow">
             <input className="shp-input shp-input--mono"
               value={v} disabled={disabled} placeholder={placeholder}
               style={{ maxWidth: 200 }}
-              onChange={e => { const copy = [...values]; copy[i] = e.target.value; onChange(copy); }} />
+              onChange={ev => { const copy = [...values]; copy[i] = ev.target.value; onChange(copy); }} />
             <Button small variant="ghost" disabled={disabled}
               onClick={() => onChange(values.filter((_, j) => j !== i))}>Remove</Button>
           </div>
