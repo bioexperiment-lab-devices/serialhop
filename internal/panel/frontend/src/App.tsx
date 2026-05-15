@@ -5,6 +5,7 @@ import { Warning } from "./components/Warning";
 import { Footer } from "./components/Footer";
 import { Modal } from "./components/Modal";
 import { Button } from "./components/Button";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { StatusTab } from "./tabs/StatusTab";
 import { ConfigTab, type ConfigTabHandle } from "./tabs/ConfigTab";
 import { DevicesTab } from "./tabs/DevicesTab";
@@ -66,15 +67,37 @@ export function App() {
       <TitleBar version={version} />
       <TabBar active={tab} dirty={configDirty} onChange={requestTab} />
       <Warning message={warn} />
-      <div className="shp-content">
-        <div className="shp-content__pad" data-tab={tab}>
-          {tab === "status" && <StatusTab lamps={lamps} buttons={buttons} configDirty={configDirty} />}
-          {tab === "config" && <ConfigTab ref={configRef} onDirtyChange={setConfigDirty} />}
-          {tab === "devices" && <DevicesTab />}
-          {tab === "ports" && <PortsTab />}
-          {tab === "logs" && <LogsTab logState={logState} />}
+      <ErrorBoundary scope="app" version={version}>
+        <div className="shp-content">
+          <div className="shp-content__pad" data-tab={tab}>
+            {tab === "status" && (
+              <ErrorBoundary scope="tab:status" version={version}>
+                <StatusTab lamps={lamps} buttons={buttons} configDirty={configDirty} />
+              </ErrorBoundary>
+            )}
+            {tab === "config" && (
+              <ErrorBoundary scope="tab:config" version={version}>
+                <ConfigTab ref={configRef} onDirtyChange={setConfigDirty} />
+              </ErrorBoundary>
+            )}
+            {tab === "devices" && (
+              <ErrorBoundary scope="tab:devices" version={version}>
+                <DevicesTab />
+              </ErrorBoundary>
+            )}
+            {tab === "ports" && (
+              <ErrorBoundary scope="tab:ports" version={version}>
+                <PortsTab />
+              </ErrorBoundary>
+            )}
+            {tab === "logs" && (
+              <ErrorBoundary scope="tab:logs" version={version}>
+                <LogsTab logState={logState} />
+              </ErrorBoundary>
+            )}
+          </div>
         </div>
-      </div>
+      </ErrorBoundary>
       <Footer {...footer} />
 
       {pendingTab && (
