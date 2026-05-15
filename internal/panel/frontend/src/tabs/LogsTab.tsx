@@ -106,6 +106,8 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
           Follow
         </label>
         <input className="shp-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+        <span className="shp-gap" />
+        <Button variant="ghost" onClick={() => OpenLogsFolder()}>Open logs folder ↗</Button>
       </div>
       {stream === "service" ? (
         <div className="shp-table-wrap">
@@ -139,9 +141,6 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
           {display.map((l, i) => <div key={i}>{l.raw}</div>)}
         </pre>
       )}
-      <div className="shp-btn-row" style={{ marginTop: 12 }}>
-        <Button variant="ghost" onClick={() => OpenLogsFolder()}>Open logs folder</Button>
-      </div>
     </>
   );
 }
