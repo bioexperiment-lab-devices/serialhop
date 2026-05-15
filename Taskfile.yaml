@@ -63,7 +63,7 @@ tasks:
     deps: [build, installer-resource]
     cmds:
       - cp dist/SerialHop.exe tools/installer/payload/SerialHop.exe
-      - go run ./tools/buildcmd -o dist/SerialHop-Setup.exe -goos windows -goarch amd64 -tags production ./tools/installer
+      - go run ./tools/buildcmd -o dist/SerialHop-Setup.exe -goos windows -goarch amd64 -tags production -extra-ldflags="-H windowsgui" ./tools/installer
 
   test:
     desc: Run all unit tests
