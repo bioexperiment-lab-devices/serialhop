@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.3...v0.19.0) (2026-05-15)
+
+
+### Features
+
+* ship installer with unversioned desktop shortcut and in-place upgrade ([#107](https://github.com/bioexperiment-lab-devices/serialhop/issues/107)) ([e80924a](https://github.com/bioexperiment-lab-devices/serialhop/commit/e80924aa672a5214896fcc57adaab46059d0c9f5))
+
 ## [0.18.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.18.2...v0.18.3) (2026-05-14)
 
 
