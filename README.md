@@ -45,16 +45,41 @@ gh attestation verify SerialHop-vX.Y.Z.exe --owner bioexperiment-lab-devices
 
 ## Install on a Windows lab machine
 
-1. Copy `SerialHop.exe` to an install location (e.g., `C:\Tools\SerialHop\`).
-2. Double-click the .exe. The control panel opens. On first launch it creates `%ProgramData%\SerialHop\`.
-3. The panel pops up a **Set credentials** dialog. Enter your `lab_bridge.user` and `lab_bridge.pass`; the panel verifies them against the lab-bridge server and writes them to the config file. The chisel listen port, Loki push URL, and forward tunnels are fetched from the server automatically — no further config editing is required for a standard install.
-4. Click **Install**. UAC prompts; approve. The service is registered as `SerialHop` (auto-start at boot, runs as LocalSystem) and started immediately.
+1. Download `SerialHop-Setup-vX.Y.Z.exe` from the [releases page](https://github.com/bioexperiment-lab-devices/serialhop/releases/latest) or from the lab management UI.
+2. Double-click the installer. Approve the UAC prompt.
+3. Accept the default install location (`C:\Program Files\SerialHop`) or browse to a custom path. Click **Install**.
+4. SerialHop opens automatically. The panel pops up a **Set credentials** dialog — enter your `lab_bridge.user` and `lab_bridge.pass`; the panel verifies them against the lab-bridge server and writes them to the config file.
+5. Click **Install** in the panel. UAC prompts; approve. The service is registered as `SerialHop` (auto-start at boot, runs as LocalSystem) and started immediately.
 
-After install:
+A desktop shortcut named **SerialHop** is created during step 3 and points at `<install_dir>\SerialHop.exe`. The shortcut name is intentionally version-less: subsequent auto-updates rename the binary in place under the same filename, so the icon keeps working across releases.
+
+Re-running the installer on an already-installed machine:
+
+- Same version: refreshes the desktop shortcut and exits with "already installed" — no service restart.
+- Newer installer: performs an in-place upgrade (stop service → rename → start service, with rollback on failure).
+- Older installer: refused unless re-run with `--allow-downgrade`.
+
+Silent / scripted installs (admin shell):
+
+```
+SerialHop-Setup-vX.Y.Z.exe --silent --dir "C:\Program Files\SerialHop" --no-shortcut
+```
+
+Flags: `--silent` (no dialog; implies `--no-launch`), `--dir <path>`, `--no-launch`, `--no-shortcut`, `--allow-downgrade`, `--version`.
+
+### Manual install (advanced)
+
+If you prefer to copy the binary by hand (e.g., on an air-gapped box):
+
+1. Copy `SerialHop.exe` to an install location (e.g., `C:\Program Files\SerialHop\` or `C:\Tools\SerialHop\`).
+2. Double-click the `.exe`. The control panel opens.
+3. Enter credentials, click **Install** in the panel.
+
+After install (either path):
 
 - The service runs across reboots without the panel being open.
 - To apply config changes: edit the YAML file, then click **Restart** in the panel.
-- To remove: click **Uninstall** in the panel.
+- To remove: click **Uninstall** in the panel, then delete the install directory.
 - Logs go to `%ProgramData%\SerialHop\logs\` (`SerialHop.log` for slog JSON, `SerialHop_stderr.log` for chisel state and panic traces, both rotated at 10 MB with 3 backups). Click **Open logs folder** to open the directory in Explorer.
 - Config lives at `%ProgramData%\SerialHop\SerialHop_config.yaml`. Click **Open config file** to edit.
 

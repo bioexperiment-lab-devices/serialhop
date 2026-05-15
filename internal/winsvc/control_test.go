@@ -3,6 +3,7 @@ package winsvc
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -243,6 +244,7 @@ type fakeFS struct {
 	calls     []string            // ordered call log for assertions
 	renameErr map[[2]string]error // {from,to} → err to return
 	removeErr map[string]error
+	statErr   map[string]error
 }
 
 func newFakeFS(files ...string) *fakeFS {
@@ -250,6 +252,7 @@ func newFakeFS(files ...string) *fakeFS {
 		existing:  map[string]bool{},
 		renameErr: map[[2]string]error{},
 		removeErr: map[string]error{},
+		statErr:   map[string]error{},
 	}
 	for _, p := range files {
 		f.existing[p] = true
@@ -277,6 +280,13 @@ func (f *fakeFS) Remove(path string) error {
 	}
 	delete(f.existing, path)
 	return nil
+}
+
+func (f *fakeFS) Stat(path string) (bool, error) {
+	if err, ok := f.statErr[path]; ok {
+		return false, err
+	}
+	return f.existing[path], nil
 }
 
 func (f *fakeFS) Exists(path string) bool { return f.existing[path] }
@@ -451,5 +461,116 @@ func TestUpdateBinary_StartTimesOut_FullRollback(t *testing.T) {
 	}
 	if !fs.Exists("C:\\bin\\SerialHop-v0.7.0.exe") {
 		t.Error("new exe should be preserved under its versioned name for inspection")
+	}
+}
+
+func TestUpdateBinary_StatFails_ServiceRestored(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	svc := scm.services[ServiceName]
+
+	fs := newFakeFS("C:\\bin\\SerialHop.exe", "C:\\bin\\SerialHop-v0.7.0.exe")
+	fs.statErr["C:\\bin\\SerialHop.exe"] = errors.New("stat: permission denied")
+
+	err := updateBinary(scm, fs,
+		"C:\\bin\\SerialHop-v0.7.0.exe", "C:\\bin\\SerialHop.exe",
+		time.Second, 50*time.Millisecond, 50*time.Millisecond)
+	if err == nil {
+		t.Fatalf("expected stat error to propagate; got nil")
+	}
+	if !strings.Contains(err.Error(), "stat target") {
+		t.Errorf("error should mention stat target; got %v", err)
+	}
+	if !svc.started {
+		t.Errorf("service should have been restarted after stat failure")
+	}
+}
+
+// --- InstallOrUpgrade ---------------------------------------------------------
+
+func TestInstallOrUpgrade_FreshInstall_NoService(t *testing.T) {
+	scm := newFakeSCM() // no service registered
+	dir := t.TempDir()
+	src := filepath.Join(dir, "SerialHop-v0.7.0.exe")
+	target := filepath.Join(dir, "SerialHop.exe")
+	// Only src exists; target is intentionally absent (true fresh install).
+	if err := os.WriteFile(src, []byte("payload"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+
+	if err := InstallOrUpgrade(scm, realFS{}, src, target); err != nil {
+		t.Fatalf("InstallOrUpgrade: %v", err)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("target should exist after fresh install: %v", err)
+	}
+	if _, err := os.Stat(src); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("src should be renamed away: stat err = %v", err)
+	}
+	// Verify the new content is in place.
+	content, err := os.ReadFile(target) //nolint:gosec // target is a t.TempDir()-rooted path
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(content) != "payload" {
+		t.Fatalf("target content = %q; want %q", content, "payload")
+	}
+}
+
+func TestInstallOrUpgrade_UpgradeWithRunningService(t *testing.T) {
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "SerialHop-v0.7.0.exe")
+	target := filepath.Join(dir, "SerialHop.exe")
+	if err := os.WriteFile(src, []byte("new payload"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("old payload"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	if err := InstallOrUpgrade(scm, realFS{}, src, target); err != nil {
+		t.Fatalf("InstallOrUpgrade: %v", err)
+	}
+	got, err := os.ReadFile(target) //nolint:gosec // target is a t.TempDir()-rooted path
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != "new payload" {
+		t.Fatalf("target content = %q; want %q", got, "new payload")
+	}
+	svc := scm.services[ServiceName]
+	if !svc.started {
+		t.Errorf("service should have been started after swap")
+	}
+}
+
+func TestUpdateBinary_FreshInstall_MissingTarget(t *testing.T) {
+	scm := newFakeSCM() // no service
+	dir := t.TempDir()
+	src := filepath.Join(dir, "SerialHop-v0.7.0.exe")
+	target := filepath.Join(dir, "SerialHop.exe")
+	if err := os.WriteFile(src, []byte("payload"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	// target deliberately does NOT exist.
+
+	err := updateBinary(scm, realFS{}, src, target, time.Second, 50*time.Millisecond, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("updateBinary on fresh install: %v", err)
+	}
+	got, err := os.ReadFile(target) //nolint:gosec // target is a t.TempDir()-rooted path
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("target content = %q; want %q", got, "payload")
 	}
 }

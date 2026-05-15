@@ -94,18 +94,22 @@ jobs:
           set -euo pipefail
           VER=$(jq -e -r '.StringFileInfo.FileVersion' assets/version.json)
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VER"
-          jq --argjson major "$MAJOR" --argjson minor "$MINOR" --argjson patch "$PATCH" \
-            '.FixedFileInfo.FileVersion.Major = $major |
-             .FixedFileInfo.FileVersion.Patch  = $patch |
-             .FixedFileInfo.FileVersion.Minor  = $minor |
-             .FixedFileInfo.ProductVersion.Major = $major |
-             .FixedFileInfo.ProductVersion.Minor = $minor |
-             .FixedFileInfo.ProductVersion.Patch  = $patch' \
-            assets/version.json > assets/version.json.tmp
-          mv assets/version.json.tmp assets/version.json
+          for vfile in assets/version.json tools/installer/version.json; do
+            jq --argjson major "$MAJOR" --argjson minor "$MINOR" --argjson patch "$PATCH" \
+              '.FixedFileInfo.FileVersion.Major = $major |
+               .FixedFileInfo.FileVersion.Patch  = $patch |
+               .FixedFileInfo.FileVersion.Minor  = $minor |
+               .FixedFileInfo.ProductVersion.Major = $major |
+               .FixedFileInfo.ProductVersion.Minor = $minor |
+               .FixedFileInfo.ProductVersion.Patch  = $patch' \
+              "$vfile" > "$vfile.tmp"
+            mv "$vfile.tmp" "$vfile"
+          done
 
       - name: build
-        run: task build
+        run: |
+          task build
+          task installer
         shell: bash
 
       - name: rename and checksum
@@ -113,6 +117,7 @@ jobs:
         run: |
           $tag = "${{ needs.release-please.outputs.tag_name }}"
           Move-Item dist\SerialHop.exe "dist\SerialHop-$tag.exe"
+          Move-Item dist\SerialHop-Setup.exe "dist\SerialHop-Setup-$tag.exe"
           $lines = Get-FileHash -Algorithm SHA256 dist\*.exe | ForEach-Object {
             "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))"
           }
@@ -128,7 +133,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ needs.release-please.outputs.tag_name }}"
-          gh release upload $tag dist/SerialHop-$tag.exe dist/SHA256SUMS.txt --clobber
+          gh release upload $tag dist/SerialHop-$tag.exe dist/SerialHop-Setup-$tag.exe dist/SHA256SUMS.txt --clobber
 
       - name: upload agent build to VPS
         shell: bash
@@ -142,5 +147,5 @@ jobs:
           curl --fail-with-body -sSL -X POST "https://${VPS_HOST}/api/agent/upload" \
             -H "Authorization: Bearer ${AGENT_UPLOAD_TOKEN}" \
             -F "version=${VERSION}" \
-            -F "binary=@dist/SerialHop-${TAG}.exe" \
+            -F "binary=@dist/SerialHop-Setup-${TAG}.exe" \
             -w '\nHTTP %{http_code}\n'

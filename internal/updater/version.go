@@ -38,6 +38,41 @@ func IsNewer(remote, local string) (bool, error) {
 	}
 }
 
+// Compare returns -1, 0, or +1 if a is older than, equal to, or newer than b,
+// respectively, by SemVer Major.Minor.Patch ordering. Both inputs may carry a
+// leading "v" or a trailing "+buildmeta" segment (the dev-build shape produced
+// by tools/buildcmd); they are stripped before comparison. Returns an error
+// only if either input fails to parse as X.Y.Z.
+func Compare(a, b string) (int, error) {
+	ap, err := parse(a)
+	if err != nil {
+		return 0, fmt.Errorf("parse a: %w", err)
+	}
+	bp, err := parse(b)
+	if err != nil {
+		return 0, fmt.Errorf("parse b: %w", err)
+	}
+	switch {
+	case ap.major != bp.major:
+		if ap.major < bp.major {
+			return -1, nil
+		}
+		return 1, nil
+	case ap.minor != bp.minor:
+		if ap.minor < bp.minor {
+			return -1, nil
+		}
+		return 1, nil
+	case ap.patch != bp.patch:
+		if ap.patch < bp.patch {
+			return -1, nil
+		}
+		return 1, nil
+	default:
+		return 0, nil
+	}
+}
+
 type semver struct{ major, minor, patch int }
 
 func parse(v string) (semver, error) {

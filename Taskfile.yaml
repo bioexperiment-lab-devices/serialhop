@@ -36,6 +36,35 @@ tasks:
     cmds:
       - go run ./tools/buildcmd -o {{.OUTPUT_DIR}}/{{.BINARY_NAME}} -goos {{.GOOS}} -goarch {{.GOARCH}}
 
+  installer-manifest:
+    desc: Generate tools/installer/manifest.xml from template + version.json.
+    sources:
+      - tools/installer/manifest.template.xml
+      - tools/installer/version.json
+      - tools/render-installer-manifest/main.go
+    generates:
+      - tools/installer/manifest.xml
+    cmds:
+      - go run ./tools/render-installer-manifest
+
+  installer-resource:
+    desc: Compile the installer's .syso (icon + UAC manifest + version metadata).
+    deps: [installer-manifest]
+    cmds:
+      - go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+          -64
+          -o tools/installer/resource_windows.syso
+          -icon=assets/icon.ico
+          -manifest=tools/installer/manifest.xml
+          tools/installer/version.json
+
+  installer:
+    desc: Build the installer (depends on a fresh `task build` to produce the embedded payload).
+    deps: [build, installer-resource]
+    cmds:
+      - cp dist/SerialHop.exe tools/installer/payload/SerialHop.exe
+      - go run ./tools/buildcmd -o dist/SerialHop-Setup.exe -goos windows -goarch amd64 -tags production ./tools/installer
+
   test:
     desc: Run all unit tests
     cmds:
@@ -54,6 +83,6 @@ tasks:
       - npm run preview:mac
 
   clean:
-    desc: Remove build outputs and generated resources
+    desc: Remove build outputs and generated resources.
     cmds:
-      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}} assets/manifest.xml
+      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}} assets/manifest.xml tools/installer/manifest.xml tools/installer/resource_windows.syso tools/installer/payload/SerialHop.exe

@@ -1,0 +1,39 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 0,
+      "Minor": 18,
+      "Patch": 3,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 0,
+      "Minor": 18,
+      "Patch": 3,
+      "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileFlags": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "CompanyName": "Lab Devices",
+    "FileDescription": "SerialHop Installer",
+    "FileVersion": "0.18.3",
+    "InternalName": "serialhop-installer",
+    "LegalCopyright": "Copyright (c) 2026 Lab Devices",
+    "OriginalFilename": "SerialHop-Setup.exe",
+    "ProductName": "SerialHop Installer",
+    "ProductVersion": "0.18.3"
+  },
+  "VarFileInfo": {
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
+  },
+  "ManifestPath": "tools/installer/manifest.xml",
+  "IconPath": "assets/icon.ico"
+}
