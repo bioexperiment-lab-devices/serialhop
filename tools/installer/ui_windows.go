@@ -100,7 +100,7 @@ func runDialog(opts *options) int {
 		MaxWidth:         480,
 		MaxHeight:        300,
 		DisableResize:    true,
-		Frameless:        false, // framed window with native title bar (per spec §3)
+		Frameless:        false,                                               // framed window with native title bar (per spec §3)
 		BackgroundColour: &wailsopts.RGBA{R: 0xEC, G: 0xE9, B: 0xE0, A: 0xFF}, // --bg-page
 		AssetServer: &assetserver.Options{
 			Assets: frontendAssets,
