@@ -18,3 +18,9 @@ type shortcutOpts struct {
 func writeShortcut(_ shortcutOpts) error {
 	return errors.New("writeShortcut: only supported on Windows")
 }
+
+type realShortcutWriter struct{}
+
+func (realShortcutWriter) Write(opts shortcutOpts) error {
+	return writeShortcut(opts)
+}
