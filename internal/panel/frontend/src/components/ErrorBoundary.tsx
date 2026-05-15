@@ -87,14 +87,12 @@ export class ErrorBoundary extends Component<Props, State> {
       <div className="shp-empty" role="alert">
         <div className="shp-empty__body">
           <p>
-            <b>Something went wrong in the {this.props.scope} view.</b>
+            <b>Something went wrong in the {scopeLabel(this.props.scope)}.</b>
           </p>
-          <p style={{ marginTop: 4 }}>
-            The rest of the window is still usable. You can copy the
-            report, open the logs folder, or try rendering this view
-            again.
-          </p>
-          <div className="shp-btn-row" style={{ marginTop: 12, marginBottom: 12 }}>
+          <div
+            className="shp-btn-row"
+            style={{ marginTop: 12, marginBottom: 12, justifyContent: "center" }}
+          >
             <Button onClick={this.copyReport} aria-label="Copy crash report to clipboard">
               {copied ? "Copied ✓" : "Copy report"}
             </Button>
@@ -124,4 +122,16 @@ export class ErrorBoundary extends Component<Props, State> {
       </div>
     );
   }
+}
+
+// scopeLabel converts a boundary scope ("tab:devices", "app", ...) into
+// a phrase that fits "Something went wrong in the ___." The internal
+// scope strings stay machine-grep'able in the crash journal; the user
+// gets the humanized version.
+function scopeLabel(scope: string): string {
+  if (scope.startsWith("tab:")) {
+    const name = scope.slice("tab:".length);
+    return `${name.charAt(0).toUpperCase() + name.slice(1)} view`;
+  }
+  return "panel";
 }
