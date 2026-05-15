@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SerialHop Installer</title>
+<style>
+  /* Tokens copied from internal/panel/frontend/src/styles/global.css */
+  :root {
+    --bg-page: #ECE9E0;
+    --surface: #FFFFFF;
+    --surface-sunken: #F8F6F0;
+    --border: #E2DED2;
+    --border-strong: #C8C3B5;
+    --border-input: #C3BFB2;
+    --text: #1A1916;
+    --text-secondary: #514E47;
+    --text-muted: #8A8678;
+    --text-inverse: #FAF8F3;
+    --accent: #1F3A8A;
+    --accent-hover: #182E6F;
+    --success: #2F7D3F;
+    --danger: #B23A2A;
+    --shadow-card: 0 1px 0 rgba(26,25,22,0.04), 0 1px 2px rgba(26,25,22,0.06);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg-page);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  .container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 16px;
+  }
+  .field-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+  .path-input {
+    flex: 1;
+    padding: 8px 10px;
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border-input);
+    border-radius: 6px;
+    outline: none;
+    user-select: text;
+  }
+  .path-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(31, 58, 138, 0.15);
+  }
+  .btn {
+    padding: 8px 14px;
+    font: inherit;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 80ms ease, border-color 80ms ease;
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--surface-sunken);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--text-inverse);
+    border-color: var(--accent);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .status {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 8px 0;
+    min-height: 1.4em;
+  }
+  .status.installing {
+    color: var(--text);
+  }
+  .status.installing::after {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-left: 8px;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    vertical-align: -2px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status.success { color: var(--success); }
+  .status.error { color: var(--danger); }
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <div class="field-label">Install location</div>
+    <div class="path-row" style="margin-top: 6px;">
+      <input id="path-input" type="text" class="path-input" spellcheck="false" autocomplete="off">
+      <button id="browse-btn" class="btn">Browse…</button>
+    </div>
+  </div>
+
+  <div id="status" class="status">Ready.</div>
+
+  <div class="actions">
+    <button id="cancel-btn" class="btn">Cancel</button>
+    <button id="install-btn" class="btn btn-primary">Install</button>
+  </div>
+</div>
+
+<script>
+  const pathInput = document.getElementById('path-input');
+  const browseBtn = document.getElementById('browse-btn');
+  const installBtn = document.getElementById('install-btn');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const statusEl = document.getElementById('status');
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function setBusy(busy) {
+    installBtn.disabled = busy;
+    browseBtn.disabled = busy;
+    pathInput.disabled = busy;
+  }
+
+  // Populate the initial path from the Go side (it knows the default and any --dir flag).
+  window.go.main.InstallerApp.InitialPath().then(p => {
+    pathInput.value = p;
+  });
+
+  browseBtn.addEventListener('click', async () => {
+    const chosen = await window.go.main.InstallerApp.BrowseFolder(pathInput.value);
+    if (chosen) {
+      pathInput.value = chosen;
+    }
+  });
+
+  installBtn.addEventListener('click', async () => {
+    setBusy(true);
+    setStatus('Installing…', 'installing');
+    try {
+      const res = await window.go.main.InstallerApp.Install(pathInput.value);
+      if (res.Err) {
+        setStatus(res.Err, 'error');
+        setBusy(false);
+        return;
+      }
+      // Pick a final message based on the state. The Go side sets Message
+      // to the success line; we render it as-is.
+      const msg = res.Message || 'Installed.';
+      setStatus(msg, 'success');
+      // Auto-close is handled by the Go side after a 1500ms delay; leave
+      // the UI in its success state until then.
+    } catch (e) {
+      setStatus(String(e), 'error');
+      setBusy(false);
+    }
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    window.go.main.InstallerApp.Cancel();
+  });
+
+  // Optional: Go can push intermediate status updates via runtime events.
+  // We subscribe so future enhancements (download progress, etc.) work
+  // without JS changes.
+  if (window.runtime && window.runtime.EventsOn) {
+    window.runtime.EventsOn('installer:status', (text, kind) => {
+      setStatus(text, kind || '');
+    });
+  }
+</script>
+</body>
+</html>
