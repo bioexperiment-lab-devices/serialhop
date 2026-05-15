@@ -130,6 +130,10 @@ func (realFS) Stat(path string) (bool, error) {
 	return false, err
 }
 
+// Copy delegates to winsvc.RealFS().Copy so the installer's realFS and the
+// winsvc realFS share one atomic stage-and-rename copy implementation.
+func (realFS) Copy(from, to string) error { return winsvc.RealFS().Copy(from, to) }
+
 // peReader satisfies versionReader by delegating to readPEFileVersion (which
 // has _windows / _other build-tag variants).
 type peReader struct{}

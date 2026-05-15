@@ -146,3 +146,84 @@ func TestBackupsDir_EmptyWhenNoDataDir(t *testing.T) {
 		t.Errorf("BackupsDir: got %q, want \"\"", got)
 	}
 }
+
+func TestLocalDataDirUsesOverrideWhenSet(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", "/custom/local")
+	t.Setenv("LOCALAPPDATA", "/should/be/ignored")
+	if got := LocalDataDir(); got != "/custom/local" {
+		t.Errorf("LocalDataDir() = %q, want /custom/local", got)
+	}
+}
+
+func TestLocalDataDirFallsBackToLocalAppData(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", "")
+	t.Setenv("LOCALAPPDATA", `C:\Users\bob\AppData\Local`)
+	want := filepath.Join(`C:\Users\bob\AppData\Local`, "SerialHop")
+	if got := LocalDataDir(); got != want {
+		t.Errorf("LocalDataDir() = %q, want %q", got, want)
+	}
+}
+
+func TestLocalDataDirReturnsEmptyWhenNeitherSet(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", "")
+	t.Setenv("LOCALAPPDATA", "")
+	if got := LocalDataDir(); got != "" {
+		t.Errorf("LocalDataDir() = %q, want empty", got)
+	}
+}
+
+func TestPanelUpdateStagingDir_UnderLocalDataDir(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", "/tmp/sh-local")
+	got := PanelUpdateStagingDir()
+	want := filepath.Join("/tmp/sh-local", "updates")
+	if got != want {
+		t.Errorf("PanelUpdateStagingDir: got %q, want %q", got, want)
+	}
+}
+
+func TestPanelUpdateStagingDir_EmptyWhenNoLocalDataDir(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", "")
+	t.Setenv("LOCALAPPDATA", "")
+	if got := PanelUpdateStagingDir(); got != "" {
+		t.Errorf("PanelUpdateStagingDir: got %q, want empty", got)
+	}
+}
+
+func TestEnsurePanelUpdateStagingDir_Creates(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Local")
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", filepath.Join(root, "SerialHop"))
+
+	got, err := EnsurePanelUpdateStagingDir()
+	if err != nil {
+		t.Fatalf("EnsurePanelUpdateStagingDir: %v", err)
+	}
+	want := filepath.Join(root, "SerialHop", "updates")
+	if got != want {
+		t.Errorf("path: got %q, want %q", got, want)
+	}
+	info, err := os.Stat(got)
+	if err != nil {
+		t.Fatalf("stat %q: %v", got, err)
+	}
+	if !info.IsDir() {
+		t.Errorf("%q is not a directory", got)
+	}
+}
+
+func TestEnsurePanelUpdateStagingDir_Idempotent(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", filepath.Join(t.TempDir(), "SerialHop"))
+	if _, err := EnsurePanelUpdateStagingDir(); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if _, err := EnsurePanelUpdateStagingDir(); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+}
+
+func TestEnsurePanelUpdateStagingDir_ErrorsWhenEmpty(t *testing.T) {
+	t.Setenv("SERIALHOP_LOCAL_DATA_DIR", "")
+	t.Setenv("LOCALAPPDATA", "")
+	if _, err := EnsurePanelUpdateStagingDir(); err == nil {
+		t.Fatal("EnsurePanelUpdateStagingDir returned nil, want error")
+	}
+}

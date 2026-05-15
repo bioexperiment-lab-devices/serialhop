@@ -4,11 +4,17 @@
 // SERIALHOP_DATA_DIR environment variable, if set, overrides this —
 // tests use t.Setenv("SERIALHOP_DATA_DIR", t.TempDir()) for isolation.
 //
+// LocalDataDir resolves to %LOCALAPPDATA%\SerialHop — the per-user
+// equivalent, used for things the desktop user must be able to write
+// without elevation (notably the auto-update staging dir, since
+// %ProgramData% and the Program Files install dir aren't user-writable
+// in a default install). The SERIALHOP_LOCAL_DATA_DIR env var overrides.
+//
 // All composed-path getters (ConfigPath, LogsDir, ServiceLogPath,
-// StderrLogPath, PanelErrorLogPath) return "" when DataDir() returns ""
-// (i.e., %ProgramData% is unset and no test override is in effect).
-// Callers can detect "no data dir available" with a single empty-string
-// check.
+// StderrLogPath, PanelErrorLogPath, PanelUpdateStagingDir) return ""
+// when their base directory returns "" (i.e., the underlying env var is
+// unset and no test override is in effect). Callers can detect "no
+// directory available" with a single empty-string check.
 package paths
 
 import (
@@ -135,4 +141,47 @@ func EnsureDirs() error {
 		return fmt.Errorf("paths: create %s: %w", logs, err)
 	}
 	return nil
+}
+
+// LocalDataDir returns the SerialHop per-user data directory.
+// SERIALHOP_LOCAL_DATA_DIR overrides %LOCALAPPDATA% for tests. Returns ""
+// when neither is set.
+//
+// Use this for things the desktop user must write without elevation —
+// e.g., the auto-update staging dir, since the default install dir
+// (C:\Program Files\SerialHop) is not user-writable.
+func LocalDataDir() string {
+	if v := os.Getenv("SERIALHOP_LOCAL_DATA_DIR"); v != "" {
+		return v
+	}
+	if lad := os.Getenv("LOCALAPPDATA"); lad != "" {
+		return filepath.Join(lad, "SerialHop")
+	}
+	return ""
+}
+
+// PanelUpdateStagingDir returns <LocalDataDir>/updates, or "" if
+// LocalDataDir is empty. This is where the panel stages downloaded
+// SerialHop-v*.exe binaries before the elevated install step copies
+// them into the install dir.
+func PanelUpdateStagingDir() string {
+	d := LocalDataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "updates")
+}
+
+// EnsurePanelUpdateStagingDir creates the staging dir with os.MkdirAll
+// (0o750) and returns its path. Idempotent. Returns an error if
+// LocalDataDir() is empty or MkdirAll fails.
+func EnsurePanelUpdateStagingDir() (string, error) {
+	d := PanelUpdateStagingDir()
+	if d == "" {
+		return "", errors.New("paths: local data directory unavailable (%LOCALAPPDATA% not set)")
+	}
+	if err := os.MkdirAll(d, 0o750); err != nil {
+		return "", fmt.Errorf("paths: create %s: %w", d, err)
+	}
+	return d, nil
 }

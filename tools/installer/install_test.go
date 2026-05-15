@@ -88,6 +88,19 @@ func (f *fakeFS) Stat(path string) (bool, error) {
 	return ok, nil
 }
 
+func (f *fakeFS) Copy(from, to string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b, ok := f.files[from]
+	if !ok {
+		return errors.New("fakeFS: src missing for copy")
+	}
+	cp := make([]byte, len(b))
+	copy(cp, b)
+	f.files[to] = cp
+	return nil
+}
+
 // fakeVersionReader returns a configured version for any path.
 type fakeVersionReader struct {
 	versions map[string]string

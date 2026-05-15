@@ -245,6 +245,7 @@ type fakeFS struct {
 	renameErr map[[2]string]error // {from,to} → err to return
 	removeErr map[string]error
 	statErr   map[string]error
+	copyErr   map[[2]string]error // {from,to} → err to return
 }
 
 func newFakeFS(files ...string) *fakeFS {
@@ -253,6 +254,7 @@ func newFakeFS(files ...string) *fakeFS {
 		renameErr: map[[2]string]error{},
 		removeErr: map[string]error{},
 		statErr:   map[string]error{},
+		copyErr:   map[[2]string]error{},
 	}
 	for _, p := range files {
 		f.existing[p] = true
@@ -287,6 +289,18 @@ func (f *fakeFS) Stat(path string) (bool, error) {
 		return false, err
 	}
 	return f.existing[path], nil
+}
+
+func (f *fakeFS) Copy(from, to string) error {
+	f.calls = append(f.calls, "copy:"+from+"→"+to)
+	if err := f.copyErr[[2]string{from, to}]; err != nil {
+		return err
+	}
+	if !f.existing[from] {
+		return os.ErrNotExist
+	}
+	f.existing[to] = true
+	return nil
 }
 
 func (f *fakeFS) Exists(path string) bool { return f.existing[path] }
@@ -572,5 +586,165 @@ func TestUpdateBinary_FreshInstall_MissingTarget(t *testing.T) {
 	}
 	if string(got) != "payload" {
 		t.Fatalf("target content = %q; want %q", got, "payload")
+	}
+}
+
+// --- runUpdate -------------------------------------------------------------
+
+// runUpdateFixture models the post-installer reality: the panel stages
+// downloads under %LOCALAPPDATA%\SerialHop\updates\, but the service
+// binary lives under C:\Program Files\SerialHop\. The elevated child
+// has to copy into the install dir before the rename swap.
+//
+// Paths are computed with filepath.Join so the tests work on both
+// Windows and Unix dev environments (filepath.Base / filepath.Dir
+// are platform-dependent on a literal `\`-separated string).
+type runUpdateFixture struct {
+	stagingSrc string // <staging>/SerialHop-v0.7.0.exe
+	installExe string // <install>/SerialHop.exe
+	installCp  string // <install>/SerialHop-v0.7.0.exe (post-copy dest)
+}
+
+func newRunUpdateFixture() runUpdateFixture {
+	const asset = "SerialHop-v0.7.0.exe"
+	stagingDir := filepath.Join("local-app-data", "SerialHop", "updates")
+	installDir := filepath.Join("install-root", "SerialHop")
+	return runUpdateFixture{
+		stagingSrc: filepath.Join(stagingDir, asset),
+		installExe: filepath.Join(installDir, "SerialHop.exe"),
+		installCp:  filepath.Join(installDir, asset),
+	}
+}
+
+func TestRunUpdate_CopiesStagingSrcIntoInstallDir(t *testing.T) {
+	fx := newRunUpdateFixture()
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	fs := newFakeFS(fx.stagingSrc, fx.installExe)
+
+	err := runUpdateWithDeps(scm, fs, fx.stagingSrc, fx.installExe,
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("runUpdate: %v", err)
+	}
+
+	wantCopy := "copy:" + fx.stagingSrc + "→" + fx.installCp
+	found := false
+	for _, c := range fs.calls {
+		if c == wantCopy {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected Copy call %q, got calls: %v", wantCopy, fs.calls)
+	}
+	if !fs.Exists(fx.stagingSrc) {
+		t.Error("staging-dir src should be preserved (panel reuses it for resume-from-disk)")
+	}
+	if !fs.Exists(fx.installExe) {
+		t.Error("post-update SerialHop.exe missing")
+	}
+}
+
+func TestRunUpdate_SkipsCopyWhenSrcAlreadyInInstallDir(t *testing.T) {
+	// Operator-staged or legacy-layout case: the .exe is already next to
+	// SerialHop.exe. We can rename in place; no Copy needed.
+	fx := newRunUpdateFixture()
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	fs := newFakeFS(fx.installCp, fx.installExe)
+
+	err := runUpdateWithDeps(scm, fs, fx.installCp, fx.installExe,
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("runUpdate: %v", err)
+	}
+
+	for _, c := range fs.calls {
+		if strings.HasPrefix(c, "copy:") {
+			t.Errorf("did not expect Copy when src is already in install dir; got %v", fs.calls)
+			break
+		}
+	}
+	if !fs.Exists(fx.installExe) {
+		t.Error("post-update SerialHop.exe missing")
+	}
+}
+
+func TestRunUpdate_RejectsBadFilename(t *testing.T) {
+	fx := newRunUpdateFixture()
+	scm := newFakeSCM()
+	bad := filepath.Join(filepath.Dir(fx.stagingSrc), "arbitrary.exe")
+	fs := newFakeFS(bad, fx.installExe)
+
+	err := runUpdateWithDeps(scm, fs, bad, fx.installExe,
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected filename-validation error")
+	}
+	if !strings.Contains(err.Error(), "SerialHop-v") {
+		t.Errorf("err should mention the SerialHop-v prefix; got %v", err)
+	}
+	// No mutation of the install dir.
+	for _, c := range fs.calls {
+		if strings.HasPrefix(c, "rename:") || strings.HasPrefix(c, "copy:") {
+			t.Errorf("validation must fail before any FS mutation; got %v", fs.calls)
+			break
+		}
+	}
+}
+
+func TestRunUpdate_RejectsMissingSrc(t *testing.T) {
+	fx := newRunUpdateFixture()
+	scm := newFakeSCM()
+	fs := newFakeFS(fx.installExe) // src deliberately absent
+
+	err := runUpdateWithDeps(scm, fs, fx.stagingSrc, fx.installExe,
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected missing-src error")
+	}
+	if !strings.Contains(err.Error(), "not accessible") {
+		t.Errorf("err should mention 'not accessible'; got %v", err)
+	}
+}
+
+func TestRunUpdate_RejectsEmptySrc(t *testing.T) {
+	fx := newRunUpdateFixture()
+	err := runUpdateWithDeps(newFakeSCM(), newFakeFS(), "", fx.installExe,
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected error for empty updateSrc")
+	}
+}
+
+func TestRunUpdate_CopyFailureCleansUpInstallDirCopy(t *testing.T) {
+	// If the cross-dir Copy fails (e.g., disk full / AV), no SCM work should
+	// have happened yet, and the install dir must not be left with a half-
+	// written copy.
+	fx := newRunUpdateFixture()
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{state: StateRunning}
+	fs := newFakeFS(fx.stagingSrc, fx.installExe)
+	fs.copyErr[[2]string{fx.stagingSrc, fx.installCp}] = errors.New("disk full")
+
+	err := runUpdateWithDeps(scm, fs, fx.stagingSrc, fx.installExe,
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected Copy failure to surface")
+	}
+	if fs.Exists(fx.installCp) {
+		t.Error("install-dir copy should not exist after Copy failure")
+	}
+	// Service must not have been stopped — Copy fails before any SCM work.
+	if scm.services[ServiceName].state == StateStopped {
+		t.Error("service must not be stopped when Copy fails before swap")
 	}
 }
