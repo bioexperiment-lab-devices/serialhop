@@ -18,7 +18,7 @@ func TestAppendCapped_AppendsLine(t *testing.T) {
 	if err := appendCapped(p, []byte("beta\n"), 1024); err != nil {
 		t.Fatalf("appendCapped: %v", err)
 	}
-	b, err := os.ReadFile(p)
+	b, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestAppendCapped_TrimsToLastNBytesAtLineBoundary(t *testing.T) {
 			t.Fatalf("appendCapped i=%d: %v", i, err)
 		}
 	}
-	b, err := os.ReadFile(p)
+	b, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestAppendCrashJournal_WritesJSONLine(t *testing.T) {
 	now := time.Date(2026, 5, 15, 12, 34, 56, 0, time.UTC)
 	appendCrashJournal("boom", "tab:devices", "at line 1", "0.20.0", now)
 
-	b, err := os.ReadFile(p)
+	b, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
