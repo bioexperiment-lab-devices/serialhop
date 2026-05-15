@@ -106,4 +106,8 @@ export const App: Record<string, (...args: any[]) => Promise<any>> = {
   StopLogStream: async () => {
     store.activeLogStream = null;
   },
+
+  RecordFrontendCrash: async (message: string, source: string, _stack: string) => {
+    console.info("[preview] RecordFrontendCrash", { message, source });
+  },
 };

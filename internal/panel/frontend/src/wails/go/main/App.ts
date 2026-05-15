@@ -67,3 +67,12 @@ export function Diagnostics(): Promise<Record<string, unknown>> { return call<Re
 // log:line events — see internal/panel/bindings.go for the rationale.
 export function StartLogStream(id: string): Promise<unknown[]> { return call("StartLogStream", id); }
 export function StopLogStream(): Promise<void> { return call("StopLogStream"); }
+
+// RecordFrontendCrash appends one JSON line to the panel crash journal.
+// Called by the React ErrorBoundary fallback and the global window.error
+// / unhandledrejection listeners in main.tsx. The Go side swallows all
+// failures, so this promise resolves to undefined except in the rare
+// case where the Wails bridge itself rejects (e.g. binding missing).
+export function RecordFrontendCrash(message: string, source: string, stack: string): Promise<void> {
+  return call("RecordFrontendCrash", message, source, stack);
+}
