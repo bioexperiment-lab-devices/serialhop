@@ -7,7 +7,6 @@ vi.mock("../wails/go/main/App", () => ({
   GetDevices: vi.fn(),
   Discover: vi.fn(),
   DisconnectAll: vi.fn(),
-  Diagnostics: vi.fn(async () => ({})),
 }));
 
 describe("DevicesTab", () => {

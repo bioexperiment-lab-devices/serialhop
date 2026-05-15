@@ -40,29 +40,46 @@ export function StatusTab({ lamps, buttons, configDirty }: Props) {
     } finally { setBusy(false); }
   };
 
+  const installed = !buttons.install && (buttons.uninstall || buttons.restart);
+  const notInstalled = buttons.install && !buttons.uninstall && !buttons.restart;
+  const hint = busy
+    ? "Working — re-checking lamps…"
+    : installed
+      ? "↑ All service actions require admin privileges"
+      : notInstalled
+        ? "↑ Install requires admin privileges"
+        : "";
+
   return (
     <>
+      <div className="shp-h">Service health</div>
       <section className="shp-lamps">
-        <Lamp name="Service" tone={lamps.service.tone} label={lamps.service.label} sub={lamps.service.sub}>
+        <Lamp name="Local service" tone={lamps.service.tone} label={lamps.service.label} sub={lamps.service.sub}>
           <Help title="Service" what="Local SerialHop Windows service state." />
         </Lamp>
-        <Lamp name="Server" tone={lamps.server.tone} label={lamps.server.label} sub={lamps.server.sub}>
+        <Lamp name="Lab-bridge server" tone={lamps.server.tone} label={lamps.server.label} sub={lamps.server.sub}>
           <Help title="Server" what="Reachability + health of the configured lab-bridge server." />
         </Lamp>
-        <Lamp name="Tunnel" tone={lamps.tunnel.tone} label={lamps.tunnel.label} sub={lamps.tunnel.sub}>
+        <Lamp name="Reverse tunnel" tone={lamps.tunnel.tone} label={lamps.tunnel.label} sub={lamps.tunnel.sub}>
           <Help title="Tunnel" what="State of this machine's Chisel reverse tunnel into the lab-bridge." />
         </Lamp>
       </section>
 
-      <div className="shp-btn-row" style={{ marginTop: 16 }}>
+      <div className="shp-h">Service control</div>
+      <div className="shp-service-actions">
         <Button variant="primary" elevated disabled={busy || !buttons.install} onClick={() => adminAction(InstallService)}>Install</Button>
         <Button variant="danger" elevated disabled={busy || !buttons.uninstall} onClick={() => adminAction(UninstallService)}>Uninstall</Button>
         <Button elevated disabled={busy || !buttons.restart} onClick={() => adminAction(RestartService, true)}>Restart</Button>
+        {hint && <span className="shp-service-actions__hint">{hint}</span>}
       </div>
 
       {update.state !== UpdateState.Idle && (
         <div className="shp-update" data-tone={updateTone(update.state)}>
-          <div className="shp-update__msg"><UpdateLabel update={update} /></div>
+          <span className="shp-update__tag">Update</span>
+          <span className="shp-update__msg"><UpdateLabel update={update} /></span>
+          {update.state === UpdateState.Downloading && (
+            <div className="shp-update__progressbar" data-indeterminate="true"><i /></div>
+          )}
           <div className="shp-update__actions">
             <UpdateButtons
               update={update}
@@ -79,21 +96,17 @@ export function StatusTab({ lamps, buttons, configDirty }: Props) {
 }
 
 function UpdateLabel({ update }: { update: UpdateStatePayload }) {
-  const text: Record<UpdateState, string> = {
-    [UpdateState.Idle]: "",
-    [UpdateState.Available]: `Update: ${update.release_tag} available`,
-    [UpdateState.Downloading]: `Update: ${update.release_tag} — downloading…`,
-    [UpdateState.DownloadFailed]: `Update: ${update.release_tag} — download failed`,
-    [UpdateState.Ready]: `Update: ${update.release_tag} — ready to install`,
-    [UpdateState.Installing]: "Update: installing…",
-    [UpdateState.Installed]: `Updated to ${update.release_tag}. Close and reopen this window to load the new panel.`,
-    [UpdateState.InstallFailed]: "Update failed — service restored to previous version.",
-  };
-  const color =
-    update.state === UpdateState.DownloadFailed || update.state === UpdateState.InstallFailed ? "red"
-    : update.state === UpdateState.Installed ? "green"
-    : "default";
-  return <span data-color={color}>{text[update.state]}</span>;
+  const tag = update.release_tag;
+  switch (update.state) {
+    case UpdateState.Available:      return <>Version <b>{tag}</b> is available.</>;
+    case UpdateState.Downloading:    return <><b>{tag}</b> downloading…</>;
+    case UpdateState.DownloadFailed: return <><b>{tag}</b> — download failed.</>;
+    case UpdateState.Ready:          return <><b>{tag}</b> ready to install.</>;
+    case UpdateState.Installing:     return <>Installing… service will restart automatically.</>;
+    case UpdateState.Installed:      return <>Updated to <b>{tag}</b>. Close and reopen this window to load the new panel.</>;
+    case UpdateState.InstallFailed:  return <>Update failed — service restored to previous version.</>;
+    default:                         return null;
+  }
 }
 
 function UpdateButtons(props: {

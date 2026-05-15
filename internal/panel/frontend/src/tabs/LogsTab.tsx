@@ -28,6 +28,8 @@ const streamHelp: Record<StreamID, { title: string; what: string }> = {
   },
 };
 
+const LABEL_STYLE: React.CSSProperties = { fontSize: 11.5, fontWeight: 500 };
+
 // LogsTab is now a thin view over the App-level log streaming state. The
 // buffer and tailer subscription live in globalStore so they survive both
 // tab switches (LogsTab unmount/remount) and stream changes — see
@@ -69,18 +71,24 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
   return (
     <>
       <div className="shp-logs-controls">
-        <label className="shp-row">
-          <span style={{ marginRight: 4 }}>Stream:</span>
-          <select className="shp-select" value={stream} onChange={e => setStream(e.target.value as StreamID)}>
+        <label className="shp-row" style={{ gap: 6 }}>
+          <span className="shp-muted" style={LABEL_STYLE}>Stream</span>
+          <select className="shp-select" value={stream} onChange={e => setStream(e.target.value as StreamID)} style={{ width: 160 }}>
             <option value="service">Service log</option>
             <option value="stderr">Stderr</option>
             <option value="panel">Panel errors</option>
           </select>
           <Help title={streamHelp[stream].title} what={streamHelp[stream].what} />
         </label>
-        <label className="shp-row">
-          <span style={{ marginRight: 4 }}>Level:</span>
-          <select className="shp-select" value={level} onChange={e => setLevel(e.target.value as LevelFilter)} disabled={stream !== "service"}>
+        <label className="shp-row" style={{ gap: 6 }}>
+          <span className="shp-muted" style={LABEL_STYLE}>Level</span>
+          <select
+            className="shp-select"
+            value={level}
+            onChange={e => setLevel(e.target.value as LevelFilter)}
+            disabled={stream !== "service"}
+            style={{ width: 110 }}
+          >
             <option>all</option><option>debug</option><option>info</option><option>warn</option><option>error</option>
           </select>
         </label>
@@ -105,7 +113,13 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
           />
           Follow
         </label>
-        <input className="shp-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+        <input
+          className="shp-input shp-input--mono"
+          placeholder="Search…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: 220, flex: "0 1 220px" }}
+        />
         <span className="shp-gap" />
         <Button variant="ghost" onClick={() => OpenLogsFolder()}>Open logs folder ↗</Button>
       </div>
@@ -122,7 +136,7 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
                   >
                     <td className="col-time">{String(l.record.time || "")}</td>
                     <td className="col-level"><span className="shp-level-pill" data-level={String(l.record.level || "info").toLowerCase()}>{String(l.record.level || "")}</span></td>
-                    <td>{String(l.record.msg || "")}</td>
+                    <td>{highlightSearch(String(l.record.msg || ""), search)}</td>
                   </tr>
                   {selected === l && (
                     <tr className="shp-logs-detail">
@@ -141,6 +155,28 @@ export function LogsTab({ logState }: { logState: LogStreamState }) {
           {display.map((l, i) => <div key={i}>{l.raw}</div>)}
         </pre>
       )}
+    </>
+  );
+}
+
+function highlightSearch(text: string, q: string): React.ReactNode {
+  if (!q) return text;
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i === -1) return text;
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark
+        style={{
+          background: "var(--warning-soft)",
+          color: "var(--text)",
+          padding: "0 2px",
+          borderRadius: 2,
+        }}
+      >
+        {text.slice(i, i + q.length)}
+      </mark>
+      {text.slice(i + q.length)}
     </>
   );
 }
