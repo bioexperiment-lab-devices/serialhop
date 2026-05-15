@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.22.2...v0.23.0) (2026-05-15)
+
+
+### Features
+
+* **panel:** align panel UI with design handoff ([#122](https://github.com/bioexperiment-lab-devices/serialhop/issues/122)) ([bfd7813](https://github.com/bioexperiment-lab-devices/serialhop/commit/bfd781379014d6c632b68962d31a52996d0ad17d))
+
 ## [0.22.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.22.1...v0.22.2) (2026-05-15)
 
 
