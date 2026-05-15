@@ -171,16 +171,27 @@ func restart(scm SCMConn, timeout, pollInterval time.Duration) error {
 }
 
 // fsOps abstracts the file operations updateBinary needs so tests can
-// substitute a fake. Production uses realFS{}, which calls os.Rename/os.Remove.
+// substitute a fake. Production uses realFS{}, which calls os.Rename/os.Remove/os.Stat.
 type fsOps interface {
 	Rename(from, to string) error
 	Remove(path string) error
+	Stat(path string) (exists bool, err error)
 }
 
 type realFS struct{}
 
 func (realFS) Rename(from, to string) error { return os.Rename(from, to) }
 func (realFS) Remove(path string) error     { return os.Remove(path) }
+func (realFS) Stat(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
 
 // Compile-time assertion: realFS satisfies fsOps.
 var _ fsOps = realFS{}
@@ -242,13 +253,23 @@ func updateBinary(scm SCMConn, fs fsOps, src, target string, opTimeout, pollInte
 		return original
 	}
 
-	// --- step 2: clean up any stale .old, then rename target → .old ---
+	// --- step 2: clean up any stale .old, then preserve current target as .old ---
 	_ = fs.Remove(oldPath)
 
-	const renameRetries = 5
-	if err := renameWithRetry(fs, target, oldPath, renameRetries, renameBackoff); err != nil {
-		return restartIfNeeded(fmt.Errorf("rename %s → %s: %w", target, oldPath, err))
+	targetExists, err := fs.Stat(target)
+	if err != nil {
+		return restartIfNeeded(fmt.Errorf("stat target %s: %w", target, err))
 	}
+	if targetExists {
+		const renameRetries = 5
+		if err := renameWithRetry(fs, target, oldPath, renameRetries, renameBackoff); err != nil {
+			return restartIfNeeded(fmt.Errorf("rename %s → %s: %w", target, oldPath, err))
+		}
+	}
+	// If target doesn't exist (fresh install with no prior binary), we skip the
+	// rename-to-.old step entirely. There's nothing to preserve. Subsequent
+	// rollback paths likewise become no-ops when oldPath doesn't exist (the
+	// fs.Rename(oldPath, target) attempts simply fail silently as best-effort).
 
 	// --- step 3: rename src → target ---
 	if err := fs.Rename(src, target); err != nil {
@@ -305,4 +326,18 @@ func waitForState(s SCMService, target ServiceState, timeout, poll time.Duration
 		time.Sleep(poll)
 	}
 	return errWaitTimeout
+}
+
+// InstallOrUpgrade extracts the in-place update sequence into a public entry
+// point so the installer binary can reuse the same rename-with-rollback
+// machinery the panel's auto-update relies on. updateBinary gracefully
+// handles the "service not yet installed" case (it skips the SCM stop and
+// start), so this single call covers both first-install and upgrade.
+//
+// src must already exist at the desired path and live in the same directory
+// as target (same-volume rename requirement). target is the canonical install
+// location (e.g., C:\Program Files\SerialHop\SerialHop.exe).
+func InstallOrUpgrade(scm SCMConn, src, target string) error {
+	return updateBinary(scm, realFS{}, src, target,
+		productionStartTimeout, productionPollInterval, 250*time.Millisecond)
 }
