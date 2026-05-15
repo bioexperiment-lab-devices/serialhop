@@ -49,6 +49,13 @@ export function DownloadUpdate(): Promise<void> { return call("DownloadUpdate");
 export function CancelDownload(): Promise<void> { return call("CancelDownload"); }
 export function InstallUpdate(): Promise<{ ok: boolean; error_message?: string; cancelled?: boolean }> { return call("InstallUpdate"); }
 
+// RelaunchPanel spawns a detached copy of the current panel exe and
+// quits this one. The OS file at os.Executable() is the freshly
+// installed exe after a successful update; the running panel is still
+// the previous version, so the spawn-then-quit dance is what brings
+// the new UI up without asking the operator to reopen the window.
+export function RelaunchPanel(): Promise<void> { return call("RelaunchPanel"); }
+
 export function GetDevices(): Promise<any> { return call<any>("GetDevices"); }
 export function Discover(): Promise<any> { return call<any>("Discover"); }
 export function DisconnectAll(): Promise<any> { return call<any>("DisconnectAll"); }

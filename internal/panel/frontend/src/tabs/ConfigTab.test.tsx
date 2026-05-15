@@ -44,16 +44,22 @@ describe("ConfigTab", () => {
     await waitFor(() => expect(onDirty).toHaveBeenCalledWith(false));
   });
 
-  it("shows the rejection message under both Username and Password when verifyCredentials returns unauthorized", async () => {
+  it("paints both Username and Password red but renders the rejection message only under Password", async () => {
     (App.VerifyCredentials as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ outcome: "unauthorized" });
     render(<ConfigTab onDirtyChange={() => {}} />);
     await waitFor(() => screen.getByDisplayValue("alice"));
     fireEvent.change(screen.getByDisplayValue("alice"), { target: { value: "bob" } });
     fireEvent.click(screen.getByText("Save"));
     await waitFor(() => {
+      // Message appears once — under Password only.
       const hits = screen.getAllByText(/rejected these credentials/);
-      expect(hits.length).toBe(2);
+      expect(hits.length).toBe(1);
     });
+    // Both inputs still carry the data-error decoration so both rows turn red.
+    const userField = document.querySelector('[data-field="lab_bridge.user"] input');
+    const passField = document.querySelector('[data-field="lab_bridge.pass"] input');
+    expect(userField?.getAttribute("data-error")).toBe("true");
+    expect(passField?.getAttribute("data-error")).toBe("true");
     expect(App.SaveConfig).not.toHaveBeenCalled();
   });
 

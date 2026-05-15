@@ -19,6 +19,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
@@ -237,6 +238,34 @@ func (a *App) CancelDownload() {
 
 func (a *App) InstallUpdate() AdminResult { return ctlInstallEvent(a) }
 
+// RelaunchPanel spawns a detached copy of the panel exe at the path
+// returned by os.Executable() — which, after a successful update, points
+// at the freshly installed binary — and asks Wails to quit the current
+// process. Called by the SPA when the update state machine reaches
+// UpdateState.Installed, so the operator doesn't have to close and
+// reopen the window manually.
+//
+// Errors are returned as plain strings so the binding promise resolves
+// (rather than rejecting) and the SPA can show a fallback message. In
+// practice the SPA still calls Quit() after the call resolves; if the
+// spawn fails the operator at least gets a clean window-close instead
+// of the panel hanging on the "Restarting…" row.
+func (a *App) RelaunchPanel() RelaunchResult {
+	if err := relaunchPanelExe(); err != nil {
+		return RelaunchResult{Error: err.Error()}
+	}
+	a.requestQuit()
+	return RelaunchResult{OK: true}
+}
+
+// RelaunchResult mirrors AdminResult's shape. Kept separate so future
+// hooks (e.g. a "click here to reopen" fallback URL) can extend it
+// without bleeding into the install-action contract.
+type RelaunchResult struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
 // toTabStatus translates ServiceCli's three-way reachability outcome
 // into the TS-facing DTO consumed by the Devices and Ports tabs.
 func toTabStatus(s ServiceCliStatus) ServiceTabStatusDTO {
@@ -314,10 +343,30 @@ func (a *App) GetPorts() PortsResult {
 	ctx, cancel := a.callCtx()
 	defer cancel()
 	resp, st, _ := a.svc.GetPorts(ctx)
+	resp = applyDiscoveryFilterToPorts(resp)
 	return PortsResult{
 		DetailedPortsResponse: normalizeDetailedPortsResponse(resp),
 		Status:                toTabStatus(st),
 	}
+}
+
+// applyDiscoveryFilterToPorts hides ports that the operator excluded via
+// config.discovery.include / config.discovery.exclude. The service-side
+// endpoint returns every port the OS enumerates; the Ports tab is the
+// operator's window into that list, and surfacing ports they've already
+// asked discovery to skip is just noise — it also makes "Discovered"
+// always read as false for them, which is misleading. Config-load
+// failures fall through to the unfiltered list so a transient config
+// read error doesn't blank the tab.
+//
+// The pure transform lives in filterDetailedPorts (bindings_helpers.go)
+// so it can be unit-tested without touching the filesystem.
+func applyDiscoveryFilterToPorts(resp api.DetailedPortsResponse) api.DetailedPortsResponse {
+	cfg, err := config.LoadPartial(paths.ConfigPath())
+	if err != nil {
+		return resp
+	}
+	return filterDetailedPorts(resp, cfg.Discovery.Include, cfg.Discovery.Exclude)
 }
 
 // DiagnosticsDTO is the support-bundle the panel exposes to the SPA

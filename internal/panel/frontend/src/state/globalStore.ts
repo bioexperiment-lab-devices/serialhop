@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { EventsOn, EventsOff } from "../wails/runtime/runtime";
 import { StartLogStream } from "../wails/go/main/App";
-import type {
-  ButtonStatePayload,
-  FooterPayload,
-  LampPayload,
-  LampWhich,
-  LogLinePayload,
-  StreamID,
-  Tone,
+import {
+  UpdateState,
+  type ButtonStatePayload,
+  type FooterPayload,
+  type LampPayload,
+  type LampWhich,
+  type LogLinePayload,
+  type StreamID,
+  type Tone,
+  type UpdateStatePayload,
 } from "../types";
 
 interface LampState {
@@ -39,6 +41,13 @@ export function useGlobalUiState() {
     tunnel: DEFAULT_LAMP,
   });
   const [buttons, setButtons] = useState<ButtonStatePayload>(DEFAULT_BUTTONS);
+  // Update state lives in globalStore (not StatusTab local state) so the
+  // "Update available" / "Downloading…" / "Installed" rows survive the
+  // operator switching to Config to verify creds and coming back. The
+  // StatusTab is unmounted while another tab is active; before this lift
+  // the local useState was wiped on every tab switch and the panel
+  // appeared to "lose" a pending download.
+  const [update, setUpdate] = useState<UpdateStatePayload>({ state: UpdateState.Idle, release_tag: "" });
   // Log streaming lives at the App level (not inside LogsTab) so the
   // buffer and the tailer subscription both survive tab switches —
   // unmounting LogsTab used to wipe `lines` and call StopLogStream,
@@ -53,17 +62,20 @@ export function useGlobalUiState() {
       setLamps(prev => ({ ...prev, [p.which]: { tone: p.tone, label: p.label, sub: p.sub } }));
     const onFooter = (p: FooterPayload) => setFooter(p);
     const onButtons = (p: ButtonStatePayload) => setButtons(p);
+    const onUpdate = (p: UpdateStatePayload) => setUpdate(p);
     EventsOn("warn:set", onWarn);
     EventsOn("warn:clear", onClear);
     EventsOn("status:lamp", onLamp);
     EventsOn("footer:set", onFooter);
     EventsOn("buttons:state", onButtons);
+    EventsOn("update:state", onUpdate);
     return () => {
       EventsOff("warn:set");
       EventsOff("warn:clear");
       EventsOff("status:lamp");
       EventsOff("footer:set");
       EventsOff("buttons:state");
+      EventsOff("update:state");
     };
   }, []);
 
@@ -102,5 +114,5 @@ export function useGlobalUiState() {
   const setStream = useCallback((next: StreamID) => setLogStream(next), []);
   const logState: LogStreamState = { stream: logStream, setStream, lines: logLines };
 
-  return { warn, footer, lamps, buttons, logState };
+  return { warn, footer, lamps, buttons, update, logState };
 }
