@@ -214,6 +214,59 @@ func TestWriteCache_HostAndPassJSONKeys(t *testing.T) {
 	}
 }
 
+func TestReadCacheRaw_ReturnsCacheRegardlessOfUser(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache() // User: "alice"
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	got, err := ReadCacheRaw(p)
+	if err != nil {
+		t.Fatalf("ReadCacheRaw: %v", err)
+	}
+	if got.User != "alice" {
+		t.Errorf("User: got %q, want %q", got.User, "alice")
+	}
+	if got.RemotePort != in.RemotePort {
+		t.Errorf("RemotePort: got %d, want %d", got.RemotePort, in.RemotePort)
+	}
+}
+
+func TestReadCacheRaw_MissingFileReturnsErrCacheMissing(t *testing.T) {
+	_, err := ReadCacheRaw(filepath.Join(t.TempDir(), "nope.json"))
+	if !errors.Is(err, ErrCacheMissing) {
+		t.Errorf("expected ErrCacheMissing, got %v", err)
+	}
+}
+
+func TestReadCacheRaw_VersionMismatchDeletesAndReturnsMissing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	if err := os.WriteFile(p, []byte(`{"version":99,"user":"alice"}`), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := ReadCacheRaw(p)
+	if !errors.Is(err, ErrCacheMissing) {
+		t.Errorf("expected ErrCacheMissing on version mismatch, got %v", err)
+	}
+	if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+		t.Errorf("expected version-mismatch cache file to be deleted; stat err = %v", statErr)
+	}
+}
+
+func TestReadCacheRaw_CorruptJSONDeletesAndReturnsMissing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	if err := os.WriteFile(p, []byte("not json"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := ReadCacheRaw(p)
+	if !errors.Is(err, ErrCacheMissing) {
+		t.Errorf("expected ErrCacheMissing on corrupt JSON, got %v", err)
+	}
+	if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+		t.Errorf("expected corrupt cache file to be deleted; stat err = %v", statErr)
+	}
+}
+
 func TestReadCache_LegacyV1FileHasEmptyHostAndPass(t *testing.T) {
 	// Simulates a v1 cache written before this change: no host/pass keys.
 	p := filepath.Join(t.TempDir(), "cache.json")

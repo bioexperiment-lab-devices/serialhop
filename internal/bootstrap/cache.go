@@ -106,3 +106,32 @@ func ReadCache(path, user string) (Cache, error) {
 	}
 	return c, nil
 }
+
+// ReadCacheRaw reads the cache file at path without checking the user
+// anchor. Same error contract and side effects as ReadCache (missing /
+// corrupt / version-mismatched files return ErrCacheMissing; corrupt
+// and version-mismatched files are also deleted). Used by panel code
+// that wants whatever the running service wrote, regardless of whether
+// the YAML's lab_bridge.user currently matches.
+func ReadCacheRaw(path string) (Cache, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path is paths.ServerInfoCachePath() under DataDir
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Cache{}, ErrCacheMissing
+		}
+		slog.Warn("bootstrap: read cache failed", "path", path, "err", err)
+		return Cache{}, ErrCacheMissing
+	}
+	var c Cache
+	if err := json.Unmarshal(data, &c); err != nil {
+		slog.Warn("bootstrap: cache corrupt; deleting", "path", path, "err", err)
+		_ = os.Remove(path)
+		return Cache{}, ErrCacheMissing
+	}
+	if c.Version != cacheCurrentVersion {
+		slog.Warn("bootstrap: cache version mismatch; deleting", "path", path, "version", c.Version)
+		_ = os.Remove(path)
+		return Cache{}, ErrCacheMissing
+	}
+	return c, nil
+}
