@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.26.0...v0.27.0) (2026-05-16)
+
+
+### Features
+
+* disconnect a single device by port + inline action ([#136](https://github.com/bioexperiment-lab-devices/serialhop/issues/136)) ([6ed73d4](https://github.com/bioexperiment-lab-devices/serialhop/commit/6ed73d48d18f5df7da6b1e60fdac6444e017ba3f))
+
 ## [0.26.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.25.2...v0.26.0) (2026-05-16)
 
 
