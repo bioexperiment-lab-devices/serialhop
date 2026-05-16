@@ -116,6 +116,11 @@ func (ft *fileTail) tick() {
 	}
 	if err := scanner.Err(); err != nil {
 		slog.Warn("panel log scanner error", "err", err)
+		// Advance past the broken segment so the next tick doesn't retry it.
+		// We can't determine where the oversized line ends without re-reading,
+		// so skip to the current EOF. A few trailing lines may be lost, but the
+		// tailer becomes unstuck — which is what the spec (§8.2) requires.
+		pos = st.Size()
 	}
 
 	_ = writeOffsetAtomic(ft.offsetPath, offsetState{

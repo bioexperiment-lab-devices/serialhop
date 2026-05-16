@@ -186,3 +186,42 @@ func TestFileTail_CorruptOffsetFallsBackToEOF(t *testing.T) {
 		t.Fatalf("want only post after corrupt-offset reset; got %+v", got)
 	}
 }
+
+func TestFileTail_LineTooLong(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel.log")
+	offsetPath := filepath.Join(dir, "panel-log.offset")
+
+	// Cold-start: create empty file so the tailer anchors at 0.
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("touch: %v", err)
+	}
+
+	q := newQueue(100)
+	ft := &fileTail{q: q, path: path, offsetPath: offsetPath, stream: "panel", poll: 20 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go ft.run(ctx)
+	time.Sleep(80 * time.Millisecond) // anchor at EOF
+
+	// Write a line larger than the 1 MiB scanner buffer.
+	huge := make([]byte, (1<<20)+10)
+	for i := range huge {
+		huge[i] = 'x'
+	}
+	huge[len(huge)-1] = '\n'
+	if err := os.WriteFile(path, huge, 0o600); err != nil {
+		t.Fatalf("write huge: %v", err)
+	}
+
+	// Wait for the tailer to encounter ErrTooLong and advance.
+	time.Sleep(150 * time.Millisecond)
+
+	// Append a normal line — should ship.
+	writeLines(t, path, `{"msg":"after-huge"}`)
+
+	got := drainQueue(q, 1, 400*time.Millisecond)
+	if len(got) != 1 || !strings.Contains(got[0].line, "after-huge") {
+		t.Fatalf("want only after-huge to ship; got %+v", got)
+	}
+}
