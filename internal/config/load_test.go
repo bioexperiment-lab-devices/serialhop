@@ -302,6 +302,78 @@ log:
 	}
 }
 
+func TestValidateHost(t *testing.T) {
+	cases := []struct {
+		name    string
+		host    string
+		wantErr string // substring; "" = expect nil
+	}{
+		// IPv4
+		{"ipv4 simple", "10.0.0.1", ""},
+		{"ipv4 max octet", "255.255.255.255", ""},
+		{"ipv4 zero", "0.0.0.0", ""},
+		{"ipv4 octet too big", "256.1.1.1", "not a valid IPv4"},
+		{"ipv4 three octets", "1.2.3", "not a valid IPv4"},
+		{"ipv4 five octets", "1.2.3.4.5", "not a valid IPv4"},
+		{"ipv4 leading zero", "192.168.001.001", "not a valid IPv4"},
+		{"ipv4 trailing dot", "1.2.3.4.", "not a valid IPv4"},
+		// IPv6 — explicitly rejected
+		{"ipv6 loopback", "::1", "IPv6 is not supported"},
+		{"ipv6 full", "2001:db8::1", "IPv6 is not supported"},
+		// Hostnames
+		{"hostname single label", "localhost", ""},
+		{"hostname multi label", "lab-bridge.example.com", ""},
+		{"hostname with digits", "host1.example.com", ""},
+		{"hostname uppercase", "Host.Example.COM", ""},
+		{"hostname with hyphen mid", "lab-bridge", ""},
+		// Invalid hostnames
+		{"empty", "", "must be non-empty"},
+		{"leading hyphen", "-foo.example.com", "not a valid hostname or IPv4"},
+		{"trailing hyphen", "foo-.example.com", "not a valid hostname or IPv4"},
+		{"underscore", "foo_bar.example.com", "not a valid hostname or IPv4"},
+		{"space", "foo bar.example.com", "not a valid hostname or IPv4"},
+		{"scheme prefix", "https://example.com", "not a valid hostname or IPv4"},
+		{"with port", "example.com:8080", "not a valid hostname or IPv4"},
+		{"with path", "example.com/api", "not a valid hostname or IPv4"},
+		{"leading dot", ".example.com", "empty label"},
+		{"trailing dot", "example.com.", "empty label"},
+		{"double dot", "example..com", "empty label"},
+		{"label too long", strings.Repeat("a", 64) + ".com", "at most 63 characters"},
+		{"hostname too long", strings.Repeat("a", 250) + ".com", "at most 253 characters"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateHost(tc.host)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateHost(%q) = %v, want nil", tc.host, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("ValidateHost(%q) = nil, want error containing %q", tc.host, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("ValidateHost(%q) = %v, want substring %q", tc.host, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidate_RejectsMalformedHost(t *testing.T) {
+	c := Default()
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.LabBridge.Host = "https://example.com"
+	err := Validate(&c)
+	if err == nil {
+		t.Fatal("expected validation error for malformed host, got nil")
+	}
+	if !strings.Contains(err.Error(), "lab_bridge.host") {
+		t.Errorf("error %q must mention lab_bridge.host", err)
+	}
+}
+
 func TestValidate_FlashingRejectsRelativeBackupDir(t *testing.T) {
 	c := Default()
 	c.LabBridge.Host = "h"

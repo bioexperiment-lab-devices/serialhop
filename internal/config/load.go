@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,8 +45,8 @@ func LoadPartial(path string) (Config, error) {
 
 // Validate checks the config for invariants documented in the spec.
 func Validate(c *Config) error {
-	if c.LabBridge.Host == "" {
-		return fmt.Errorf("lab_bridge.host must be non-empty")
+	if err := ValidateHost(c.LabBridge.Host); err != nil {
+		return err
 	}
 	if c.LabBridge.User == "" {
 		return fmt.Errorf("lab_bridge.user must be non-empty")
@@ -73,4 +75,68 @@ func Validate(c *Config) error {
 		return fmt.Errorf("flashing.backup_dir must be absolute when flashing.enabled (got %q)", c.Flashing.BackupDir)
 	}
 	return nil
+}
+
+// ValidateHost reports whether s is a valid IPv4 address or RFC 1123 hostname.
+// Returns nil on success, otherwise an error explaining why. IPv6 is rejected
+// because the value is interpolated into URL strings ("https://" + host) and
+// passed to chisel without bracketing.
+func ValidateHost(s string) error {
+	if s == "" {
+		return fmt.Errorf("lab_bridge.host must be non-empty")
+	}
+	if ip := net.ParseIP(s); ip != nil {
+		if ip.To4() != nil {
+			return nil
+		}
+		return fmt.Errorf("lab_bridge.host: IPv6 is not supported (got %q)", s)
+	}
+	// If the string is digits and dots only, the user almost certainly intended
+	// an IPv4 address — reject as malformed rather than passing the all-numeric
+	// labels through to the hostname check (which would accept them silently).
+	if onlyDigitsAndDots(s) {
+		return fmt.Errorf("lab_bridge.host: %q is not a valid IPv4 address", s)
+	}
+	if len(s) > 253 {
+		return fmt.Errorf("lab_bridge.host: hostname must be at most 253 characters (got %d)", len(s))
+	}
+	for _, label := range strings.Split(s, ".") {
+		if label == "" {
+			return fmt.Errorf("lab_bridge.host: empty label in %q", s)
+		}
+		if len(label) > 63 {
+			return fmt.Errorf("lab_bridge.host: label %q must be at most 63 characters", label)
+		}
+		if !isValidHostLabel(label) {
+			return fmt.Errorf("lab_bridge.host: %q is not a valid hostname or IPv4 address", s)
+		}
+	}
+	return nil
+}
+
+func isValidHostLabel(label string) bool {
+	if !isAlphaNum(label[0]) || !isAlphaNum(label[len(label)-1]) {
+		return false
+	}
+	for i := 0; i < len(label); i++ {
+		c := label[i]
+		if !isAlphaNum(c) && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isAlphaNum(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+func onlyDigitsAndDots(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && c != '.' {
+			return false
+		}
+	}
+	return true
 }

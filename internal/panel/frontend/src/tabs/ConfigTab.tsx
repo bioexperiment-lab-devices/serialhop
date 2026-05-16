@@ -54,18 +54,37 @@ function cleanForSave(cfg: ConfigDTO): ConfigDTO {
   };
 }
 
-// Lightweight host check used for the on-blur inline validator. Accepts
-// IPv4 dotted-quad (each octet 0-255) or an RFC1123-ish hostname.
-// Server-side ValidateConfig is still authoritative on save.
+// Lightweight host check used for the on-blur inline validator. Mirrors
+// config.ValidateHost on the Go side — accepts IPv4 dotted-quad (each octet
+// 0-255, no leading zeros) or an RFC 1123 hostname (labels 1-63 chars,
+// alphanumerics with internal hyphens, total length <= 253). IPv6 is rejected
+// because the value is used as "https://" + host without bracketing.
+// Server-side ValidateConfig is authoritative on save.
 function validateHostInput(s: string): string | null {
   const v = s.trim();
   if (!v) return "Host is required.";
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) {
-    const ok = v.split(".").every(n => { const x = Number(n); return x >= 0 && x <= 255; });
+  // Strict IPv4: four octets, 0-255, no leading zeros (so "192.168.001.001" is
+  // rejected the same way Go's net.ParseIP rejects it).
+  if (/^\d+(\.\d+){3}$/.test(v)) {
+    const octets = v.split(".");
+    const ok = octets.every(o => {
+      if (o.length > 1 && o[0] === "0") return false;
+      const n = Number(o);
+      return Number.isInteger(n) && n >= 0 && n <= 255;
+    });
     return ok ? null : "Must be a hostname or IPv4 address.";
   }
-  const HOST_RE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-  return HOST_RE.test(v) ? null : "Must be a hostname or IPv4 address.";
+  // Digits-and-dots-only but not a valid IPv4 — almost certainly a malformed
+  // IP attempt; report it that way rather than as a bad hostname.
+  if (/^[\d.]+$/.test(v)) return "Must be a hostname or IPv4 address.";
+  if (v.length > 253) return "Hostname must be at most 253 characters.";
+  const LABEL_RE = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+  for (const label of v.split(".")) {
+    if (!label) return "Must be a hostname or IPv4 address.";
+    if (label.length > 63) return "Hostname labels must be at most 63 characters.";
+    if (!LABEL_RE.test(label)) return "Must be a hostname or IPv4 address.";
+  }
+  return null;
 }
 
 function scrollToField(field: string) {
