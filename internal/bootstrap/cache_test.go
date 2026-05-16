@@ -170,3 +170,72 @@ func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteCache_AndReadCache_RoundTripIdentity(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache()
+	in.Host = "lab-bridge.example.com"
+	in.Pass = "s3cret"
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	got, err := ReadCache(p, "alice")
+	if err != nil {
+		t.Fatalf("ReadCache: %v", err)
+	}
+	if got.Host != "lab-bridge.example.com" {
+		t.Errorf("Host: got %q, want %q", got.Host, "lab-bridge.example.com")
+	}
+	if got.Pass != "s3cret" {
+		t.Errorf("Pass: got %q, want %q", got.Pass, "s3cret")
+	}
+}
+
+func TestWriteCache_HostAndPassJSONKeys(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache()
+	in.Host = "lab-bridge.example.com"
+	in.Pass = "s3cret"
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	data, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{`"host": "lab-bridge.example.com"`, `"pass": "s3cret"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing key/value %s; body:\n%s", want, body)
+		}
+	}
+}
+
+func TestReadCache_LegacyV1FileHasEmptyHostAndPass(t *testing.T) {
+	// Simulates a v1 cache written before this change: no host/pass keys.
+	p := filepath.Join(t.TempDir(), "cache.json")
+	legacy := `{
+		"version": 1,
+		"fetched_at": "2026-05-13T00:00:00Z",
+		"user": "alice",
+		"server_info": {"chisel_listen_port": 7000, "loki_push_url": "", "forward_tunnels": null},
+		"remote_port": 8089,
+		"actual_rest_port": 49283
+	}`
+	if err := os.WriteFile(p, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	got, err := ReadCache(p, "alice")
+	if err != nil {
+		t.Fatalf("ReadCache: %v", err)
+	}
+	if got.Host != "" {
+		t.Errorf("Host: got %q, want empty", got.Host)
+	}
+	if got.Pass != "" {
+		t.Errorf("Pass: got %q, want empty", got.Pass)
+	}
+	if got.ActualRestPort != 49283 {
+		t.Errorf("ActualRestPort: got %d, want 49283", got.ActualRestPort)
+	}
+}

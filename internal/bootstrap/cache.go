@@ -27,10 +27,17 @@ var ErrCacheMissing = errors.New("bootstrap: cache missing")
 // Cache is the on-disk schema for server-info.cache.json. The User
 // field anchors the cache to a specific identity so that changing
 // lab_bridge.user in the YAML invalidates stale data automatically.
+// Host/User/Pass record the lab-bridge identity the running service is
+// using; they are written by SeedCache at service start (before
+// bootstrap.Resolve) so the panel's status-badge probes always probe
+// the credentials the service is actually using, not whatever the YAML
+// currently says.
 type Cache struct {
 	Version        int                  `json:"version"`
 	FetchedAt      string               `json:"fetched_at"`
+	Host           string               `json:"host"`
 	User           string               `json:"user"`
+	Pass           string               `json:"pass"`
 	ServerInfo     labbridge.ServerInfo `json:"server_info"`
 	RemotePort     int                  `json:"remote_port"`
 	ActualRestPort int                  `json:"actual_rest_port"`
