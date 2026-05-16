@@ -135,16 +135,22 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 // CURRENT form vs the on-disk YAML. Returns a categorical outcome the
 // TS side maps to inline errors / confirm modals (spec §5.9).
 func (a *App) VerifyCredentials(newHost, newUser, newPass string) CredsResult {
+	done := a.logAction("verify_credentials", slog.String("host", newHost))
 	old := a.LoadConfigFromDisk()
 	cv := NewCredVerifier(&liveCredVerifier{hc: &http.Client{Timeout: 10 * time.Second}})
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	dec, _ := cv.Decide(ctx, CredChange{
+	dec, err := cv.Decide(ctx, CredChange{
 		OldUser: old.LabBridge.User, OldPass: old.LabBridge.Pass,
 		NewHost: newHost, NewUser: newUser, NewPass: newPass,
 	})
+	if err != nil {
+		done(err)
+	} else {
+		done(nil, slog.String("outcome", dec.Outcome))
+	}
 	return CredsResult{Outcome: dec.Outcome, Detail: dec.Detail}
 }
 
@@ -317,13 +323,20 @@ func (a *App) callCtx() (context.Context, context.CancelFunc) {
 }
 
 func (a *App) GetDevices() DevicesResult {
+	done := a.logAction("get_devices")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.GetDevices(ctx)
-	return DevicesResult{
+	resp, st, err := a.svc.GetDevices(ctx)
+	res := DevicesResult{
 		DevicesResponse: normalizeDevicesResponse(resp),
 		Status:          toTabStatus(st),
 	}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Int("device_count", len(res.Devices)), slog.Bool("reachable", res.Status.Reachable))
+	}
+	return res
 }
 
 func (a *App) Discover() DevicesResult {
@@ -364,14 +377,21 @@ func (a *App) DisconnectAll() DisconnectResult {
 }
 
 func (a *App) GetPorts() PortsResult {
+	done := a.logAction("get_ports")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.GetPorts(ctx)
+	resp, st, err := a.svc.GetPorts(ctx)
 	resp = applyDiscoveryFilterToPorts(resp)
-	return PortsResult{
+	res := PortsResult{
 		DetailedPortsResponse: normalizeDetailedPortsResponse(resp),
 		Status:                toTabStatus(st),
 	}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Int("port_count", len(res.Ports)), slog.Bool("reachable", res.Status.Reachable))
+	}
+	return res
 }
 
 // applyDiscoveryFilterToPorts hides ports that the operator excluded via
@@ -550,6 +570,12 @@ func (a *App) StopLogStream() {
 // swallowed inside appendCrashJournal so the safety net itself can never
 // throw inside a crash-recording path.
 func (a *App) RecordFrontendCrash(message, source, stack string) {
+	slog.Error("frontend crash",
+		"source", source,
+		"message", message,
+		"stack_len", len(stack),
+		"crash_journal_path", paths.PanelCrashJournalPath(),
+	)
 	appendCrashJournal(message, source, stack, version.Base(), time.Now().UTC())
 }
 

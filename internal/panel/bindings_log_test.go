@@ -71,3 +71,16 @@ func TestShortDeviceID_StableShortPrefix(t *testing.T) {
 		t.Errorf("collision: %q == %q", other, got)
 	}
 }
+
+func TestRecordFrontendCrash_EmitsErrorRecord(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	a := &App{}
+	a.RecordFrontendCrash("TypeError: bad thing", "render", "stack trace bytes")
+
+	rec.AssertRecord(t, slog.LevelError, "frontend crash",
+		map[string]any{"source": "render", "message": "TypeError: bad thing"})
+}
