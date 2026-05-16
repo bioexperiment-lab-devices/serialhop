@@ -143,6 +143,16 @@ func runForeground() error {
 	defer cancel()
 
 	hc := &http.Client{Timeout: 30 * time.Second}
+	// Seed the bootstrap cache with the running lab-bridge identity
+	// BEFORE we start trying to resolve, so panel status-lamp probes
+	// (which read the cache) reflect the credentials the foreground run
+	// is actually using.
+	if err := bootstrap.SeedCache(
+		paths.ServerInfoCachePath(),
+		cfg.LabBridge.Host, cfg.LabBridge.User, cfg.LabBridge.Pass,
+	); err != nil {
+		slog.Warn("seed cache failed", "err", err)
+	}
 	resolved, err := bootstrap.Resolve(ctx, bootstrap.Options{
 		HTTPClient: hc,
 		Base:       "https://" + cfg.LabBridge.Host,
