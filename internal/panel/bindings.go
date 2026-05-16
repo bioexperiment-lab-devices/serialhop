@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -185,6 +186,7 @@ func (a *App) RestartService() AdminResult   { return a.runAdmin("restart", "Ser
 // or failed action still recovers to the actual state instead of leaving
 // the lamps gray.
 func (a *App) runAdmin(action, successMsg string) AdminResult {
+	done := a.logAction(action)
 	a.emitEvent("footer:set", map[string]string{"kind": "work", "text": "Working…"})
 	a.markNetProbesChecking()
 	defer a.kickNetProbes()
@@ -192,18 +194,22 @@ func (a *App) runAdmin(action, successMsg string) AdminResult {
 	switch {
 	case errors.Is(err, ErrUserCancelled):
 		a.emitEvent("footer:set", map[string]string{"kind": "info", "text": "Cancelled."})
+		done(nil, slog.Bool("cancelled", true))
 		return AdminResult{Cancelled: true}
 	case err != nil:
 		a.emitEvent("footer:set", map[string]interface{}{"kind": "err", "text": "Failed: " + err.Error()})
+		done(err, slog.Bool("cancelled", false))
 		return AdminResult{ErrorMessage: err.Error()}
 	case errMsg != "":
 		a.emitEvent("footer:set", map[string]interface{}{"kind": "err", "text": "Failed: " + errMsg})
+		done(errors.New(errMsg), slog.Bool("cancelled", false))
 		return AdminResult{ErrorMessage: errMsg}
 	}
 	a.emitEvent("footer:set", map[string]interface{}{
 		"kind": "ok",
 		"text": successMsg + " at " + time.Now().Format("15:04:05"),
 	})
+	done(nil, slog.Bool("cancelled", false))
 	return AdminResult{OK: true}
 }
 
