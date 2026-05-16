@@ -65,8 +65,14 @@ tasks:
       - cp dist/SerialHop.exe tools/installer/payload/SerialHop.exe
       - go run ./tools/buildcmd -o dist/SerialHop-Setup.exe -goos windows -goarch amd64 -tags production -extra-ldflags="-H windowsgui" ./tools/installer
 
+  lint:secrets:
+    desc: Fail if any slog.* call logs a config secret field (cfg.LabBridge.Pass)
+    cmds:
+      - go run ./tools/forbidsecretlog/cmd ./...
+
   test:
     desc: Run all unit tests
+    deps: [lint:secrets]
     cmds:
       - go test ./...
 

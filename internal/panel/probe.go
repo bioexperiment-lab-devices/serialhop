@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -95,7 +96,7 @@ func runTunnelProbe(ctx context.Context, hc *http.Client, base, user, pass, user
 // short-running (a single HTTP request with its own timeout); if fn
 // outlasts a tick, the next tick simply waits — no concurrent invocations.
 // A defer/recover wraps each call so a panic in net/http or JSON parsing
-// doesn't kill the panel; panics are reported via writePanelDebugLog.
+// doesn't kill the panel; panics are reported via slog.Error.
 //
 // A receive on trigger also invokes fn — used by UI-thread callers
 // (action handlers) to refresh a lamp without waiting for the next tick.
@@ -104,7 +105,7 @@ func probeLoop(ctx context.Context, interval time.Duration, trigger <-chan struc
 	call := func() {
 		defer func() {
 			if r := recover(); r != nil {
-				writePanelDebugLog("probe_panic", errors.New(panicString(r)))
+				slog.Error("panel probe_panic", "err", panicString(r))
 			}
 		}()
 		fn(ctx)

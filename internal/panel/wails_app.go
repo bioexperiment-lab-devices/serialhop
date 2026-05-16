@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/panellog"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
@@ -37,6 +39,15 @@ type App struct {
 	serverTrigger chan struct{}
 	tunnelTrigger chan struct{}
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
+	probeDedup    *probeDedup
+	panelLog      *panellog.Manager
+}
+
+// SetPanelLog wires the panellog manager so SaveConfig can update the
+// live log level when cfg.Log.Level changes. Called once at startup by
+// the panel-mode entry point.
+func (a *App) SetPanelLog(m *panellog.Manager) {
+	a.panelLog = m
 }
 
 // NewApp constructs a panel App. Exported so package main can wrap it
@@ -56,6 +67,7 @@ func newAppInternal() *App {
 		serverTrigger: make(chan struct{}, 1),
 		tunnelTrigger: make(chan struct{}, 1),
 		lastService:   winsvc.StateNotInstalled,
+		probeDedup:    newProbeDedup(5 * time.Minute),
 	}
 }
 
@@ -82,6 +94,19 @@ func (a *App) startup(ctx context.Context) {
 		}
 		runServerProbe(ctx, probeHC, base, userAgent, a.lamps)
 		a.emitServerLamp()
+		_, srv, _ := a.lamps.snapshot()
+		switch srv.kind {
+		case lampOK:
+			a.probeDedup.reset("server")
+		default:
+			reason := srv.detail
+			if reason == "" {
+				reason = fmt.Sprintf("kind=%d", srv.kind)
+			}
+			if a.probeDedup.shouldLog("server", reason, time.Now()) {
+				slog.Warn("server probe failed", "reason", reason)
+			}
+		}
 	})
 	go probeLoop(ctx, 30*time.Second, a.tunnelTrigger, func(ctx context.Context) {
 		host, user, pass := a.lamps.probeCreds(paths.ServerInfoCachePath(), paths.ConfigPath())
@@ -91,6 +116,19 @@ func (a *App) startup(ctx context.Context) {
 		}
 		runTunnelProbe(ctx, probeHC, base, user, pass, userAgent, a.lamps)
 		a.emitTunnelLamp()
+		_, _, tun := a.lamps.snapshot()
+		switch tun.kind {
+		case lampOK:
+			a.probeDedup.reset("tunnel")
+		default:
+			reason := tun.detail
+			if reason == "" {
+				reason = fmt.Sprintf("kind=%d", tun.kind)
+			}
+			if a.probeDedup.shouldLog("tunnel", reason, time.Now()) {
+				slog.Warn("tunnel probe failed", "reason", reason)
+			}
+		}
 	})
 	go a.scmPollLoop(ctx)
 }
@@ -211,6 +249,11 @@ func (a *App) scmPollLoop(ctx context.Context) {
 		a.lamps.setService(newSvc)
 		changed := oldSvc.state != newSvc.state || oldSvc.cfgValid != newSvc.cfgValid
 		if first || changed {
+			if changed {
+				slog.Info("scm state change",
+					"from", oldSvc.state, "to", newSvc.state,
+					"cfg_valid", newSvc.cfgValid)
+			}
 			a.emitServiceLamp()
 			a.emitButtonState(newSvc)
 			first = false

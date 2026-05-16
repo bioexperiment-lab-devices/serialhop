@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"time"
 
@@ -39,7 +40,7 @@ func crashJournalPath() string {
 }
 
 // appendCrashJournal writes one JSON line per crash. Best-effort: any
-// error is recorded via writePanelDebugLog and swallowed. A panic guard
+// error is logged via slog.Error and swallowed. A panic guard
 // is in place because this function runs inside React's componentDidCatch
 // path — letting an exception escape would make the safety net itself a
 // new crash source.
@@ -58,12 +59,12 @@ func appendCrashJournal(message, source, stack, ver string, now time.Time) {
 	}
 	line, err := json.Marshal(&entry)
 	if err != nil {
-		writePanelDebugLog("crash_journal_marshal_failed", err)
+		slog.Error("panel crash_journal_marshal_failed", "err", err.Error())
 		return
 	}
 	line = append(line, '\n')
 	if err := appendCapped(path, line, crashJournalMaxBytes); err != nil {
-		writePanelDebugLog("crash_journal_write_failed", err)
+		slog.Error("panel crash_journal_write_failed", "err", err.Error())
 	}
 }
 

@@ -2,9 +2,12 @@ package serial
 
 import (
 	"errors"
+	"log/slog"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 func TestFakePort_ReadAfterFeed(t *testing.T) {
@@ -163,6 +166,41 @@ func TestFakeOpener_OpenWithBaud(t *testing.T) {
 	if got := fp.BaudSequence(); len(got) != 1 || got[0] != 115200 {
 		t.Errorf("BaudSequence after OpenWithBaud: got %v, want [115200]", got)
 	}
+}
+
+func TestFakeOpener_Open_LogsInfo(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	o := NewFakeOpener()
+	o.Add(NewFakePort("COM3"))
+	if _, err := o.Open("COM3"); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	rec.AssertRecord(t, slog.LevelInfo, "serial open", map[string]any{
+		"serial_port": "COM3",
+		"baud":        9600,
+	})
+}
+
+func TestFakeOpener_Open_ErrorLogsError(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	o := NewFakeOpener()
+	_, err := o.Open("COM99")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	rec.AssertRecord(t, slog.LevelError, "serial open failed", map[string]any{
+		"serial_port": "COM99",
+	})
 }
 
 func TestFakeOpener_ListDetailed(t *testing.T) {

@@ -1,11 +1,50 @@
 package chisel
 
 import (
+	"context"
+	"log/slog"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
+
+func TestRun_LogsStartAndExit(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_ = Run(ctx, Config{
+		Server:     "127.0.0.1:1", // unreachable; chisel will fail or ctx will expire
+		User:       "tester",
+		RemotePort: 9000,
+		LocalPort:  9001,
+	})
+
+	rec.AssertRecord(t, slog.LevelInfo, "chisel run starting", map[string]any{"auth": true})
+}
+
+func TestRun_LogsErrorOnInvalidServer(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	ctx := context.Background()
+	_ = Run(ctx, Config{
+		Server:     "invalid", // missing port — SplitHostPort fails
+		User:       "tester",
+		RemotePort: 9000,
+		LocalPort:  9001,
+	})
+
+	rec.AssertRecord(t, slog.LevelError, "chisel run starting", nil)
+}
 
 func TestRemotesIncludesAllForwardTunnels(t *testing.T) {
 	got := buildRemotes(Config{

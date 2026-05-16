@@ -3,12 +3,16 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 func newServer(t *testing.T, serverInfoHandler, clientHandler http.HandlerFunc) *httptest.Server {
@@ -243,4 +247,60 @@ func TestResolve_FetchTimeoutHonored(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected DeadlineExceeded, got %v", err)
 	}
+}
+
+func TestResolve_LogsCacheFallbackOnRemoteFailure(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// Set up: HTTP server that always 500s so live fetch fails.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	cachePath := filepath.Join(dir, "cache.json")
+	cached := Cache{
+		Version:   cacheCurrentVersion,
+		FetchedAt: time.Now().UTC().Format(time.RFC3339),
+		User:      "tester",
+		ServerInfo: labbridge.ServerInfo{
+			ChiselListenPort: 7000,
+			LokiPushURL:      "http://127.0.0.1:3100/loki/api/v1/push",
+		},
+		RemotePort: 9000,
+	}
+	if err := WriteCache(cachePath, cached); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, err := Resolve(ctx, Options{
+		HTTPClient:     srv.Client(),
+		Base:           srv.URL,
+		User:           "tester",
+		Pass:           "",
+		CachePath:      cachePath,
+		UserAgent:      "test/1",
+		FetchTimeout:   100 * time.Millisecond,
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if res.RemotePort != 9000 {
+		t.Errorf("RemotePort = %d, want 9000", res.RemotePort)
+	}
+
+	// Required new INFO records
+	rec.AssertRecord(t, slog.LevelInfo, "bootstrap resolve start",
+		map[string]any{"host": srv.URL})
+	rec.AssertRecord(t, slog.LevelInfo, "bootstrap resolve ok",
+		map[string]any{"host": srv.URL, "source": "cache"})
 }

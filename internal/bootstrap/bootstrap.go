@@ -64,6 +64,7 @@ func (o Options) maxBackoff() time.Duration {
 // then to an exponential-backoff retry loop. See the design doc for
 // the full algorithm.
 func Resolve(ctx context.Context, opts Options) (Resolved, error) {
+	slog.Info("bootstrap resolve start", "host", opts.Base, "user", opts.User)
 	backoff := opts.initialBackoff()
 	maxBackoff := opts.maxBackoff()
 	for {
@@ -72,9 +73,11 @@ func Resolve(ctx context.Context, opts Options) (Resolved, error) {
 			if writeErr := WriteCache(opts.CachePath, cacheFromResolved(res, opts.User)); writeErr != nil {
 				slog.Warn("bootstrap: write cache failed", "err", writeErr)
 			}
+			slog.Info("bootstrap resolve ok", "host", opts.Base, "source", "remote")
 			return res, nil
 		}
 		if ctx.Err() != nil {
+			slog.Error("bootstrap resolve failed", "host", opts.Base, "err", ctx.Err().Error())
 			return Resolved{}, ctx.Err()
 		}
 		slog.Warn("bootstrap: live fetch failed", "err", err, "unauthorized", sawUnauthorized)
@@ -83,12 +86,14 @@ func Resolve(ctx context.Context, opts Options) (Resolved, error) {
 			if c, cacheErr := ReadCache(opts.CachePath, opts.User); cacheErr == nil {
 				slog.Warn("bootstrap: serving cached server-info while live is unavailable",
 					"cache_user", c.User, "fetched_at", c.FetchedAt)
+				slog.Info("bootstrap resolve ok", "host", opts.Base, "source", "cache")
 				return Resolved{ServerInfo: c.ServerInfo, RemotePort: c.RemotePort}, nil
 			}
 		}
 
 		select {
 		case <-ctx.Done():
+			slog.Error("bootstrap resolve failed", "host", opts.Base, "err", ctx.Err().Error())
 			return Resolved{}, ctx.Err()
 		case <-time.After(backoff):
 		}

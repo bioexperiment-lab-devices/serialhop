@@ -1,10 +1,12 @@
 package registry
 
 import (
+	"log/slog"
 	"sync"
 	"testing"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 func newDevice(t *testing.T, id, port string, typeCode byte) *Device {
@@ -201,6 +203,24 @@ func TestDisconnectAll_EmptyRegistry(t *testing.T) {
 	if len(r.List()) != 0 {
 		t.Errorf("registry not empty after DisconnectAll")
 	}
+}
+
+func TestRegistry_Replace_LogsInfoRecord(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	r := New()
+	r.Replace([]*Device{
+		newDevice(t, "pump_1", "COM3", 10),
+		newDevice(t, "valve_1", "COM4", 30),
+	})
+
+	rec.AssertRecord(t, slog.LevelInfo, "registry replace", map[string]any{
+		"count":    2,
+		"previous": 0,
+	})
 }
 
 func TestDisconnectAll_PopulatedRegistry(t *testing.T) {

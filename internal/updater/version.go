@@ -5,6 +5,7 @@ package updater
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 )
@@ -22,10 +23,12 @@ import (
 func IsNewer(remote, local string) (bool, error) {
 	r, err := parse(remote)
 	if err != nil {
+		slog.Warn("updater version parse failed", "input", remote, "err", err.Error())
 		return false, fmt.Errorf("parse remote: %w", err)
 	}
 	l, err := parse(local)
 	if err != nil {
+		slog.Warn("updater version parse failed", "input", local, "err", err.Error())
 		return false, fmt.Errorf("parse local: %w", err)
 	}
 	switch {
@@ -46,10 +49,12 @@ func IsNewer(remote, local string) (bool, error) {
 func Compare(a, b string) (int, error) {
 	ap, err := parse(a)
 	if err != nil {
+		slog.Warn("updater version parse failed", "input", a, "err", err.Error())
 		return 0, fmt.Errorf("parse a: %w", err)
 	}
 	bp, err := parse(b)
 	if err != nil {
+		slog.Warn("updater version parse failed", "input", b, "err", err.Error())
 		return 0, fmt.Errorf("parse b: %w", err)
 	}
 	switch {

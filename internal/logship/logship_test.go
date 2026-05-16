@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 )
 
 func setupTestEnv(t *testing.T) string {
@@ -243,5 +245,76 @@ func TestManagerStartShipperWithEmptyPushURLIsNoOp(t *testing.T) {
 	m.StartShipper("lab-1")
 	if got := m.shipperCountForTest(); got != 0 {
 		t.Fatalf("shipper started with empty push URL; count = %d", got)
+	}
+}
+
+func TestInit_StartsPanelTailer(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SERIALHOP_DATA_DIR", dir)
+	if err := paths.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+
+	prevSlog := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prevSlog) })
+
+	m, err := Init("v", slog.LevelInfo)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		m.Shutdown(ctx)
+	})
+
+	panelLogPath := filepath.Join(dir, "logs", "SerialHop_panel.log")
+
+	// Write a pre-existing line before the tailer has anchored.
+	if err := os.WriteFile(panelLogPath, []byte("pre-existing\n"), 0o600); err != nil {
+		t.Fatalf("write pre-existing: %v", err)
+	}
+
+	// Sleep long enough for the tailer to tick once (poll=500ms) and anchor at EOF.
+	time.Sleep(700 * time.Millisecond)
+
+	// Append the "new" line after the tailer has anchored.
+	f, err := os.OpenFile(panelLogPath, os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // panelLogPath is t.TempDir()-rooted
+	if err != nil {
+		t.Fatalf("open panel log for append: %v", err)
+	}
+	if _, err := f.WriteString("new\n"); err != nil {
+		_ = f.Close()
+		t.Fatalf("append new line: %v", err)
+	}
+	_ = f.Close()
+
+	// Drain records in a 2s loop, expecting "new" but NOT "pre-existing".
+	deadline := time.Now().Add(2 * time.Second)
+	var sawNew, sawPreExisting bool
+	for time.Now().Before(deadline) {
+		recs := m.QueueDrainForTest(10)
+		for _, r := range recs {
+			if r.Stream != "panel" {
+				continue
+			}
+			if strings.Contains(r.Line, "new") {
+				sawNew = true
+			}
+			if strings.Contains(r.Line, "pre-existing") {
+				sawPreExisting = true
+			}
+		}
+		if sawNew {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !sawNew {
+		t.Error("expected to see panel record containing \"new\" but did not")
+	}
+	if sawPreExisting {
+		t.Error("saw panel record containing \"pre-existing\"; cold-start anchor failed")
 	}
 }

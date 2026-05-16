@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/logship"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
@@ -106,15 +108,19 @@ func (a *App) ValidateConfig(cfg config.Config) []FieldError {
 }
 
 func (a *App) SaveConfig(cfg config.Config) SaveResult {
+	done := a.logAction("save_config", slog.String("cfg_host", cfg.LabBridge.Host))
 	if errs := a.ValidateConfig(cfg); len(errs) > 0 {
+		done(nil, slog.Int("field_errors_count", len(errs)))
 		return SaveResult{OK: false, FieldErrors: errs}
 	}
 	p := resolveConfigPath()
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
+		done(err, slog.Int("field_errors_count", 1))
 		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
 	}
 	if err := os.WriteFile(p, data, 0o600); err != nil {
+		done(err, slog.Int("field_errors_count", 1))
 		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
 	}
 	a.emitEvent("config:saved", nil)
@@ -122,6 +128,11 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 	// Server / Tunnel lamps reflect the new credentials immediately
 	// instead of waiting up to 30 s for the next tick.
 	a.kickNetProbes()
+	// Re-apply the log level in case cfg.Log.Level changed.
+	if a.panelLog != nil {
+		a.panelLog.SetLevel(logship.ParseLogLevel(cfg.Log.Level))
+	}
+	done(nil, slog.Int("field_errors_count", 0))
 	return SaveResult{OK: true}
 }
 
@@ -129,16 +140,22 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 // CURRENT form vs the on-disk YAML. Returns a categorical outcome the
 // TS side maps to inline errors / confirm modals (spec §5.9).
 func (a *App) VerifyCredentials(newHost, newUser, newPass string) CredsResult {
+	done := a.logAction("verify_credentials", slog.String("host", newHost))
 	old := a.LoadConfigFromDisk()
 	cv := NewCredVerifier(&liveCredVerifier{hc: &http.Client{Timeout: 10 * time.Second}})
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	dec, _ := cv.Decide(ctx, CredChange{
+	dec, err := cv.Decide(ctx, CredChange{
 		OldUser: old.LabBridge.User, OldPass: old.LabBridge.Pass,
 		NewHost: newHost, NewUser: newUser, NewPass: newPass,
 	})
+	if err != nil {
+		done(err)
+	} else {
+		done(nil, slog.String("outcome", dec.Outcome))
+	}
 	return CredsResult{Outcome: dec.Outcome, Detail: dec.Detail}
 }
 
@@ -185,6 +202,7 @@ func (a *App) RestartService() AdminResult   { return a.runAdmin("restart", "Ser
 // or failed action still recovers to the actual state instead of leaving
 // the lamps gray.
 func (a *App) runAdmin(action, successMsg string) AdminResult {
+	done := a.logAction(action)
 	a.emitEvent("footer:set", map[string]string{"kind": "work", "text": "Working…"})
 	a.markNetProbesChecking()
 	defer a.kickNetProbes()
@@ -192,18 +210,22 @@ func (a *App) runAdmin(action, successMsg string) AdminResult {
 	switch {
 	case errors.Is(err, ErrUserCancelled):
 		a.emitEvent("footer:set", map[string]string{"kind": "info", "text": "Cancelled."})
+		done(nil, slog.Bool("cancelled", true))
 		return AdminResult{Cancelled: true}
 	case err != nil:
 		a.emitEvent("footer:set", map[string]interface{}{"kind": "err", "text": "Failed: " + err.Error()})
+		done(err, slog.Bool("cancelled", false))
 		return AdminResult{ErrorMessage: err.Error()}
 	case errMsg != "":
 		a.emitEvent("footer:set", map[string]interface{}{"kind": "err", "text": "Failed: " + errMsg})
+		done(errors.New(errMsg), slog.Bool("cancelled", false))
 		return AdminResult{ErrorMessage: errMsg}
 	}
 	a.emitEvent("footer:set", map[string]interface{}{
 		"kind": "ok",
 		"text": successMsg + " at " + time.Now().Format("15:04:05"),
 	})
+	done(nil, slog.Bool("cancelled", false))
 	return AdminResult{OK: true}
 }
 
@@ -235,7 +257,16 @@ func (a *App) CancelDownload() {
 	}
 }
 
-func (a *App) InstallUpdate() AdminResult { return ctlInstallEvent(a) }
+func (a *App) InstallUpdate() AdminResult {
+	done := a.logAction("install_update")
+	res := ctlInstallEvent(a)
+	var err error
+	if !res.OK && res.ErrorMessage != "" {
+		err = errors.New(res.ErrorMessage)
+	}
+	done(err, slog.Bool("cancelled", res.Cancelled))
+	return res
+}
 
 // RelaunchPanel spawns a detached copy of the panel exe at the path
 // returned by os.Executable() — which, after a successful update, points
@@ -306,47 +337,75 @@ func (a *App) callCtx() (context.Context, context.CancelFunc) {
 }
 
 func (a *App) GetDevices() DevicesResult {
+	done := a.logAction("get_devices")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.GetDevices(ctx)
-	return DevicesResult{
+	resp, st, err := a.svc.GetDevices(ctx)
+	res := DevicesResult{
 		DevicesResponse: normalizeDevicesResponse(resp),
 		Status:          toTabStatus(st),
 	}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Int("device_count", len(res.Devices)), slog.Bool("reachable", res.Status.Reachable))
+	}
+	return res
 }
 
 func (a *App) Discover() DevicesResult {
+	done := a.logAction("discover")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.Discover(ctx)
-	return DevicesResult{
+	resp, st, err := a.svc.Discover(ctx)
+	res := DevicesResult{
 		DevicesResponse: normalizeDevicesResponse(resp),
 		Status:          toTabStatus(st),
 	}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Int("device_count", len(res.Devices)), slog.Bool("reachable", res.Status.Reachable))
+	}
+	return res
 }
 
 func (a *App) DisconnectAll() DisconnectResult {
+	done := a.logAction("disconnect_all")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.DisconnectAll(ctx)
+	resp, st, err := a.svc.DisconnectAll(ctx)
+	res := DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Bool("reachable", res.Status.Reachable))
+	}
 	if st == StatusOK {
 		a.emitEvent("footer:set", map[string]interface{}{
 			"kind": "ok",
 			"text": fmt.Sprintf("Disconnected %d device(s).", resp.Released),
 		})
 	}
-	return DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
+	return res
 }
 
 func (a *App) GetPorts() PortsResult {
+	done := a.logAction("get_ports")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.GetPorts(ctx)
+	resp, st, err := a.svc.GetPorts(ctx)
 	resp = applyDiscoveryFilterToPorts(resp)
-	return PortsResult{
+	res := PortsResult{
 		DetailedPortsResponse: normalizeDetailedPortsResponse(resp),
 		Status:                toTabStatus(st),
 	}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Int("port_count", len(res.Ports)), slog.Bool("reachable", res.Status.Reachable))
+	}
+	return res
 }
 
 // applyDiscoveryFilterToPorts hides ports that the operator excluded via
@@ -525,6 +584,12 @@ func (a *App) StopLogStream() {
 // swallowed inside appendCrashJournal so the safety net itself can never
 // throw inside a crash-recording path.
 func (a *App) RecordFrontendCrash(message, source, stack string) {
+	slog.Error("frontend crash",
+		"source", source,
+		"message", message,
+		"stack_len", len(stack),
+		"crash_journal_path", paths.PanelCrashJournalPath(),
+	)
 	appendCrashJournal(message, source, stack, version.Base(), time.Now().UTC())
 }
 
@@ -611,7 +676,7 @@ func runUpdateCheckEvent(a *App) {
 	// copies into place at install time.
 	stagingDir, err := paths.EnsurePanelUpdateStagingDir()
 	if err != nil {
-		writePanelDebugLog("update_check_staging_dir_failed", err)
+		slog.Error("panel update_check_staging_dir_failed", "err", err.Error())
 		return
 	}
 
@@ -621,12 +686,12 @@ func runUpdateCheckEvent(a *App) {
 	defer cancel()
 	rel, err := updater.LatestRelease(ctx, a.hc, updater.DefaultReleasesURL, updateUA)
 	if err != nil {
-		writePanelDebugLog("update_check_failed", err)
+		slog.Error("panel update_check_failed", "err", err.Error())
 		return
 	}
 	newer, err := updater.IsNewer(rel.TagName, version.Version)
 	if err != nil {
-		writePanelDebugLog("update_check_parse_failed", err)
+		slog.Error("panel update_check_parse_failed", "err", err.Error())
 		return
 	}
 	if !newer {
@@ -642,7 +707,7 @@ func runUpdateCheckEvent(a *App) {
 		}
 	}
 	if exeAsset == nil {
-		writePanelDebugLog("update_check_no_asset", fmt.Errorf("no SerialHop-v*.exe asset on release %s", rel.TagName))
+		slog.Error("panel update_check_no_asset", "err", fmt.Sprintf("no SerialHop-v*.exe asset on release %s", rel.TagName))
 		return
 	}
 
@@ -687,7 +752,7 @@ func ctlDownloadEvent(a *App) {
 
 	stagingDir, err := paths.EnsurePanelUpdateStagingDir()
 	if err != nil {
-		writePanelDebugLog("update_download_staging_dir_failed", err)
+		slog.Error("panel update_download_staging_dir_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
@@ -736,7 +801,7 @@ func ctlDownloadEvent(a *App) {
 			a.applyUpdateEvent(EvCancel)
 			return
 		}
-		writePanelDebugLog("update_download_failed", err)
+		slog.Error("panel update_download_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
@@ -744,20 +809,20 @@ func ctlDownloadEvent(a *App) {
 	sumsAsset := rel.AssetByName("SHA256SUMS.txt")
 	if sumsAsset == nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog("update_no_sums_asset", fmt.Errorf("release %s has no SHA256SUMS.txt", rel.TagName))
+		slog.Error("panel update_no_sums_asset", "err", fmt.Sprintf("release %s has no SHA256SUMS.txt", rel.TagName))
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
 	body, err := fetchSums(a.hc, updateUA, sumsAsset.BrowserDownloadURL)
 	if err != nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog("update_fetch_sums_failed", err)
+		slog.Error("panel update_fetch_sums_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
 	if err := updater.VerifyFile(dest, body, asset.Name); err != nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog("update_verify_failed", err)
+		slog.Error("panel update_verify_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}

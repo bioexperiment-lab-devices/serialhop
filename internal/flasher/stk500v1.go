@@ -1,8 +1,10 @@
 package flasher
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
@@ -51,6 +53,7 @@ func (c *stkClient) Sync(totalBudget time.Duration) error {
 	if per <= 0 {
 		per = 100 * time.Millisecond
 	}
+	start := time.Now()
 	for i := 0; i < bootloaderSyncRetries; i++ {
 		_ = c.p.Drain(10 * time.Millisecond)
 		if err := c.p.SetReadTimeout(per); err != nil {
@@ -70,10 +73,16 @@ func (c *stkClient) Sync(totalBudget time.Duration) error {
 			out = append(out, buf[:n]...)
 		}
 		if len(out) == 2 && out[0] == stkInSync && out[1] == stkOK {
+			slog.Info("stk500 response", "len", len(out))
+			slog.Debug("stk500 response payload", "hex", hex.EncodeToString(out))
 			return nil
+		}
+		if len(out) > 0 {
+			slog.Warn("stk500 nack", "expected", stkInSync, "got", out[0])
 		}
 		time.Sleep(syncAttemptGap)
 	}
+	slog.Warn("stk500 timeout", "phase", "handshake", "after", time.Since(start))
 	return errBootloaderUnresponsive
 }
 
@@ -120,7 +129,8 @@ func (c *stkClient) ReadPage(timeout time.Duration, n int) ([]byte, error) {
 	}
 	out := make([]byte, 0, n+2)
 	buf := make([]byte, 256)
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
 	for len(out) < n+2 {
 		got, err := c.p.Read(buf)
 		if err != nil {
@@ -128,15 +138,20 @@ func (c *stkClient) ReadPage(timeout time.Duration, n int) ([]byte, error) {
 		}
 		out = append(out, buf[:got]...)
 		if time.Now().After(deadline) && len(out) < n+2 {
+			slog.Warn("stk500 timeout", "phase", "read_page", "after", time.Since(start))
 			return nil, fmt.Errorf("read_page: timeout (got %d of %d bytes)", len(out), n+2)
 		}
 	}
 	if out[0] != stkInSync {
+		slog.Warn("stk500 nack", "expected", stkInSync, "got", out[0])
 		return nil, fmt.Errorf("read_page: expected INSYNC, got 0x%02X", out[0])
 	}
 	if out[n+1] != stkOK {
+		slog.Warn("stk500 nack", "expected", stkOK, "got", out[n+1])
 		return nil, fmt.Errorf("read_page: expected OK, got 0x%02X", out[n+1])
 	}
+	slog.Info("stk500 response", "len", len(out))
+	slog.Debug("stk500 response payload", "hex", hex.EncodeToString(out))
 	return out[1 : n+1], nil
 }
 
@@ -144,7 +159,8 @@ func (c *stkClient) ReadPage(timeout time.Duration, n int) ([]byte, error) {
 func (c *stkClient) expectInSyncOK(timeout time.Duration, op string) error {
 	buf := make([]byte, 2)
 	out := make([]byte, 0, 2)
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
 	for len(out) < 2 {
 		n, err := c.p.Read(buf[:2-len(out)])
 		if err != nil {
@@ -152,15 +168,20 @@ func (c *stkClient) expectInSyncOK(timeout time.Duration, op string) error {
 		}
 		out = append(out, buf[:n]...)
 		if time.Now().After(deadline) && len(out) < 2 {
+			slog.Warn("stk500 timeout", "phase", op, "after", time.Since(start))
 			return fmt.Errorf("%s: timeout waiting for INSYNC/OK (got %d bytes)", op, len(out))
 		}
 	}
 	if out[0] != stkInSync {
+		slog.Warn("stk500 nack", "expected", stkInSync, "got", out[0])
 		return fmt.Errorf("%s: expected INSYNC, got 0x%02X", op, out[0])
 	}
 	if out[1] != stkOK {
+		slog.Warn("stk500 nack", "expected", stkOK, "got", out[1])
 		return fmt.Errorf("%s: expected OK, got 0x%02X", op, out[1])
 	}
+	slog.Info("stk500 response", "len", len(out))
+	slog.Debug("stk500 response payload", "hex", hex.EncodeToString(out))
 	return nil
 }
 
@@ -176,7 +197,8 @@ func (c *stkClient) GetSignOn(timeout time.Duration) (string, error) {
 	buf := make([]byte, 64)
 	out := make([]byte, 0, 16)
 	seenInSync := false
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
 	for {
 		n, err := c.p.Read(buf)
 		if err != nil {
@@ -186,11 +208,13 @@ func (c *stkClient) GetSignOn(timeout time.Duration) (string, error) {
 		if !seenInSync {
 			if len(out) == 0 {
 				if time.Now().After(deadline) {
+					slog.Warn("stk500 timeout", "phase", "sign_on", "after", time.Since(start))
 					return "", errors.New("sign_on: timeout waiting for INSYNC")
 				}
 				continue
 			}
 			if out[0] != stkInSync {
+				slog.Warn("stk500 nack", "expected", stkInSync, "got", out[0])
 				return "", fmt.Errorf("sign_on: expected INSYNC, got 0x%02X", out[0])
 			}
 			out = out[1:]
@@ -198,10 +222,14 @@ func (c *stkClient) GetSignOn(timeout time.Duration) (string, error) {
 		}
 		for i, b := range out {
 			if b == stkOK {
+				fullResp := append([]byte{stkInSync}, out[:i+1]...)
+				slog.Info("stk500 response", "len", len(fullResp))
+				slog.Debug("stk500 response payload", "hex", hex.EncodeToString(fullResp))
 				return string(out[:i]), nil
 			}
 		}
 		if time.Now().After(deadline) {
+			slog.Warn("stk500 timeout", "phase", "sign_on", "after", time.Since(start))
 			return "", errors.New("sign_on: timeout waiting for OK")
 		}
 	}
