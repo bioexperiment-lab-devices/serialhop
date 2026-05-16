@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -25,9 +26,10 @@ type Manager struct {
 
 	levelVar *slog.LevelVar
 
-	slogDisk   *lumberjack.Logger
-	stderrDisk *lumberjack.Logger
-	stderrTap  *stderrTap
+	slogDisk      *lumberjack.Logger
+	stderrDisk    *lumberjack.Logger
+	stderrTap     *stderrTap
+	panelTailStop func()
 
 	q *queue
 
@@ -79,6 +81,13 @@ func Init(version string, level slog.Level) (*Manager, error) {
 		return nil, err
 	}
 	m.stderrTap = tap
+
+	panelLog := paths.PanelLogPath()
+	offsetPath := paths.PanelLogOffsetPath()
+	if panelLog != "" && offsetPath != "" {
+		m.panelTailStop = startPanelTailer(m.q, panelLog, offsetPath, 500*time.Millisecond)
+	}
+
 	return m, nil
 }
 
@@ -106,6 +115,7 @@ func (m *Manager) StartShipper(clientLabel string) {
 	labels := map[string]map[string]string{
 		"stdout": buildLabels(clientLabel, "stdout", m.version),
 		"stderr": buildLabels(clientLabel, "stderr", m.version),
+		"panel":  buildLabels(clientLabel, "panel", m.version),
 	}
 	s := newShipper(m.q, m.pushURL, labels, realClock{})
 
@@ -140,6 +150,11 @@ func (m *Manager) Shutdown(ctx context.Context) {
 	stop := m.shipStop
 	done := m.shipDone
 	m.mu.Unlock()
+
+	if m.panelTailStop != nil {
+		m.panelTailStop()
+		m.panelTailStop = nil
+	}
 
 	if stop != nil {
 		stop()
@@ -176,4 +191,24 @@ func (m *Manager) shipperCountForTest() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.shipperC
+}
+
+// QueueRecordForTest exposes the unexported record shape to cross-package
+// tests without leaking the type. Production code must not use it.
+type QueueRecordForTest struct {
+	Stream string
+	Line   string
+}
+
+// QueueDrainForTest drains up to n records from the ring buffer and
+// returns them in a test-safe shape. Exported only because the
+// integration test that asserts on the panel tailer lives in
+// logship_test (external package). Production code must not use it.
+func (m *Manager) QueueDrainForTest(n int) []QueueRecordForTest {
+	raw := m.q.drainUpTo(n)
+	out := make([]QueueRecordForTest, 0, len(raw))
+	for _, r := range raw {
+		out = append(out, QueueRecordForTest{Stream: r.stream, Line: r.line})
+	}
+	return out
 }
