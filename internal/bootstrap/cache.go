@@ -18,19 +18,27 @@ import (
 
 const cacheCurrentVersion = 1
 
-// ErrCacheMissing is returned by ReadCache when the cache file is
-// absent, unparseable, version-mismatched, or anchored to a different
-// user. Callers should treat all of these the same: fall back to a
-// live fetch.
+// ErrCacheMissing is returned by ReadCache and ReadCacheRaw when the
+// cache file is absent, unparseable, or version-mismatched. ReadCache
+// also returns it when the cache is anchored to a different user;
+// ReadCacheRaw ignores the user anchor. Callers should treat all of
+// these the same: fall back to a live fetch.
 var ErrCacheMissing = errors.New("bootstrap: cache missing")
 
 // Cache is the on-disk schema for server-info.cache.json. The User
 // field anchors the cache to a specific identity so that changing
 // lab_bridge.user in the YAML invalidates stale data automatically.
+// Host/User/Pass record the lab-bridge identity the running service is
+// using; they are written by SeedCache at service start (before
+// bootstrap.Resolve) so the panel's status-badge probes always probe
+// the credentials the service is actually using, not whatever the YAML
+// currently says.
 type Cache struct {
 	Version        int                  `json:"version"`
 	FetchedAt      string               `json:"fetched_at"`
+	Host           string               `json:"host"`
 	User           string               `json:"user"`
+	Pass           string               `json:"pass"`
 	ServerInfo     labbridge.ServerInfo `json:"server_info"`
 	RemotePort     int                  `json:"remote_port"`
 	ActualRestPort int                  `json:"actual_rest_port"`
@@ -38,8 +46,16 @@ type Cache struct {
 
 // WriteCache atomically writes c to path. Any existing file at path is
 // replaced. Permissions are 0600.
+//
+// The cache.Pass field intentionally serializes to JSON: the panel reads
+// this file to learn the running service's lab-bridge credentials so
+// status-lamp probes reflect what the service is actually using, not
+// whatever the YAML currently says. The file is written 0600 in the
+// same DataDir that already holds the plaintext lab_bridge.pass in
+// config.yaml — net new exposure is zero. See spec
+// 2026-05-16-cached-creds-for-status-badges-design.
 func WriteCache(path string, c Cache) error {
-	data, err := json.MarshalIndent(c, "", "  ")
+	data, err := json.MarshalIndent(c, "", "  ") //nolint:gosec // see WriteCache godoc
 	if err != nil {
 		return fmt.Errorf("bootstrap: marshal cache: %w", err)
 	}
@@ -68,12 +84,12 @@ func WriteCache(path string, c Cache) error {
 	return nil
 }
 
-// ReadCache reads the cache file at path and returns it if it is valid
-// and anchored to user. Any failure (missing file, parse error, version
-// mismatch, user mismatch) returns ErrCacheMissing; corrupt or
-// version-mismatched files are deleted as a side effect so the next
-// successful WriteCache starts from a clean slate.
-func ReadCache(path, user string) (Cache, error) {
+// readCacheFile is the shared body of ReadCache / ReadCacheRaw: the
+// I/O, JSON parse, and version check. Errors collapse to ErrCacheMissing
+// per the cache contract; corrupt and version-mismatched files are
+// deleted as a side effect so the next successful WriteCache starts
+// from a clean slate.
+func readCacheFile(path string) (Cache, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is paths.ServerInfoCachePath() under DataDir
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -93,9 +109,31 @@ func ReadCache(path, user string) (Cache, error) {
 		_ = os.Remove(path)
 		return Cache{}, ErrCacheMissing
 	}
+	return c, nil
+}
+
+// ReadCache reads the cache file at path and returns it if it is valid
+// and anchored to user. Any failure (missing file, parse error, version
+// mismatch, user mismatch) returns ErrCacheMissing; corrupt or
+// version-mismatched files are deleted as a side effect.
+func ReadCache(path, user string) (Cache, error) {
+	c, err := readCacheFile(path)
+	if err != nil {
+		return Cache{}, err
+	}
 	if c.User != user {
 		slog.Info("bootstrap: cache user mismatch; ignoring", "cache_user", c.User, "cfg_user", user)
 		return Cache{}, ErrCacheMissing
 	}
 	return c, nil
+}
+
+// ReadCacheRaw reads the cache file at path without checking the user
+// anchor. Same error contract and side effects as ReadCache (missing /
+// corrupt / version-mismatched files return ErrCacheMissing; corrupt
+// and version-mismatched files are also deleted). Used by panel code
+// that wants whatever the running service wrote, regardless of whether
+// the YAML's lab_bridge.user currently matches.
+func ReadCacheRaw(path string) (Cache, error) {
+	return readCacheFile(path)
 }

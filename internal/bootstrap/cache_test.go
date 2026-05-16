@@ -153,7 +153,9 @@ func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
 		`"server_info"`,
 		`"remote_port"`,
 		`"fetched_at"`,
+		`"host"`,
 		`"user"`,
+		`"pass"`,
 		`"version"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -168,5 +170,136 @@ func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("cache JSON contains Go-CamelCase key %s; body:\n%s", unwanted, body)
 		}
+	}
+}
+
+func TestWriteCache_AndReadCache_RoundTripIdentity(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache()
+	in.Host = "lab-bridge.example.com"
+	in.Pass = "s3cret"
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	got, err := ReadCache(p, "alice")
+	if err != nil {
+		t.Fatalf("ReadCache: %v", err)
+	}
+	if got.Host != "lab-bridge.example.com" {
+		t.Errorf("Host: got %q, want %q", got.Host, "lab-bridge.example.com")
+	}
+	if got.User != "alice" {
+		t.Errorf("User: got %q, want %q", got.User, "alice")
+	}
+	if got.Pass != "s3cret" {
+		t.Errorf("Pass: got %q, want %q", got.Pass, "s3cret")
+	}
+}
+
+func TestWriteCache_HostAndPassJSONKeys(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache()
+	in.Host = "lab-bridge.example.com"
+	in.Pass = "s3cret"
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	data, err := os.ReadFile(p) //nolint:gosec // p is t.TempDir() + literal filename
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{`"host": "lab-bridge.example.com"`, `"pass": "s3cret"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing key/value %s; body:\n%s", want, body)
+		}
+	}
+}
+
+func TestReadCacheRaw_ReturnsCacheRegardlessOfUser(t *testing.T) {
+	// Cache is anchored to "alice". Confirm by contrast that ReadCache
+	// rejects a mismatched user — then confirm ReadCacheRaw still returns
+	// the same cache. The contrast is the whole point of ReadCacheRaw.
+	p := filepath.Join(t.TempDir(), "cache.json")
+	in := sampleCache() // User: "alice"
+	if err := WriteCache(p, in); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+	if _, err := ReadCache(p, "bob"); !errors.Is(err, ErrCacheMissing) {
+		t.Fatalf("ReadCache with mismatched user: want ErrCacheMissing, got %v", err)
+	}
+	got, err := ReadCacheRaw(p)
+	if err != nil {
+		t.Fatalf("ReadCacheRaw: %v", err)
+	}
+	if got.User != "alice" {
+		t.Errorf("User: got %q, want %q", got.User, "alice")
+	}
+	if got.RemotePort != in.RemotePort {
+		t.Errorf("RemotePort: got %d, want %d", got.RemotePort, in.RemotePort)
+	}
+}
+
+func TestReadCacheRaw_MissingFileReturnsErrCacheMissing(t *testing.T) {
+	_, err := ReadCacheRaw(filepath.Join(t.TempDir(), "nope.json"))
+	if !errors.Is(err, ErrCacheMissing) {
+		t.Errorf("expected ErrCacheMissing, got %v", err)
+	}
+}
+
+func TestReadCacheRaw_VersionMismatchDeletesAndReturnsMissing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	if err := os.WriteFile(p, []byte(`{"version":99,"user":"alice"}`), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := ReadCacheRaw(p)
+	if !errors.Is(err, ErrCacheMissing) {
+		t.Errorf("expected ErrCacheMissing on version mismatch, got %v", err)
+	}
+	if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+		t.Errorf("expected version-mismatch cache file to be deleted; stat err = %v", statErr)
+	}
+}
+
+func TestReadCacheRaw_CorruptJSONDeletesAndReturnsMissing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.json")
+	if err := os.WriteFile(p, []byte("not json"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := ReadCacheRaw(p)
+	if !errors.Is(err, ErrCacheMissing) {
+		t.Errorf("expected ErrCacheMissing on corrupt JSON, got %v", err)
+	}
+	if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+		t.Errorf("expected corrupt cache file to be deleted; stat err = %v", statErr)
+	}
+}
+
+func TestReadCache_LegacyV1FileHasEmptyHostAndPass(t *testing.T) {
+	// Simulates a v1 cache written before this change: no host/pass keys.
+	p := filepath.Join(t.TempDir(), "cache.json")
+	legacy := `{
+		"version": 1,
+		"fetched_at": "2026-05-13T00:00:00Z",
+		"user": "alice",
+		"server_info": {"chisel_listen_port": 7000, "loki_push_url": "", "forward_tunnels": null},
+		"remote_port": 8089,
+		"actual_rest_port": 49283
+	}`
+	if err := os.WriteFile(p, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	got, err := ReadCache(p, "alice")
+	if err != nil {
+		t.Fatalf("ReadCache: %v", err)
+	}
+	if got.Host != "" {
+		t.Errorf("Host: got %q, want empty", got.Host)
+	}
+	if got.Pass != "" {
+		t.Errorf("Pass: got %q, want empty", got.Pass)
+	}
+	if got.ActualRestPort != 49283 {
+		t.Errorf("ActualRestPort: got %d, want 49283", got.ActualRestPort)
 	}
 }

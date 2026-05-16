@@ -20,9 +20,9 @@ type ServiceCliStatus int
 
 const (
 	StatusOK ServiceCliStatus = iota
-	// StatusUnreachable — the bootstrap cache is missing, anchored to a
-	// different user, or ActualRestPort == 0. The panel doesn't know
-	// where the service is even if it is running. Show:
+	// StatusUnreachable — the bootstrap cache is missing, corrupt /
+	// version-mismatched, or ActualRestPort == 0. The panel doesn't
+	// know where the service is even if it is running. Show:
 	// "Can't reach the local service. It may have just started — wait
 	// a few seconds and click Refresh."
 	StatusUnreachable
@@ -35,19 +35,20 @@ const (
 // ServiceCli is a thin typed HTTP client that talks to the local
 // SerialHop service over 127.0.0.1:<ActualRestPort>. It reads the
 // bootstrap cache per call so a service restart while the panel is
-// open doesn't strand it on a stale port.
+// open doesn't strand it on a stale port. The cache is read unanchored
+// (via ReadCacheRaw): the local REST listener belongs to whichever
+// service is running, regardless of whether the YAML's lab_bridge.user
+// has since been edited.
 type ServiceCli struct {
 	cachePath string
-	user      string
 	hc        *http.Client
 }
 
-// NewServiceCli returns a client anchored to the given bootstrap-cache
-// path + lab-bridge user. The HTTP client has a 5s per-call timeout.
-func NewServiceCli(cachePath, user string) *ServiceCli {
+// NewServiceCli returns a client anchored only to the given bootstrap-
+// cache path. The HTTP client has a 5 s per-call timeout.
+func NewServiceCli(cachePath string) *ServiceCli {
 	return &ServiceCli{
 		cachePath: cachePath,
-		user:      user,
 		hc:        &http.Client{Timeout: 5 * time.Second},
 	}
 }
@@ -55,7 +56,7 @@ func NewServiceCli(cachePath, user string) *ServiceCli {
 // baseURL reads the cache and returns "http://127.0.0.1:<port>".
 // Returns StatusUnreachable on any cache-read failure or zero port.
 func (c *ServiceCli) baseURL() (string, ServiceCliStatus) {
-	cache, err := bootstrap.ReadCache(c.cachePath, c.user)
+	cache, err := bootstrap.ReadCacheRaw(c.cachePath)
 	if err != nil {
 		return "", StatusUnreachable
 	}

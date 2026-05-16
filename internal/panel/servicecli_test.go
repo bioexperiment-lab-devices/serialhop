@@ -45,7 +45,7 @@ func TestServiceCli_GetDevices_OK(t *testing.T) {
 	defer srv.Close()
 
 	port := mustPortFromURL(t, srv.URL)
-	cli := NewServiceCli(seedCache(t, port), "alice")
+	cli := NewServiceCli(seedCache(t, port))
 	resp, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -59,7 +59,7 @@ func TestServiceCli_GetDevices_OK(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_CacheMissingReturnsUnreachable(t *testing.T) {
-	cli := NewServiceCli(filepath.Join(t.TempDir(), "missing.json"), "alice")
+	cli := NewServiceCli(filepath.Join(t.TempDir(), "missing.json"))
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -70,7 +70,7 @@ func TestServiceCli_GetDevices_CacheMissingReturnsUnreachable(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_ActualPortZeroReturnsUnreachable(t *testing.T) {
-	cli := NewServiceCli(seedCache(t, 0), "alice")
+	cli := NewServiceCli(seedCache(t, 0))
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -82,7 +82,7 @@ func TestServiceCli_GetDevices_ActualPortZeroReturnsUnreachable(t *testing.T) {
 
 func TestServiceCli_GetDevices_ConnectionRefusedReturnsServiceDown(t *testing.T) {
 	// Use a port we know nothing is listening on.
-	cli := NewServiceCli(seedCache(t, 1), "alice") // port 1 reserved → conn refused
+	cli := NewServiceCli(seedCache(t, 1)) // port 1 reserved → conn refused
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -101,10 +101,41 @@ func TestServiceCli_Discover_PostsToDiscover(t *testing.T) {
 	}))
 	defer srv.Close()
 	port := mustPortFromURL(t, srv.URL)
-	cli := NewServiceCli(seedCache(t, port), "alice")
+	cli := NewServiceCli(seedCache(t, port))
 	_, status, err := cli.Discover(context.Background())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
+	}
+	if status != StatusOK {
+		t.Errorf("status: got %v, want StatusOK", status)
+	}
+}
+
+func TestServiceCli_GetDevices_IgnoresCacheUserMismatch(t *testing.T) {
+	// The property under test: ServiceCli reaches the local REST port
+	// regardless of who the cache claims to be anchored to. The cache
+	// here is anchored to "alice"; we prove this matters by first
+	// confirming that the OLD anchored read path (bootstrap.ReadCache
+	// with a mismatched user) rejects the file, and then that the new
+	// ServiceCli (which uses ReadCacheRaw) talks to the server anyway.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(api.DevicesResponse{Devices: []api.DeviceDTO{{ID: "x"}}})
+	}))
+	defer srv.Close()
+	port := mustPortFromURL(t, srv.URL)
+	cachePath := seedCache(t, port) // cache anchored to "alice"
+
+	// Counterfactual: the anchored read with a mismatched user must
+	// reject the cache. If this stops being true, the contrast in this
+	// test is meaningless and the test name lies.
+	if _, err := bootstrap.ReadCache(cachePath, "bob"); err == nil {
+		t.Fatalf("ReadCache with mismatched user: want ErrCacheMissing, got nil")
+	}
+
+	cli := NewServiceCli(cachePath)
+	_, status, err := cli.GetDevices(context.Background())
+	if err != nil {
+		t.Fatalf("GetDevices: %v", err)
 	}
 	if status != StatusOK {
 		t.Errorf("status: got %v, want StatusOK", status)
