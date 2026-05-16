@@ -217,7 +217,7 @@ Non-binding panel sites:
 - `wails_app.go::startup` — emits `panel session start` (via `panellog.Init`) plus DEBUG `startup completed`.
 - `wails_app.go::shutdown` — emits `panel session end`.
 - `scmPollLoop` — INFO only on state transition: `slog.Info("scm state change", "from", old.state, "to", new.state, "cfg_valid", new.cfgValid)`. No log on no-change ticks.
-- `probeLoop` for server and tunnel — WARN on the **first** failure after a streak of successes (or after probe-reason change), then dedupes: subsequent identical failures within 5 minutes are silent. INFO on recovery (red → green).
+- `probeLoop` for server and tunnel — WARN on the **first** failure after a streak of successes (or after probe-reason change), then dedupes: subsequent identical failures within 5 minutes are silent. Recovery is implicit (the WARN stream simply stops); no separate recovery INFO is emitted to avoid re-firing on every green probe tick. The lamp tone change in `status:lamp` already signals recovery to the SPA, and the SCM-equivalent transition is captured separately in `scmPollLoop`.
 - `appendCrashJournal` — keeps writing the plaintext journal (unchanged behavior); additionally calls `slog.Error("frontend crash", "source", source, "message", message, "stack_len", len(stack))`. Stack body is **not** included in the log line (it's already in the crash journal); a `crash_journal_path` attribute points the operator at the local file.
 - `writePanelDebugLog` — **removed**. The five remaining call sites switch to direct `slog.Error("…", "err", err)` calls.
 
