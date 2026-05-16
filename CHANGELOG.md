@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.25.0...v0.25.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **config:** validate lab_bridge.host as IPv4 or RFC 1123 hostname ([#131](https://github.com/bioexperiment-lab-devices/serialhop/issues/131)) ([78e8a64](https://github.com/bioexperiment-lab-devices/serialhop/commit/78e8a64077089a704cce2a35f6a2962688591eb6))
+* **panel:** allow clearing integer config fields ([#129](https://github.com/bioexperiment-lab-devices/serialhop/issues/129)) ([aff5b11](https://github.com/bioexperiment-lab-devices/serialhop/commit/aff5b11d5f4b74f2c10e596e88ec1dc06ea4ef68))
+
 ## [0.25.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.24.0...v0.25.0) (2026-05-15)
 
 
