@@ -75,21 +75,21 @@ func (a *App) startup(ctx context.Context) {
 	probeHC := &http.Client{Timeout: 30 * time.Second}
 	userAgent := "SerialHop/" + version.Base() + " (status-probe)"
 	go probeLoop(ctx, 30*time.Second, a.serverTrigger, func(ctx context.Context) {
-		c, _ := config.LoadPartial(paths.ConfigPath())
+		host, _, _ := a.lamps.probeCreds(paths.ServerInfoCachePath(), paths.ConfigPath())
 		base := ""
-		if c.LabBridge.Host != "" {
-			base = "https://" + c.LabBridge.Host
+		if host != "" {
+			base = "https://" + host
 		}
 		runServerProbe(ctx, probeHC, base, userAgent, a.lamps)
 		a.emitServerLamp()
 	})
 	go probeLoop(ctx, 30*time.Second, a.tunnelTrigger, func(ctx context.Context) {
-		c, _ := config.LoadPartial(paths.ConfigPath())
+		host, user, pass := a.lamps.probeCreds(paths.ServerInfoCachePath(), paths.ConfigPath())
 		base := ""
-		if c.LabBridge.Host != "" {
-			base = "https://" + c.LabBridge.Host
+		if host != "" {
+			base = "https://" + host
 		}
-		runTunnelProbe(ctx, probeHC, base, c.LabBridge.User, c.LabBridge.Pass, userAgent, a.lamps)
+		runTunnelProbe(ctx, probeHC, base, user, pass, userAgent, a.lamps)
 		a.emitTunnelLamp()
 	})
 	go a.scmPollLoop(ctx)
