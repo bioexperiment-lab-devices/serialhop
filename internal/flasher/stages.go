@@ -33,29 +33,34 @@ func (s *runState) skipDownstream(stages ...string) {
 // runPreflight validates the request shape and returns true on success.
 // On failure it populates res.Outcome and marks downstream stages skipped.
 func runPreflight(s *runState) bool {
+	slog.Info("flasher stage start", "stage", "preflight", "port", s.port)
 	start := time.Now()
 	if len(s.req.Firmware) == 0 {
 		s.recordStage("preflight", "failed", "firmware empty", time.Since(start))
 		s.res.Outcome = OutcomeFailedPreflight
 		s.skipDownstream("backup", "erase", "program", "verify", "test", "rollback")
+		slog.Error("flasher stage failed", "stage", "preflight", "dur", time.Since(start), "port", s.port, "err", "firmware empty")
 		return false
 	}
 	maxSize := avr.FlashSize - avr.BootloaderSize
 	if len(s.req.Firmware) > maxSize {
-		s.recordStage("preflight", "failed",
-			fmt.Sprintf("firmware %d bytes exceeds user space %d", len(s.req.Firmware), maxSize),
-			time.Since(start))
+		errMsg := fmt.Sprintf("firmware %d bytes exceeds user space %d", len(s.req.Firmware), maxSize)
+		s.recordStage("preflight", "failed", errMsg, time.Since(start))
 		s.res.Outcome = OutcomeFailedPreflight
 		s.skipDownstream("backup", "erase", "program", "verify", "test", "rollback")
+		slog.Error("flasher stage failed", "stage", "preflight", "dur", time.Since(start), "port", s.port, "err", errMsg)
 		return false
 	}
 	if (len(s.req.TestCommand) == 0) != (len(s.req.ExpectedResponse) == 0) {
-		s.recordStage("preflight", "failed", "test_command and expected_response must both be set or both omitted", time.Since(start))
+		errMsg := "test_command and expected_response must both be set or both omitted"
+		s.recordStage("preflight", "failed", errMsg, time.Since(start))
 		s.res.Outcome = OutcomeFailedPreflight
 		s.skipDownstream("backup", "erase", "program", "verify", "test", "rollback")
+		slog.Error("flasher stage failed", "stage", "preflight", "dur", time.Since(start), "port", s.port, "err", errMsg)
 		return false
 	}
 	s.recordStage("preflight", "ok", "", time.Since(start))
+	slog.Info("flasher stage ok", "stage", "preflight", "dur", time.Since(start), "port", s.port)
 	return true
 }
 
@@ -65,6 +70,7 @@ func runPreflight(s *runState) bool {
 // Intel HEX, saved to disk, and the inline copy stored on s.res.BackupHex.
 // On any failure, marks downstream stages as skipped and returns false.
 func runBackup(s *runState, c *stkClient) bool {
+	slog.Info("flasher stage start", "stage", "backup", "port", s.port)
 	start := time.Now()
 	img := make([]byte, avr.FlashSize)
 	for off := 0; off < avr.FlashSize; off += avr.PageSize {
@@ -73,6 +79,7 @@ func runBackup(s *runState, c *stkClient) bool {
 			slog.Info("flash_stage", "port", s.port, "stage", "backup", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
 			s.res.Outcome = OutcomeFailedBackup
 			s.skipDownstream("erase", "program", "verify", "test", "rollback")
+			slog.Error("flasher stage failed", "stage", "backup", "dur", time.Since(start), "port", s.port, "err", "load_address: "+err.Error())
 			return false
 		}
 		page, err := c.ReadPage(s.req.Timeout, avr.PageSize)
@@ -81,6 +88,7 @@ func runBackup(s *runState, c *stkClient) bool {
 			slog.Info("flash_stage", "port", s.port, "stage", "backup", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
 			s.res.Outcome = OutcomeFailedBackup
 			s.skipDownstream("erase", "program", "verify", "test", "rollback")
+			slog.Error("flasher stage failed", "stage", "backup", "dur", time.Since(start), "port", s.port, "err", "read_page: "+err.Error())
 			return false
 		}
 		copy(img[off:], page)
@@ -88,6 +96,7 @@ func runBackup(s *runState, c *stkClient) bool {
 	s.backupBytes = img
 	s.recordStage("backup", "ok", "", time.Since(start))
 	slog.Info("flash_stage", "port", s.port, "stage", "backup", "status", "ok", "duration_ms", time.Since(start).Milliseconds())
+	slog.Info("flasher stage ok", "stage", "backup", "dur", time.Since(start), "port", s.port)
 	return true
 }
 
@@ -97,15 +106,20 @@ func runBackup(s *runState, c *stkClient) bool {
 // retained in the public state machine to keep the response shape stable —
 // see bogdan-firmware/docs/firmware-backup-and-flash.md §3 and §8.
 func runErase(s *runState, c *stkClient) bool {
+	slog.Info("flasher stage start", "stage", "erase", "port", s.port)
+	start := time.Now()
 	s.recordStage("erase", "ok", "", 0)
 	slog.Info("flash_stage", "port", s.port, "stage", "erase", "status", "ok", "duration_ms", 0)
+	slog.Info("flasher stage ok", "stage", "erase", "dur", time.Since(start), "port", s.port)
 	return true
 }
 
 // runProgram writes the request's firmware image one page at a time.
 func runProgram(s *runState, c *stkClient) bool {
+	slog.Info("flasher stage start", "stage", "program", "port", s.port)
 	start := time.Now()
 	img := s.req.Firmware
+	pageIdx := 0
 	for off := 0; off < len(img); off += avr.PageSize {
 		end := off + avr.PageSize
 		if end > len(img) {
@@ -121,19 +135,25 @@ func runProgram(s *runState, c *stkClient) bool {
 			copy(padded, page)
 			page = padded
 		}
-		if err := c.LoadAddress(s.req.Timeout, uint16(off/2)); err != nil {
+		addrWord := uint16(off / 2)
+		if err := c.LoadAddress(s.req.Timeout, addrWord); err != nil {
 			s.recordStage("program", "failed", "load_address: "+err.Error(), time.Since(start))
 			slog.Info("flash_stage", "port", s.port, "stage", "program", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+			slog.Error("flasher stage failed", "stage", "program", "dur", time.Since(start), "port", s.port, "err", "load_address: "+err.Error())
 			return false
 		}
 		if err := c.ProgPage(s.req.Timeout, page); err != nil {
 			s.recordStage("program", "failed", "prog_page: "+err.Error(), time.Since(start))
 			slog.Info("flash_stage", "port", s.port, "stage", "program", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+			slog.Error("flasher stage failed", "stage", "program", "dur", time.Since(start), "port", s.port, "err", "prog_page: "+err.Error())
 			return false
 		}
+		slog.Debug("flasher page", "page", pageIdx, "bytes", len(page), "addr_word", addrWord)
+		pageIdx++
 	}
 	s.recordStage("program", "ok", "", time.Since(start))
 	slog.Info("flash_stage", "port", s.port, "stage", "program", "status", "ok", "duration_ms", time.Since(start).Milliseconds())
+	slog.Info("flasher stage ok", "stage", "program", "dur", time.Since(start), "port", s.port)
 	return true
 }
 
@@ -141,39 +161,49 @@ func runProgram(s *runState, c *stkClient) bool {
 // source image. Returns true on byte-exact match. On mismatch, populates
 // the verify stage with FirstMismatchOffset and returns false.
 func runVerify(s *runState, c *stkClient) bool {
+	slog.Info("flasher stage start", "stage", "verify", "port", s.port)
 	start := time.Now()
 	img := s.req.Firmware
 	readback := make([]byte, 0, len(img))
+	pageIdx := 0
 	for off := 0; off < len(img); off += avr.PageSize {
-		if err := c.LoadAddress(s.req.Timeout, uint16(off/2)); err != nil {
+		addrWord := uint16(off / 2)
+		if err := c.LoadAddress(s.req.Timeout, addrWord); err != nil {
 			s.recordStage("verify", "failed", "load_address: "+err.Error(), time.Since(start))
 			slog.Info("flash_stage", "port", s.port, "stage", "verify", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+			slog.Error("flasher stage failed", "stage", "verify", "dur", time.Since(start), "port", s.port, "err", "load_address: "+err.Error())
 			return false
 		}
 		page, err := c.ReadPage(s.req.Timeout, avr.PageSize)
 		if err != nil {
 			s.recordStage("verify", "failed", "read_page: "+err.Error(), time.Since(start))
 			slog.Info("flash_stage", "port", s.port, "stage", "verify", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+			slog.Error("flasher stage failed", "stage", "verify", "dur", time.Since(start), "port", s.port, "err", "read_page: "+err.Error())
 			return false
 		}
+		slog.Debug("flasher verify page", "page", pageIdx, "bytes", len(page), "addr_word", addrWord)
 		readback = append(readback, page...)
+		pageIdx++
 	}
 	for i, b := range img {
 		if readback[i] != b {
 			off := i
+			errMsg := fmt.Sprintf("mismatch at offset 0x%04X (got %02X, want %02X)", off, readback[i], b)
 			st := StageResult{
 				Status:              "failed",
 				Duration:            time.Since(start),
-				Error:               fmt.Sprintf("mismatch at offset 0x%04X (got %02X, want %02X)", off, readback[i], b),
+				Error:               errMsg,
 				FirstMismatchOffset: &off,
 			}
 			s.res.Stages["verify"] = st
 			slog.Info("flash_stage", "port", s.port, "stage", "verify", "status", "failed", "duration_ms", time.Since(start).Milliseconds(), "first_mismatch_offset", fmt.Sprintf("0x%04X", off))
+			slog.Error("flasher stage failed", "stage", "verify", "dur", time.Since(start), "port", s.port, "err", errMsg)
 			return false
 		}
 	}
 	s.recordStage("verify", "ok", "", time.Since(start))
 	slog.Info("flash_stage", "port", s.port, "stage", "verify", "status", "ok", "duration_ms", time.Since(start).Milliseconds())
+	slog.Info("flasher stage ok", "stage", "verify", "dur", time.Since(start), "port", s.port)
 	return true
 }
 
@@ -184,6 +214,7 @@ func runVerify(s *runState, c *stkClient) bool {
 // step inside rollback, outcome is failed_no_recovery and the backup file is
 // locked (renamed with -LOCKED-).
 func runRollback(s *runState, c *stkClient, p labserial.Port) (*Result, error) {
+	slog.Info("flasher stage start", "stage", "rollback", "port", s.port)
 	start := time.Now()
 	st := StageResult{Status: "ok", VerifyStatus: "ok"}
 
@@ -272,6 +303,7 @@ func runRollback(s *runState, c *stkClient, p labserial.Port) (*Result, error) {
 		s.res.Outcome = OutcomeRolledBackVerifyFailed
 	}
 	slog.Info("flash_stage", "port", s.port, "stage", "rollback", "status", "ok", "duration_ms", time.Since(start).Milliseconds(), "verify_status", st.VerifyStatus)
+	slog.Info("flasher stage ok", "stage", "rollback", "dur", time.Since(start), "port", s.port, "trigger", trigger)
 	return s.res, nil
 }
 
@@ -292,6 +324,7 @@ func rollbackFailed(s *runState, st StageResult, start time.Time, errMsg string)
 	} else {
 		s.res.RecoveryHint = "Rollback failed: " + errMsg
 	}
+	slog.Error("flasher stage failed", "stage", "rollback", "dur", time.Since(start), "port", s.port, "err", errMsg)
 	return s.res, nil
 }
 
@@ -300,19 +333,23 @@ func rollbackFailed(s *runState, st StageResult, start time.Time, errMsg string)
 // len(ExpectedResponse) bytes. Compares exact-match. Returns true on match,
 // false on any failure (read error, mismatch, length mismatch).
 func runTest(s *runState, c *stkClient, p labserial.Port) bool {
+	slog.Info("flasher stage start", "stage", "test", "port", s.port)
 	start := time.Now()
 	if len(s.req.TestCommand) == 0 {
 		s.res.Stages["test"] = StageResult{Status: "skipped"}
+		slog.Info("flasher stage ok", "stage", "test", "dur", time.Since(start), "port", s.port, "skipped", true)
 		return true
 	}
 	if err := c.LeaveProgMode(s.req.Timeout); err != nil {
 		s.recordStage("test", "failed", "leave_progmode: "+err.Error(), time.Since(start))
 		slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+		slog.Error("flasher stage failed", "stage", "test", "dur", time.Since(start), "port", s.port, "err", "leave_progmode: "+err.Error())
 		return false
 	}
 	if err := p.SetBaudRate(avr.TargetBaud); err != nil {
 		s.recordStage("test", "failed", "set_baud: "+err.Error(), time.Since(start))
 		slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+		slog.Error("flasher stage failed", "stage", "test", "dur", time.Since(start), "port", s.port, "err", "set_baud: "+err.Error())
 		return false
 	}
 	time.Sleep(s.req.PostOpenSettle)
@@ -321,6 +358,7 @@ func runTest(s *runState, c *stkClient, p labserial.Port) bool {
 	if _, err := p.Write(s.req.TestCommand); err != nil {
 		s.recordStage("test", "failed", "write: "+err.Error(), time.Since(start))
 		slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+		slog.Error("flasher stage failed", "stage", "test", "dur", time.Since(start), "port", s.port, "err", "write: "+err.Error())
 		return false
 	}
 
@@ -329,6 +367,7 @@ func runTest(s *runState, c *stkClient, p labserial.Port) bool {
 	if err := p.SetReadTimeout(s.req.Timeout); err != nil {
 		s.recordStage("test", "failed", "set_read_timeout: "+err.Error(), time.Since(start))
 		slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+		slog.Error("flasher stage failed", "stage", "test", "dur", time.Since(start), "port", s.port, "err", "set_read_timeout: "+err.Error())
 		return false
 	}
 	deadline := time.Now().Add(s.req.Timeout)
@@ -341,6 +380,7 @@ func runTest(s *runState, c *stkClient, p labserial.Port) bool {
 			}
 			s.recordStage("test", "failed", "read: "+err.Error(), time.Since(start))
 			slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+			slog.Error("flasher stage failed", "stage", "test", "dur", time.Since(start), "port", s.port, "err", "read: "+err.Error())
 			return false
 		}
 		received = append(received, buf[:n]...)
@@ -354,14 +394,15 @@ func runTest(s *runState, c *stkClient, p labserial.Port) bool {
 		Sent: s.req.TestCommand, Expected: expected, Received: received, Match: match,
 	}
 	if !match {
-		s.recordStage("test", "failed",
-			fmt.Sprintf("test response mismatch (got %d bytes, want %d)", len(received), len(expected)),
-			time.Since(start))
+		errMsg := fmt.Sprintf("test response mismatch (got %d bytes, want %d)", len(received), len(expected))
+		s.recordStage("test", "failed", errMsg, time.Since(start))
 		slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
+		slog.Error("flasher stage failed", "stage", "test", "dur", time.Since(start), "port", s.port, "err", errMsg)
 		return false
 	}
 	s.recordStage("test", "ok", "", time.Since(start))
 	slog.Info("flash_stage", "port", s.port, "stage", "test", "status", "ok", "duration_ms", time.Since(start).Milliseconds())
+	slog.Info("flasher stage ok", "stage", "test", "dur", time.Since(start), "port", s.port)
 	return true
 }
 

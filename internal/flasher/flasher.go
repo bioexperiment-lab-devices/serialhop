@@ -140,6 +140,13 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 	}
 	defer f.mu.Unlock()
 
+	flashStart := time.Now()
+	slog.Info("flasher start",
+		"port", port,
+		"port_id", shortID(port),
+		"firmware_bytes", len(req.Firmware),
+	)
+
 	s := &runState{
 		port: port,
 		req:  req,
@@ -251,6 +258,7 @@ func (f *flasherImpl) Flash(ctx context.Context, port string, req Request) (*Res
 	s.res.Outcome = OutcomeSuccess
 
 	_ = PruneBackups(f.backupDir, port, f.keepN)
+	slog.Info("flasher complete", "dur", time.Since(flashStart), "port", port)
 	logFlashSummary(s, port)
 	return s.res, nil
 }
