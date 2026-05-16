@@ -16,6 +16,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/panellog"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
@@ -39,6 +40,14 @@ type App struct {
 	tunnelTrigger chan struct{}
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
 	probeDedup    *probeDedup
+	panelLog      *panellog.Manager
+}
+
+// SetPanelLog wires the panellog manager so SaveConfig can update the
+// live log level when cfg.Log.Level changes. Called once at startup by
+// the panel-mode entry point.
+func (a *App) SetPanelLog(m *panellog.Manager) {
+	a.panelLog = m
 }
 
 // NewApp constructs a panel App. Exported so package main can wrap it

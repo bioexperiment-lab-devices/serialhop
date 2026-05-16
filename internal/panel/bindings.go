@@ -20,6 +20,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/logship"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
@@ -127,6 +128,10 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 	// Server / Tunnel lamps reflect the new credentials immediately
 	// instead of waiting up to 30 s for the next tick.
 	a.kickNetProbes()
+	// Re-apply the log level in case cfg.Log.Level changed.
+	if a.panelLog != nil {
+		a.panelLog.SetLevel(logship.ParseLogLevel(cfg.Log.Level))
+	}
 	done(nil, slog.Int("field_errors_count", 0))
 	return SaveResult{OK: true}
 }
