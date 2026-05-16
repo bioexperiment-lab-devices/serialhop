@@ -215,10 +215,16 @@ func TestWriteCache_HostAndPassJSONKeys(t *testing.T) {
 }
 
 func TestReadCacheRaw_ReturnsCacheRegardlessOfUser(t *testing.T) {
+	// Cache is anchored to "alice". Confirm by contrast that ReadCache
+	// rejects a mismatched user — then confirm ReadCacheRaw still returns
+	// the same cache. The contrast is the whole point of ReadCacheRaw.
 	p := filepath.Join(t.TempDir(), "cache.json")
 	in := sampleCache() // User: "alice"
 	if err := WriteCache(p, in); err != nil {
 		t.Fatalf("WriteCache: %v", err)
+	}
+	if _, err := ReadCache(p, "bob"); !errors.Is(err, ErrCacheMissing) {
+		t.Fatalf("ReadCache with mismatched user: want ErrCacheMissing, got %v", err)
 	}
 	got, err := ReadCacheRaw(p)
 	if err != nil {

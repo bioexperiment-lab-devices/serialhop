@@ -75,12 +75,12 @@ func WriteCache(path string, c Cache) error {
 	return nil
 }
 
-// ReadCache reads the cache file at path and returns it if it is valid
-// and anchored to user. Any failure (missing file, parse error, version
-// mismatch, user mismatch) returns ErrCacheMissing; corrupt or
-// version-mismatched files are deleted as a side effect so the next
-// successful WriteCache starts from a clean slate.
-func ReadCache(path, user string) (Cache, error) {
+// readCacheFile is the shared body of ReadCache / ReadCacheRaw: the
+// I/O, JSON parse, and version check. Errors collapse to ErrCacheMissing
+// per the cache contract; corrupt and version-mismatched files are
+// deleted as a side effect so the next successful WriteCache starts
+// from a clean slate.
+func readCacheFile(path string) (Cache, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is paths.ServerInfoCachePath() under DataDir
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -99,6 +99,18 @@ func ReadCache(path, user string) (Cache, error) {
 		slog.Warn("bootstrap: cache version mismatch; deleting", "path", path, "version", c.Version)
 		_ = os.Remove(path)
 		return Cache{}, ErrCacheMissing
+	}
+	return c, nil
+}
+
+// ReadCache reads the cache file at path and returns it if it is valid
+// and anchored to user. Any failure (missing file, parse error, version
+// mismatch, user mismatch) returns ErrCacheMissing; corrupt or
+// version-mismatched files are deleted as a side effect.
+func ReadCache(path, user string) (Cache, error) {
+	c, err := readCacheFile(path)
+	if err != nil {
+		return Cache{}, err
 	}
 	if c.User != user {
 		slog.Info("bootstrap: cache user mismatch; ignoring", "cache_user", c.User, "cfg_user", user)
@@ -114,24 +126,5 @@ func ReadCache(path, user string) (Cache, error) {
 // that wants whatever the running service wrote, regardless of whether
 // the YAML's lab_bridge.user currently matches.
 func ReadCacheRaw(path string) (Cache, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is paths.ServerInfoCachePath() under DataDir
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Cache{}, ErrCacheMissing
-		}
-		slog.Warn("bootstrap: read cache failed", "path", path, "err", err)
-		return Cache{}, ErrCacheMissing
-	}
-	var c Cache
-	if err := json.Unmarshal(data, &c); err != nil {
-		slog.Warn("bootstrap: cache corrupt; deleting", "path", path, "err", err)
-		_ = os.Remove(path)
-		return Cache{}, ErrCacheMissing
-	}
-	if c.Version != cacheCurrentVersion {
-		slog.Warn("bootstrap: cache version mismatch; deleting", "path", path, "version", c.Version)
-		_ = os.Remove(path)
-		return Cache{}, ErrCacheMissing
-	}
-	return c, nil
+	return readCacheFile(path)
 }
