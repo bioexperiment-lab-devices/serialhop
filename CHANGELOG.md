@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.25.2...v0.26.0) (2026-05-16)
+
+
+### Features
+
+* comprehensive logging for service + panel ([#134](https://github.com/bioexperiment-lab-devices/serialhop/issues/134)) ([abec359](https://github.com/bioexperiment-lab-devices/serialhop/commit/abec359a25f3f7ca905285ea158e618a6eb3ebfe))
+
 ## [0.25.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.25.1...v0.25.2) (2026-05-16)
 
 
