@@ -153,7 +153,9 @@ func TestWriteCache_JSONKeysAreSnakeCase(t *testing.T) {
 		`"server_info"`,
 		`"remote_port"`,
 		`"fetched_at"`,
+		`"host"`,
 		`"user"`,
+		`"pass"`,
 		`"version"`,
 	} {
 		if !strings.Contains(body, want) {

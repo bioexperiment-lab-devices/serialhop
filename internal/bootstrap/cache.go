@@ -18,10 +18,11 @@ import (
 
 const cacheCurrentVersion = 1
 
-// ErrCacheMissing is returned by ReadCache when the cache file is
-// absent, unparseable, version-mismatched, or anchored to a different
-// user. Callers should treat all of these the same: fall back to a
-// live fetch.
+// ErrCacheMissing is returned by ReadCache and ReadCacheRaw when the
+// cache file is absent, unparseable, or version-mismatched. ReadCache
+// also returns it when the cache is anchored to a different user;
+// ReadCacheRaw ignores the user anchor. Callers should treat all of
+// these the same: fall back to a live fetch.
 var ErrCacheMissing = errors.New("bootstrap: cache missing")
 
 // Cache is the on-disk schema for server-info.cache.json. The User
