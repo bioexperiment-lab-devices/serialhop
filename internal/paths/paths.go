@@ -37,7 +37,10 @@ const (
 	PanelCrashJournalFileName = "SerialHop_panel_crash.log"
 	ServerInfoCacheFileName   = "server-info.cache.json"
 	PanelLogFileName          = "SerialHop_panel.log"
-	PanelLogOffsetFileName    = "panel-log.offset"
+	// PanelLogOffsetFileName is the on-disk name of the byte-offset
+	// tracking file used by internal/logship's panel-log file tailer.
+	// It lives under StateDir (not LogsDir) — it is state, not a log.
+	PanelLogOffsetFileName = "panel-log.offset"
 )
 
 // DataDir returns the SerialHop root data directory.
@@ -175,7 +178,7 @@ func EnsureDirs() error {
 	if err := os.MkdirAll(logs, 0o750); err != nil {
 		return fmt.Errorf("paths: create %s: %w", logs, err)
 	}
-	state := filepath.Join(d, "state")
+	state := StateDir()
 	if err := os.MkdirAll(state, 0o750); err != nil {
 		return fmt.Errorf("paths: create %s: %w", state, err)
 	}

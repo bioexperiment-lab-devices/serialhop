@@ -80,7 +80,7 @@ func TestEnsureDirsCreatesBothLevels(t *testing.T) {
 	if err := EnsureDirs(); err != nil {
 		t.Fatalf("EnsureDirs: %v", err)
 	}
-	for _, p := range []string{root, filepath.Join(root, "logs")} {
+	for _, p := range []string{root, filepath.Join(root, "logs"), filepath.Join(root, "state")} {
 		info, err := os.Stat(p)
 		if err != nil {
 			t.Errorf("stat %q: %v", p, err)
@@ -255,16 +255,5 @@ func TestPanelLogPaths_Empty(t *testing.T) {
 	}
 	if got := PanelLogOffsetPath(); got != "" {
 		t.Errorf("PanelLogOffsetPath() = %q, want empty", got)
-	}
-}
-
-func TestEnsureDirs_CreatesStateDir(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("SERIALHOP_DATA_DIR", dir)
-	if err := EnsureDirs(); err != nil {
-		t.Fatalf("EnsureDirs: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "state")); err != nil {
-		t.Fatalf("state dir not created: %v", err)
 	}
 }
