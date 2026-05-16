@@ -227,3 +227,44 @@ func TestEnsurePanelUpdateStagingDir_ErrorsWhenEmpty(t *testing.T) {
 		t.Fatal("EnsurePanelUpdateStagingDir returned nil, want error")
 	}
 }
+
+func TestPanelLogPaths(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SERIALHOP_DATA_DIR", dir)
+	t.Setenv("ProgramData", "") // ignore real ProgramData
+
+	if got, want := PanelLogPath(), filepath.Join(dir, "logs", "SerialHop_panel.log"); got != want {
+		t.Errorf("PanelLogPath() = %q, want %q", got, want)
+	}
+	if got, want := StateDir(), filepath.Join(dir, "state"); got != want {
+		t.Errorf("StateDir() = %q, want %q", got, want)
+	}
+	if got, want := PanelLogOffsetPath(), filepath.Join(dir, "state", "panel-log.offset"); got != want {
+		t.Errorf("PanelLogOffsetPath() = %q, want %q", got, want)
+	}
+}
+
+func TestPanelLogPaths_Empty(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	if got := PanelLogPath(); got != "" {
+		t.Errorf("PanelLogPath() = %q, want empty", got)
+	}
+	if got := StateDir(); got != "" {
+		t.Errorf("StateDir() = %q, want empty", got)
+	}
+	if got := PanelLogOffsetPath(); got != "" {
+		t.Errorf("PanelLogOffsetPath() = %q, want empty", got)
+	}
+}
+
+func TestEnsureDirs_CreatesStateDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SERIALHOP_DATA_DIR", dir)
+	if err := EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state")); err != nil {
+		t.Fatalf("state dir not created: %v", err)
+	}
+}

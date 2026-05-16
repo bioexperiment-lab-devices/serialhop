@@ -11,10 +11,11 @@
 // in a default install). The SERIALHOP_LOCAL_DATA_DIR env var overrides.
 //
 // All composed-path getters (ConfigPath, LogsDir, ServiceLogPath,
-// StderrLogPath, PanelErrorLogPath, PanelUpdateStagingDir) return ""
-// when their base directory returns "" (i.e., the underlying env var is
-// unset and no test override is in effect). Callers can detect "no
-// directory available" with a single empty-string check.
+// StderrLogPath, PanelErrorLogPath, PanelUpdateStagingDir, PanelLogPath,
+// StateDir, PanelLogOffsetPath) return "" when their base directory
+// returns "" (i.e., the underlying env var is unset and no test override
+// is in effect). Callers can detect "no directory available" with a
+// single empty-string check.
 package paths
 
 import (
@@ -35,6 +36,8 @@ const (
 	// appendCapped in internal/panel/crash_journal.go.
 	PanelCrashJournalFileName = "SerialHop_panel_crash.log"
 	ServerInfoCacheFileName   = "server-info.cache.json"
+	PanelLogFileName          = "SerialHop_panel.log"
+	PanelLogOffsetFileName    = "panel-log.offset"
 )
 
 // DataDir returns the SerialHop root data directory.
@@ -117,6 +120,38 @@ func PanelCrashJournalPath() string {
 	return filepath.Join(d, PanelCrashJournalFileName)
 }
 
+// PanelLogPath returns <LogsDir>/SerialHop_panel.log, or "" if LogsDir
+// is empty. This is the structured slog destination written by the
+// panel process and tailed by the service-side logship file tailer.
+func PanelLogPath() string {
+	d := LogsDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, PanelLogFileName)
+}
+
+// StateDir returns <DataDir>/state, or "" if DataDir is empty.
+// Holds small per-host state files (e.g., panel-log.offset).
+func StateDir() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "state")
+}
+
+// PanelLogOffsetPath returns <StateDir>/panel-log.offset, or "" if
+// StateDir is empty. The service-side logship file tailer atomically
+// persists its byte offset here on every successful queue push.
+func PanelLogOffsetPath() string {
+	d := StateDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, PanelLogOffsetFileName)
+}
+
 // ServerInfoCachePath returns <DataDir>/server-info.cache.json, or ""
 // if DataDir is empty.
 func ServerInfoCachePath() string {
@@ -127,7 +162,7 @@ func ServerInfoCachePath() string {
 	return filepath.Join(d, ServerInfoCacheFileName)
 }
 
-// EnsureDirs creates DataDir and LogsDir with os.MkdirAll (0o750).
+// EnsureDirs creates DataDir, LogsDir, and StateDir with os.MkdirAll (0o750).
 // Idempotent. Returns an error if DataDir() is empty or MkdirAll fails.
 // On Windows the Unix mode bits are advisory; the actual ACL inherits
 // from %ProgramData%.
@@ -139,6 +174,10 @@ func EnsureDirs() error {
 	logs := filepath.Join(d, "logs")
 	if err := os.MkdirAll(logs, 0o750); err != nil {
 		return fmt.Errorf("paths: create %s: %w", logs, err)
+	}
+	state := filepath.Join(d, "state")
+	if err := os.MkdirAll(state, 0o750); err != nil {
+		return fmt.Errorf("paths: create %s: %w", state, err)
 	}
 	return nil
 }
