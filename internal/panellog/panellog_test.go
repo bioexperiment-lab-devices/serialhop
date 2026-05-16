@@ -25,7 +25,7 @@ func setupDataDir(t *testing.T) string {
 
 func readPanelLog(t *testing.T, dir string) []map[string]any {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(dir, "logs", "SerialHop_panel.log"))
+	b, err := os.ReadFile(filepath.Join(dir, "logs", "SerialHop_panel.log")) //nolint:gosec // dir is t.TempDir()
 	if err != nil {
 		t.Fatalf("read panel log: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestSetLevel_AffectsDebugEmission(t *testing.T) {
 	slog.Debug("debug-debug-level") // should appear
 	_ = m.Shutdown(context.Background())
 
-	b, _ := os.ReadFile(filepath.Join(dir, "logs", "SerialHop_panel.log"))
+	b, _ := os.ReadFile(filepath.Join(dir, "logs", "SerialHop_panel.log")) //nolint:gosec // dir is t.TempDir()
 	body := string(b)
 	if strings.Contains(body, "debug-info-level") {
 		t.Errorf("debug record leaked at info level: %s", body)

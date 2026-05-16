@@ -11,7 +11,7 @@ import (
 
 func writeLines(t *testing.T, path string, lines ...string) {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // path is t.TempDir()-rooted
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

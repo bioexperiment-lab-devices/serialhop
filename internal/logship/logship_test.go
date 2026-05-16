@@ -271,7 +271,7 @@ func TestInit_StartsPanelTailer(t *testing.T) {
 	panelLogPath := filepath.Join(dir, "logs", "SerialHop_panel.log")
 
 	// Write a pre-existing line before the tailer has anchored.
-	if err := os.WriteFile(panelLogPath, []byte("pre-existing\n"), 0o644); err != nil {
+	if err := os.WriteFile(panelLogPath, []byte("pre-existing\n"), 0o600); err != nil {
 		t.Fatalf("write pre-existing: %v", err)
 	}
 
@@ -279,7 +279,7 @@ func TestInit_StartsPanelTailer(t *testing.T) {
 	time.Sleep(700 * time.Millisecond)
 
 	// Append the "new" line after the tailer has anchored.
-	f, err := os.OpenFile(panelLogPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(panelLogPath, os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // panelLogPath is t.TempDir()-rooted
 	if err != nil {
 		t.Fatalf("open panel log for append: %v", err)
 	}
