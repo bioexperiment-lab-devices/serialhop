@@ -2,10 +2,13 @@ package flasher
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
 	ft "github.com/bioexperiment-lab-devices/serialhop/internal/flasher/testing"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 func TestSTK_Sync_HappyPath(t *testing.T) {
@@ -165,5 +168,44 @@ func TestSTK_ChipErase_FailureReportsError(t *testing.T) {
 	}
 	if err := c.ChipErase(150 * time.Millisecond); err == nil {
 		t.Fatal("expected error from ChipErase, got nil")
+	}
+}
+
+// TestSTK_ReadPage_LogsResponseInfo verifies that a successful ReadPage round
+// trip emits a "stk500 response" INFO record with a non-zero len attribute.
+func TestSTK_ReadPage_LogsResponseInfo(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	f := ft.NewFakeOptiboot()
+	src := make([]byte, 128)
+	for i := range src {
+		src[i] = byte(i)
+	}
+	f.PreloadFlash(src)
+
+	c := newSTKClient(f)
+	if err := c.Sync(150 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.LoadAddress(150*time.Millisecond, 0x0000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ReadPage(500*time.Millisecond, 128); err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+
+	found := rec.Find(slog.LevelInfo, "stk500 response", nil)
+	if found == nil {
+		t.Fatal("expected stk500 response INFO record, got none")
+	}
+	lenVal, ok := found.Attrs["len"]
+	if !ok {
+		t.Fatal("stk500 response record missing len attribute")
+	}
+	if fmt.Sprint(lenVal) == "0" {
+		t.Fatal("stk500 response len attribute is zero")
 	}
 }
