@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -37,6 +38,7 @@ type App struct {
 	serverTrigger chan struct{}
 	tunnelTrigger chan struct{}
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
+	probeDedup    *probeDedup
 }
 
 // NewApp constructs a panel App. Exported so package main can wrap it
@@ -56,6 +58,7 @@ func newAppInternal() *App {
 		serverTrigger: make(chan struct{}, 1),
 		tunnelTrigger: make(chan struct{}, 1),
 		lastService:   winsvc.StateNotInstalled,
+		probeDedup:    newProbeDedup(5 * time.Minute),
 	}
 }
 
@@ -82,6 +85,19 @@ func (a *App) startup(ctx context.Context) {
 		}
 		runServerProbe(ctx, probeHC, base, userAgent, a.lamps)
 		a.emitServerLamp()
+		_, srv, _ := a.lamps.snapshot()
+		switch srv.kind {
+		case lampOK:
+			a.probeDedup.reset("server")
+		default:
+			reason := srv.detail
+			if reason == "" {
+				reason = fmt.Sprintf("kind=%d", srv.kind)
+			}
+			if a.probeDedup.shouldLog("server", reason, time.Now()) {
+				slog.Warn("server probe failed", "reason", reason)
+			}
+		}
 	})
 	go probeLoop(ctx, 30*time.Second, a.tunnelTrigger, func(ctx context.Context) {
 		c, _ := config.LoadPartial(paths.ConfigPath())
@@ -91,6 +107,19 @@ func (a *App) startup(ctx context.Context) {
 		}
 		runTunnelProbe(ctx, probeHC, base, c.LabBridge.User, c.LabBridge.Pass, userAgent, a.lamps)
 		a.emitTunnelLamp()
+		_, _, tun := a.lamps.snapshot()
+		switch tun.kind {
+		case lampOK:
+			a.probeDedup.reset("tunnel")
+		default:
+			reason := tun.detail
+			if reason == "" {
+				reason = fmt.Sprintf("kind=%d", tun.kind)
+			}
+			if a.probeDedup.shouldLog("tunnel", reason, time.Now()) {
+				slog.Warn("tunnel probe failed", "reason", reason)
+			}
+		}
 	})
 	go a.scmPollLoop(ctx)
 }
@@ -211,6 +240,11 @@ func (a *App) scmPollLoop(ctx context.Context) {
 		a.lamps.setService(newSvc)
 		changed := oldSvc.state != newSvc.state || oldSvc.cfgValid != newSvc.cfgValid
 		if first || changed {
+			if changed {
+				slog.Info("scm state change",
+					"from", oldSvc.state, "to", newSvc.state,
+					"cfg_valid", newSvc.cfgValid)
+			}
 			a.emitServiceLamp()
 			a.emitButtonState(newSvc)
 			first = false
