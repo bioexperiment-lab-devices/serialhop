@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.25.1...v0.25.2) (2026-05-16)
+
+
+### Bug Fixes
+
+* **panel:** cache running lab-bridge identity for status-badge probes ([#132](https://github.com/bioexperiment-lab-devices/serialhop/issues/132)) ([b3b0b8d](https://github.com/bioexperiment-lab-devices/serialhop/commit/b3b0b8d08b65349482d04550857b1184d0f44010))
+
 ## [0.25.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.25.0...v0.25.1) (2026-05-16)
 
 
