@@ -27,7 +27,7 @@ func TestGetDevices_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T
 	app := NewApp()
 	// Point ServiceCli at a non-existent cache so baseURL() returns
 	// StatusUnreachable — exactly the "service not installed" scenario.
-	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.cache.json"), "alice")
+	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.cache.json"))
 
 	res := app.GetDevices()
 
@@ -52,7 +52,7 @@ func TestGetDevices_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T
 
 func TestDiscover_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T) {
 	app := NewApp()
-	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.cache.json"), "alice")
+	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.cache.json"))
 
 	res := app.Discover()
 	if res.Devices == nil {
@@ -69,7 +69,7 @@ func TestDiscover_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T) 
 
 func TestGetPorts_PortsSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T) {
 	app := NewApp()
-	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.cache.json"), "alice")
+	app.svc = NewServiceCli(filepath.Join(t.TempDir(), "absent.cache.json"))
 
 	res := app.GetPorts()
 	if res.Ports == nil {

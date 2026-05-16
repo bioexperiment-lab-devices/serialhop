@@ -112,17 +112,27 @@ func TestServiceCli_Discover_PostsToDiscover(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_IgnoresCacheUserMismatch(t *testing.T) {
-	// Cache anchored to "alice"; client constructed without any user arg.
-	// The local REST port belongs to whichever service is running, so the
-	// client must talk to it regardless of YAML lab_bridge.user changes.
+	// The property under test: ServiceCli reaches the local REST port
+	// regardless of who the cache claims to be anchored to. The cache
+	// here is anchored to "alice"; we prove this matters by first
+	// confirming that the OLD anchored read path (bootstrap.ReadCache
+	// with a mismatched user) rejects the file, and then that the new
+	// ServiceCli (which uses ReadCacheRaw) talks to the server anyway.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(api.DevicesResponse{Devices: []api.DeviceDTO{{ID: "x"}}})
 	}))
 	defer srv.Close()
 	port := mustPortFromURL(t, srv.URL)
-	// seedCache writes a cache anchored to "alice"; we now build the client
-	// with no user argument and expect it to talk to the server anyway.
-	cli := NewServiceCli(seedCache(t, port))
+	cachePath := seedCache(t, port) // cache anchored to "alice"
+
+	// Counterfactual: the anchored read with a mismatched user must
+	// reject the cache. If this stops being true, the contrast in this
+	// test is meaningless and the test name lies.
+	if _, err := bootstrap.ReadCache(cachePath, "bob"); err == nil {
+		t.Fatalf("ReadCache with mismatched user: want ErrCacheMissing, got nil")
+	}
+
+	cli := NewServiceCli(cachePath)
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)

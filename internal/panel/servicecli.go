@@ -20,9 +20,9 @@ type ServiceCliStatus int
 
 const (
 	StatusOK ServiceCliStatus = iota
-	// StatusUnreachable — the bootstrap cache is missing, anchored to a
-	// different user, or ActualRestPort == 0. The panel doesn't know
-	// where the service is even if it is running. Show:
+	// StatusUnreachable — the bootstrap cache is missing, corrupt /
+	// version-mismatched, or ActualRestPort == 0. The panel doesn't
+	// know where the service is even if it is running. Show:
 	// "Can't reach the local service. It may have just started — wait
 	// a few seconds and click Refresh."
 	StatusUnreachable
