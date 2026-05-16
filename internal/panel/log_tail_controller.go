@@ -38,7 +38,7 @@ func (c *logTailController) start(streamID string, emit func(name string, data i
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	parse := streamID == "service" // service log is slog JSON; others are raw
+	parse := streamID == "service" || streamID == "panel" // slog JSON streams
 
 	encodeLine := func(line string) map[string]interface{} {
 		payload := map[string]interface{}{"stream": streamID}
@@ -106,7 +106,7 @@ func streamPath(id string) (string, bool) {
 	case "stderr":
 		return paths.StderrLogPath(), true
 	case "panel":
-		return paths.PanelErrorLogPath(), true
+		return paths.PanelLogPath(), true
 	}
 	return "", false
 }
