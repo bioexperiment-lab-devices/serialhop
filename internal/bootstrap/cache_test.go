@@ -186,6 +186,9 @@ func TestWriteCache_AndReadCache_RoundTripIdentity(t *testing.T) {
 	if got.Host != "lab-bridge.example.com" {
 		t.Errorf("Host: got %q, want %q", got.Host, "lab-bridge.example.com")
 	}
+	if got.User != "alice" {
+		t.Errorf("User: got %q, want %q", got.User, "alice")
+	}
 	if got.Pass != "s3cret" {
 		t.Errorf("Pass: got %q, want %q", got.Pass, "s3cret")
 	}
