@@ -107,15 +107,19 @@ func (a *App) ValidateConfig(cfg config.Config) []FieldError {
 }
 
 func (a *App) SaveConfig(cfg config.Config) SaveResult {
+	done := a.logAction("save_config", slog.String("cfg_host", cfg.LabBridge.Host))
 	if errs := a.ValidateConfig(cfg); len(errs) > 0 {
+		done(nil, slog.Int("field_errors_count", len(errs)))
 		return SaveResult{OK: false, FieldErrors: errs}
 	}
 	p := resolveConfigPath()
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
+		done(err, slog.Int("field_errors_count", 1))
 		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
 	}
 	if err := os.WriteFile(p, data, 0o600); err != nil {
+		done(err, slog.Int("field_errors_count", 1))
 		return SaveResult{OK: false, FieldErrors: []FieldError{{Detail: err.Error()}}}
 	}
 	a.emitEvent("config:saved", nil)
@@ -123,6 +127,7 @@ func (a *App) SaveConfig(cfg config.Config) SaveResult {
 	// Server / Tunnel lamps reflect the new credentials immediately
 	// instead of waiting up to 30 s for the next tick.
 	a.kickNetProbes()
+	done(nil, slog.Int("field_errors_count", 0))
 	return SaveResult{OK: true}
 }
 
@@ -322,26 +327,40 @@ func (a *App) GetDevices() DevicesResult {
 }
 
 func (a *App) Discover() DevicesResult {
+	done := a.logAction("discover")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.Discover(ctx)
-	return DevicesResult{
+	resp, st, err := a.svc.Discover(ctx)
+	res := DevicesResult{
 		DevicesResponse: normalizeDevicesResponse(resp),
 		Status:          toTabStatus(st),
 	}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Int("device_count", len(res.Devices)), slog.Bool("reachable", res.Status.Reachable))
+	}
+	return res
 }
 
 func (a *App) DisconnectAll() DisconnectResult {
+	done := a.logAction("disconnect_all")
 	ctx, cancel := a.callCtx()
 	defer cancel()
-	resp, st, _ := a.svc.DisconnectAll(ctx)
+	resp, st, err := a.svc.DisconnectAll(ctx)
+	res := DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
+	if err != nil {
+		done(err, slog.Bool("reachable", false))
+	} else {
+		done(nil, slog.Bool("reachable", res.Status.Reachable))
+	}
 	if st == StatusOK {
 		a.emitEvent("footer:set", map[string]interface{}{
 			"kind": "ok",
 			"text": fmt.Sprintf("Disconnected %d device(s).", resp.Released),
 		})
 	}
-	return DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
+	return res
 }
 
 func (a *App) GetPorts() PortsResult {

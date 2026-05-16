@@ -4,9 +4,20 @@ package panel
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"time"
 )
+
+// shortDeviceID returns the first 8 hex chars of sha256(id). Stable per
+// raw id, low collision risk for the small number of devices a single
+// lab attaches in a session. Used in slog attributes to avoid logging
+// raw device identifiers that may carry lab-internal context.
+func shortDeviceID(id string) string {
+	h := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(h[:4])
+}
 
 // logAction emits one "panel action start" INFO record and returns a
 // closure that emits the matching end record. On success the end
