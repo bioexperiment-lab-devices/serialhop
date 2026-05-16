@@ -671,7 +671,7 @@ func runUpdateCheckEvent(a *App) {
 	// copies into place at install time.
 	stagingDir, err := paths.EnsurePanelUpdateStagingDir()
 	if err != nil {
-		writePanelDebugLog("update_check_staging_dir_failed", err)
+		slog.Error("panel update_check_staging_dir_failed", "err", err.Error())
 		return
 	}
 
@@ -681,12 +681,12 @@ func runUpdateCheckEvent(a *App) {
 	defer cancel()
 	rel, err := updater.LatestRelease(ctx, a.hc, updater.DefaultReleasesURL, updateUA)
 	if err != nil {
-		writePanelDebugLog("update_check_failed", err)
+		slog.Error("panel update_check_failed", "err", err.Error())
 		return
 	}
 	newer, err := updater.IsNewer(rel.TagName, version.Version)
 	if err != nil {
-		writePanelDebugLog("update_check_parse_failed", err)
+		slog.Error("panel update_check_parse_failed", "err", err.Error())
 		return
 	}
 	if !newer {
@@ -702,7 +702,7 @@ func runUpdateCheckEvent(a *App) {
 		}
 	}
 	if exeAsset == nil {
-		writePanelDebugLog("update_check_no_asset", fmt.Errorf("no SerialHop-v*.exe asset on release %s", rel.TagName))
+		slog.Error("panel update_check_no_asset", "err", fmt.Sprintf("no SerialHop-v*.exe asset on release %s", rel.TagName))
 		return
 	}
 
@@ -747,7 +747,7 @@ func ctlDownloadEvent(a *App) {
 
 	stagingDir, err := paths.EnsurePanelUpdateStagingDir()
 	if err != nil {
-		writePanelDebugLog("update_download_staging_dir_failed", err)
+		slog.Error("panel update_download_staging_dir_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
@@ -796,7 +796,7 @@ func ctlDownloadEvent(a *App) {
 			a.applyUpdateEvent(EvCancel)
 			return
 		}
-		writePanelDebugLog("update_download_failed", err)
+		slog.Error("panel update_download_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
@@ -804,20 +804,20 @@ func ctlDownloadEvent(a *App) {
 	sumsAsset := rel.AssetByName("SHA256SUMS.txt")
 	if sumsAsset == nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog("update_no_sums_asset", fmt.Errorf("release %s has no SHA256SUMS.txt", rel.TagName))
+		slog.Error("panel update_no_sums_asset", "err", fmt.Sprintf("release %s has no SHA256SUMS.txt", rel.TagName))
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
 	body, err := fetchSums(a.hc, updateUA, sumsAsset.BrowserDownloadURL)
 	if err != nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog("update_fetch_sums_failed", err)
+		slog.Error("panel update_fetch_sums_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
 	if err := updater.VerifyFile(dest, body, asset.Name); err != nil {
 		_ = os.Remove(dest)
-		writePanelDebugLog("update_verify_failed", err)
+		slog.Error("panel update_verify_failed", "err", err.Error())
 		a.applyUpdateEvent(EvDownloadFail)
 		return
 	}
