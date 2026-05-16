@@ -144,9 +144,10 @@ func TestServiceCli_GetDevices_IgnoresCacheUserMismatch(t *testing.T) {
 }
 
 func TestServiceCli_DisconnectPort_OK(t *testing.T) {
-	var gotMethod, gotPath string
+	var gotMethod, gotPath, gotPortQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
+		gotPortQuery = r.URL.Query().Get("port")
 		_ = json.NewEncoder(w).Encode(api.DisconnectResponse{Released: 1})
 	}))
 	defer srv.Close()
@@ -166,8 +167,11 @@ func TestServiceCli_DisconnectPort_OK(t *testing.T) {
 	if gotMethod != "POST" {
 		t.Errorf("method: got %s, want POST", gotMethod)
 	}
-	if gotPath != "/devices/disconnect/by-port/COM3" {
-		t.Errorf("path: got %s, want /devices/disconnect/by-port/COM3", gotPath)
+	if gotPath != "/devices/disconnect" {
+		t.Errorf("path: got %s, want /devices/disconnect", gotPath)
+	}
+	if gotPortQuery != "COM3" {
+		t.Errorf("port query: got %q, want COM3", gotPortQuery)
 	}
 }
 

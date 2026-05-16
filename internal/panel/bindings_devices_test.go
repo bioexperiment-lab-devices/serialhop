@@ -72,9 +72,10 @@ func TestDiscover_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T) 
 }
 
 func TestDisconnectPort_OKReleasesOne(t *testing.T) {
-	var gotPath string
+	var gotPath, gotPortQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		gotPortQuery = r.URL.Query().Get("port")
 		_ = json.NewEncoder(w).Encode(api.DisconnectResponse{Released: 1})
 	}))
 	defer srv.Close()
@@ -89,8 +90,11 @@ func TestDisconnectPort_OKReleasesOne(t *testing.T) {
 	if !res.Status.Reachable {
 		t.Errorf("Status.Reachable: got false, want true")
 	}
-	if gotPath != "/devices/disconnect/by-port/COM3" {
-		t.Errorf("path: got %s, want /devices/disconnect/by-port/COM3", gotPath)
+	if gotPath != "/devices/disconnect" {
+		t.Errorf("path: got %s, want /devices/disconnect", gotPath)
+	}
+	if gotPortQuery != "COM3" {
+		t.Errorf("port query: got %q, want COM3", gotPortQuery)
 	}
 }
 

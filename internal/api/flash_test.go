@@ -59,7 +59,7 @@ func TestDisconnectByPort_NotFound(t *testing.T) {
 	reg.Replace([]*registry.Device{
 		{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect/by-port/COM99", nil)
+	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect?port=COM99", nil)
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {
@@ -82,7 +82,7 @@ func TestDisconnectByPort_Found(t *testing.T) {
 	other := &registry.Device{ID: "b", Type: "valve", TypeCode: 30, Port: "COM4", Conn: labserial.NewFakePort("COM4")}
 	reg.Replace([]*registry.Device{target, other})
 
-	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect/by-port/COM3", nil)
+	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect?port=COM3", nil)
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, req)
 	if rr.Code != 200 {

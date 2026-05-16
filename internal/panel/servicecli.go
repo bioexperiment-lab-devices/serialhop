@@ -122,7 +122,7 @@ func (c *ServiceCli) DisconnectAll(ctx context.Context) (api.DisconnectResponse,
 // surface a "no longer connected" hint and just refresh.
 var ErrPortNotFound = errors.New("port not found")
 
-// DisconnectPort proxies POST /devices/disconnect/by-port/{port}. Returns
+// DisconnectPort proxies POST /devices/disconnect?port=<name>. Returns
 // Released=1 on success; Released=0 with ErrPortNotFound and StatusOK on
 // 404 (the service was reachable, the device simply wasn't registered).
 // Any other transport / decoding failure surfaces per the standard do()
@@ -133,8 +133,9 @@ func (c *ServiceCli) DisconnectPort(ctx context.Context, port string) (api.Disco
 	if status != StatusOK {
 		return out, status, nil
 	}
-	path := "/devices/disconnect/by-port/" + url.PathEscape(port)
-	req, err := http.NewRequestWithContext(ctx, "POST", base+path, nil)
+	q := url.Values{"port": {port}}
+	target := base + "/devices/disconnect?" + q.Encode()
+	req, err := http.NewRequestWithContext(ctx, "POST", target, nil)
 	if err != nil {
 		return out, StatusOK, fmt.Errorf("build request: %w", err)
 	}

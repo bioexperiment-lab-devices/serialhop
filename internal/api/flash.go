@@ -13,21 +13,25 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 )
 
+// handlePostDevicesDisconnect releases device ports. With no query
+// parameters it drains the entire registry. With ?port=<name> it
+// releases the single device currently registered on that port and
+// returns 404 when no such device exists — letting the panel / scripts
+// target a specific row without tearing down the others.
 func (s *Server) handlePostDevicesDisconnect(w http.ResponseWriter, r *http.Request) {
+	if port := r.URL.Query().Get("port"); port != "" {
+		if s.reg.DisconnectByPort(port) {
+			slog.Info("disconnect", "port", port, "released", 1)
+			writeJSON(w, http.StatusOK, DisconnectResponse{Released: 1})
+			return
+		}
+		slog.Info("disconnect", "port", port, "released", 0)
+		writeError(w, http.StatusNotFound, "device not found", port)
+		return
+	}
 	n := s.reg.DisconnectAll()
 	slog.Info("disconnect", "released", n)
 	writeJSON(w, http.StatusOK, DisconnectResponse{Released: n})
-}
-
-func (s *Server) handlePostDevicesDisconnectByPort(w http.ResponseWriter, r *http.Request) {
-	port := r.PathValue("port")
-	if s.reg.DisconnectByPort(port) {
-		slog.Info("disconnect_port", "port", port, "released", 1)
-		writeJSON(w, http.StatusOK, DisconnectResponse{Released: 1})
-		return
-	}
-	slog.Info("disconnect_port", "port", port, "released", 0)
-	writeError(w, http.StatusNotFound, "device not found", port)
 }
 
 func (s *Server) handleGetSerialPortsDetailed(w http.ResponseWriter, r *http.Request) {
