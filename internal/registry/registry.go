@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"log/slog"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -71,6 +72,8 @@ func (r *Registry) Replace(devs []*Device) {
 	}
 	r.mu.Unlock()
 
+	slog.Info("registry replace", "count", len(devs), "previous", len(old))
+
 	for _, d := range old {
 		if d.Conn != nil {
 			_ = d.Conn.Close()
@@ -88,6 +91,8 @@ func (r *Registry) CloseAll() {
 	r.devices = map[string]*Device{}
 	r.mu.Unlock()
 
+	slog.Info("registry close all", "count", len(old))
+
 	for _, d := range old {
 		if d.Conn != nil {
 			_ = d.Conn.Close()
@@ -104,6 +109,8 @@ func (r *Registry) DisconnectAll() int {
 	old := r.devices
 	r.devices = map[string]*Device{}
 	r.mu.Unlock()
+
+	slog.Info("registry disconnect all", "count", n)
 
 	for _, d := range old {
 		if d.Conn != nil {
@@ -129,8 +136,11 @@ func (r *Registry) Remove(id string) {
 		delete(r.devices, id)
 	}
 	r.mu.Unlock()
-	if ok && d.Conn != nil {
-		_ = d.Conn.Close()
+	if ok {
+		slog.Info("registry remove", "id", id)
+		if d.Conn != nil {
+			_ = d.Conn.Close()
+		}
 	}
 }
 
