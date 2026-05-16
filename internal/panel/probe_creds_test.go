@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,12 +10,13 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 )
 
+// writeYAML emits a minimal lab_bridge block. Values are written as
+// double-quoted YAML scalars via %q so a test value with special
+// characters (":", "#", etc.) parses as a string instead of breaking
+// the document.
 func writeYAML(t *testing.T, path, host, user, pass string) {
 	t.Helper()
-	body := "lab_bridge:\n" +
-		"  host: " + host + "\n" +
-		"  user: " + user + "\n" +
-		"  pass: " + pass + "\n"
+	body := fmt.Sprintf("lab_bridge:\n  host: %q\n  user: %q\n  pass: %q\n", host, user, pass)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write yaml: %v", err)
 	}

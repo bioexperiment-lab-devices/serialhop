@@ -40,6 +40,7 @@ func (s *lampState) probeCreds(cachePath, configPath string) (host, user, pass s
 		return "", "", ""
 	}
 	if c.Host == "" {
+		// Pre-fix v1 cache: SeedCache hasn't run yet since upgrade.
 		y, _ := config.LoadPartial(configPath)
 		return y.LabBridge.Host, y.LabBridge.User, y.LabBridge.Pass
 	}
