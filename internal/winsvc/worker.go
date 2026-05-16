@@ -72,6 +72,17 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 	go func() {
 		hc := &http.Client{Timeout: 30 * time.Second}
 		userAgent := "SerialHop/" + version.Base() + " (bootstrap)"
+		// Seed the bootstrap cache with the running lab-bridge identity
+		// BEFORE we start trying to resolve. This way the panel's
+		// status-lamp probes (which read the cache) reflect the
+		// credentials the service is actually using, even if Resolve is
+		// stuck in a retry loop because those credentials are wrong.
+		if err := bootstrap.SeedCache(
+			paths.ServerInfoCachePath(),
+			cfg.LabBridge.Host, cfg.LabBridge.User, cfg.LabBridge.Pass,
+		); err != nil {
+			slog.Warn("seed cache failed", "err", err)
+		}
 		resolved, err := bootstrap.Resolve(ctx, bootstrap.Options{
 			HTTPClient: hc,
 			Base:       "https://" + cfg.LabBridge.Host,
