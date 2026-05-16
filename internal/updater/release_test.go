@@ -2,10 +2,13 @@ package updater
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 const sampleReleaseJSON = `{
@@ -85,4 +88,40 @@ func TestAssetByName_NotFound(t *testing.T) {
 	if rel.AssetByName("missing.exe") != nil {
 		t.Error("expected nil for missing asset")
 	}
+}
+
+func TestLatestRelease_LogsInfoOnSuccess(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleReleaseJSON))
+	}))
+	defer srv.Close()
+
+	if _, err := LatestRelease(context.Background(), srv.Client(), srv.URL, "SerialHop/test"); err != nil {
+		t.Fatalf("LatestRelease: %v", err)
+	}
+
+	rec.AssertRecord(t, slog.LevelInfo, "updater release fetch start", map[string]any{"url": srv.URL})
+	rec.AssertRecord(t, slog.LevelInfo, "updater release fetch ok", map[string]any{"url": srv.URL, "tag": "v0.7.0"})
+}
+
+func TestLatestRelease_LogsErrorOnHTTPFailure(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	_, _ = LatestRelease(context.Background(), srv.Client(), srv.URL, "SerialHop/test")
+
+	rec.AssertRecord(t, slog.LevelError, "updater release fetch failed", map[string]any{"url": srv.URL})
 }

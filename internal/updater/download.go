@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 )
@@ -21,18 +22,23 @@ type ProgressFunc func(received, total int64)
 // The caller owns timeouts via ctx — pass a `context.WithTimeout(parent, 5*time.Minute)`
 // for asset downloads.
 func Download(ctx context.Context, hc *http.Client, url, destPath, userAgent string, progress ProgressFunc) error {
+	slog.Info("updater download start", "url", url, "target", destPath)
+
 	req, err := newRequest(ctx, url, userAgent)
 	if err != nil {
 		return err
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
+		slog.Error("updater download failed", "url", url, "err", err.Error())
 		return fmt.Errorf("get %s: %w", url, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("get %s: HTTP %d: %s", url, resp.StatusCode, string(body))
+		httpErr := fmt.Errorf("get %s: HTTP %d: %s", url, resp.StatusCode, string(body))
+		slog.Error("updater download failed", "url", url, "err", httpErr.Error())
+		return httpErr
 	}
 
 	partial := destPath + ".partial"
@@ -64,6 +70,7 @@ func Download(ctx context.Context, hc *http.Client, url, destPath, userAgent str
 		return fmt.Errorf("rename %s → %s: %w", partial, destPath, err)
 	}
 	cleanup = nil // success: keep destPath
+	slog.Info("updater download ok", "url", url, "target", destPath, "bytes", total)
 	return nil
 }
 

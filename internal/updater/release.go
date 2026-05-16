@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 )
 
@@ -38,23 +39,29 @@ func (r Release) AssetByName(name string) *Asset {
 // LatestRelease GETs `url` (typically DefaultReleasesURL) and returns the
 // decoded release. The caller owns the timeout via ctx.
 func LatestRelease(ctx context.Context, hc *http.Client, url, userAgent string) (Release, error) {
+	slog.Info("updater release fetch start", "url", url)
+
 	req, err := newRequest(ctx, url, userAgent)
 	if err != nil {
 		return Release{}, err
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
+		slog.Error("updater release fetch failed", "url", url, "err", err.Error())
 		return Release{}, fmt.Errorf("get %s: %w", url, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return Release{}, fmt.Errorf("get %s: HTTP %d: %s", url, resp.StatusCode, string(body))
+		httpErr := fmt.Errorf("get %s: HTTP %d: %s", url, resp.StatusCode, string(body))
+		slog.Error("updater release fetch failed", "url", url, "err", httpErr.Error())
+		return Release{}, httpErr
 	}
 	var rel Release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return Release{}, fmt.Errorf("decode %s: %w", url, err)
 	}
+	slog.Info("updater release fetch ok", "url", url, "tag", rel.TagName)
 	return rel, nil
 }
 

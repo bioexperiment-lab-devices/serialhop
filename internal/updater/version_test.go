@@ -1,6 +1,11 @@
 package updater
 
-import "testing"
+import (
+	"log/slog"
+	"testing"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
+)
 
 func TestIsNewer(t *testing.T) {
 	cases := []struct {
@@ -75,4 +80,17 @@ func TestCompare(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsNewer_LogsWarnOnParseFailure(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	_, _ = IsNewer("garbage", "0.6.1")
+
+	rec.AssertRecord(t, slog.LevelWarn, "updater version parse failed", map[string]any{
+		"input": "garbage",
+	})
 }

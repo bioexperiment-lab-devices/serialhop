@@ -3,10 +3,13 @@ package updater
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 func writeTestFile(t *testing.T, dir, name string, body []byte) string {
@@ -77,4 +80,38 @@ func TestVerifyFile_MalformedLineSkipped(t *testing.T) {
 	if err := VerifyFile(p, sums, "SerialHop-v0.7.0.exe"); err != nil {
 		t.Errorf("VerifyFile: %v", err)
 	}
+}
+
+func TestVerifyFile_LogsInfoOnOK(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dir := t.TempDir()
+	body := []byte("hello world")
+	p := writeTestFile(t, dir, "SerialHop-v0.7.0.exe", body)
+	sums := sha256Hex(body) + "  SerialHop-v0.7.0.exe\n"
+
+	if err := VerifyFile(p, sums, "SerialHop-v0.7.0.exe"); err != nil {
+		t.Fatalf("VerifyFile: %v", err)
+	}
+
+	rec.AssertRecord(t, slog.LevelInfo, "updater verify start", map[string]any{"path": p})
+	rec.AssertRecord(t, slog.LevelInfo, "updater verify ok", map[string]any{"path": p})
+}
+
+func TestVerifyFile_LogsWarnOnMismatch(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dir := t.TempDir()
+	p := writeTestFile(t, dir, "SerialHop-v0.7.0.exe", []byte("hello world"))
+	sums := sha256Hex([]byte("DIFFERENT")) + "  SerialHop-v0.7.0.exe\n"
+
+	_ = VerifyFile(p, sums, "SerialHop-v0.7.0.exe")
+
+	rec.AssertRecord(t, slog.LevelWarn, "updater checksum mismatch", map[string]any{"path": p})
 }

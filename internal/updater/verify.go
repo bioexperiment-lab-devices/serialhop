@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -17,6 +18,8 @@ import (
 // Returns an error if the file is missing, the filename isn't in sumsBody,
 // or the hash differs.
 func VerifyFile(filePath, sumsBody, filename string) error {
+	slog.Info("updater verify start", "path", filePath)
+
 	want, ok := lookupSum(sumsBody, filename)
 	if !ok {
 		return fmt.Errorf("verify: %q not found in checksum file", filename)
@@ -26,8 +29,10 @@ func VerifyFile(filePath, sumsBody, filename string) error {
 		return fmt.Errorf("verify: hash %s: %w", filePath, err)
 	}
 	if !strings.EqualFold(got, want) {
+		slog.Warn("updater checksum mismatch", "path", filePath, "expected", want, "got", got)
 		return fmt.Errorf("verify: SHA-256 mismatch for %s: expected %s, got %s", filename, want, got)
 	}
+	slog.Info("updater verify ok", "path", filePath)
 	return nil
 }
 
