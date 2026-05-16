@@ -45,7 +45,7 @@ func TestServiceCli_GetDevices_OK(t *testing.T) {
 	defer srv.Close()
 
 	port := mustPortFromURL(t, srv.URL)
-	cli := NewServiceCli(seedCache(t, port), "alice")
+	cli := NewServiceCli(seedCache(t, port))
 	resp, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -59,7 +59,7 @@ func TestServiceCli_GetDevices_OK(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_CacheMissingReturnsUnreachable(t *testing.T) {
-	cli := NewServiceCli(filepath.Join(t.TempDir(), "missing.json"), "alice")
+	cli := NewServiceCli(filepath.Join(t.TempDir(), "missing.json"))
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -70,7 +70,7 @@ func TestServiceCli_GetDevices_CacheMissingReturnsUnreachable(t *testing.T) {
 }
 
 func TestServiceCli_GetDevices_ActualPortZeroReturnsUnreachable(t *testing.T) {
-	cli := NewServiceCli(seedCache(t, 0), "alice")
+	cli := NewServiceCli(seedCache(t, 0))
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -82,7 +82,7 @@ func TestServiceCli_GetDevices_ActualPortZeroReturnsUnreachable(t *testing.T) {
 
 func TestServiceCli_GetDevices_ConnectionRefusedReturnsServiceDown(t *testing.T) {
 	// Use a port we know nothing is listening on.
-	cli := NewServiceCli(seedCache(t, 1), "alice") // port 1 reserved → conn refused
+	cli := NewServiceCli(seedCache(t, 1)) // port 1 reserved → conn refused
 	_, status, err := cli.GetDevices(context.Background())
 	if err != nil {
 		t.Fatalf("GetDevices: %v", err)
@@ -101,10 +101,31 @@ func TestServiceCli_Discover_PostsToDiscover(t *testing.T) {
 	}))
 	defer srv.Close()
 	port := mustPortFromURL(t, srv.URL)
-	cli := NewServiceCli(seedCache(t, port), "alice")
+	cli := NewServiceCli(seedCache(t, port))
 	_, status, err := cli.Discover(context.Background())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
+	}
+	if status != StatusOK {
+		t.Errorf("status: got %v, want StatusOK", status)
+	}
+}
+
+func TestServiceCli_GetDevices_IgnoresCacheUserMismatch(t *testing.T) {
+	// Cache anchored to "alice"; client constructed without any user arg.
+	// The local REST port belongs to whichever service is running, so the
+	// client must talk to it regardless of YAML lab_bridge.user changes.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(api.DevicesResponse{Devices: []api.DeviceDTO{{ID: "x"}}})
+	}))
+	defer srv.Close()
+	port := mustPortFromURL(t, srv.URL)
+	// seedCache writes a cache anchored to "alice"; we now build the client
+	// with no user argument and expect it to talk to the server anyway.
+	cli := NewServiceCli(seedCache(t, port))
+	_, status, err := cli.GetDevices(context.Background())
+	if err != nil {
+		t.Fatalf("GetDevices: %v", err)
 	}
 	if status != StatusOK {
 		t.Errorf("status: got %v, want StatusOK", status)
