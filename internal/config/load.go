@@ -134,7 +134,7 @@ func isAlphaNum(c byte) bool {
 func onlyDigitsAndDots(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if !((c >= '0' && c <= '9') || c == '.') {
+		if (c < '0' || c > '9') && c != '.' {
 			return false
 		}
 	}
