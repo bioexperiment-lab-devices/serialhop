@@ -118,7 +118,7 @@ func (f *FakePort) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.closed = true
-	slog.Info("serial close", "port", f.name)
+	slog.Info("serial close", "serial_port", f.name)
 	return nil
 }
 
@@ -203,13 +203,13 @@ func (o *FakeOpener) Open(name string) (Port, error) {
 	defer o.mu.Unlock()
 	p, ok := o.ports[name]
 	if !ok {
-		slog.Error("serial open failed", "port", name, "baud", 9600, "err", errUnknownPort{name}.Error())
+		slog.Error("serial open failed", "serial_port", name, "baud", 9600, "err", errUnknownPort{name}.Error())
 		return nil, errUnknownPort{name}
 	}
 	p.mu.Lock()
 	p.closed = false
 	p.mu.Unlock()
-	slog.Info("serial open", "port", name, "baud", 9600)
+	slog.Info("serial open", "serial_port", name, "baud", 9600)
 	return p, nil
 }
 
@@ -219,14 +219,14 @@ func (o *FakeOpener) OpenWithBaud(name string, baud int) (Port, error) {
 	defer o.mu.Unlock()
 	p, ok := o.ports[name]
 	if !ok {
-		slog.Error("serial open failed", "port", name, "baud", baud, "err", errUnknownPort{name}.Error())
+		slog.Error("serial open failed", "serial_port", name, "baud", baud, "err", errUnknownPort{name}.Error())
 		return nil, errUnknownPort{name}
 	}
 	p.mu.Lock()
 	p.closed = false
 	p.baudSeq = append(p.baudSeq, baud)
 	p.mu.Unlock()
-	slog.Info("serial open", "port", name, "baud", baud)
+	slog.Info("serial open", "serial_port", name, "baud", baud)
 	return p, nil
 }
 

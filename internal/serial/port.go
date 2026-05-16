@@ -60,10 +60,10 @@ func (realOpener) OpenWithBaud(name string, baud int) (Port, error) {
 	}
 	p, err := bugst.Open(name, mode)
 	if err != nil {
-		slog.Error("serial open failed", "port", name, "baud", baud, "err", err.Error())
+		slog.Error("serial open failed", "serial_port", name, "baud", baud, "err", err.Error())
 		return nil, fmt.Errorf("open %s @ %d: %w", name, baud, err)
 	}
-	slog.Info("serial open", "port", name, "baud", baud)
+	slog.Info("serial open", "serial_port", name, "baud", baud)
 	return &realPort{name: name, p: p}, nil
 }
 
@@ -95,10 +95,10 @@ func (realOpener) Open(name string) (Port, error) {
 	}
 	p, err := bugst.Open(name, mode)
 	if err != nil {
-		slog.Error("serial open failed", "port", name, "baud", 9600, "err", err.Error())
+		slog.Error("serial open failed", "serial_port", name, "baud", 9600, "err", err.Error())
 		return nil, fmt.Errorf("open %s: %w", name, err)
 	}
-	slog.Info("serial open", "port", name, "baud", 9600)
+	slog.Info("serial open", "serial_port", name, "baud", 9600)
 	return &realPort{name: name, p: p}, nil
 }
 
@@ -110,7 +110,7 @@ type realPort struct {
 func (r *realPort) Read(p []byte) (int, error)  { return r.p.Read(p) }
 func (r *realPort) Write(p []byte) (int, error) { return r.p.Write(p) }
 func (r *realPort) Close() error {
-	slog.Info("serial close", "port", r.name)
+	slog.Info("serial close", "serial_port", r.name)
 	return r.p.Close()
 }
 func (r *realPort) Name() string { return r.name }

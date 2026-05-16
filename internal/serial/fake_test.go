@@ -181,8 +181,8 @@ func TestFakeOpener_Open_LogsInfo(t *testing.T) {
 	}
 
 	rec.AssertRecord(t, slog.LevelInfo, "serial open", map[string]any{
-		"port": "COM3",
-		"baud": 9600,
+		"serial_port": "COM3",
+		"baud":        9600,
 	})
 }
 
@@ -199,7 +199,7 @@ func TestFakeOpener_Open_ErrorLogsError(t *testing.T) {
 	}
 
 	rec.AssertRecord(t, slog.LevelError, "serial open failed", map[string]any{
-		"port": "COM99",
+		"serial_port": "COM99",
 	})
 }
 
