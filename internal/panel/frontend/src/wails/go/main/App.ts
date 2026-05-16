@@ -59,6 +59,7 @@ export function RelaunchPanel(): Promise<void> { return call("RelaunchPanel"); }
 export function GetDevices(): Promise<any> { return call<any>("GetDevices"); }
 export function Discover(): Promise<any> { return call<any>("Discover"); }
 export function DisconnectAll(): Promise<any> { return call<any>("DisconnectAll"); }
+export function DisconnectPort(port: string): Promise<any> { return call<any>("DisconnectPort", port); }
 export function GetPorts(): Promise<any> { return call<any>("GetPorts"); }
 
 // Diagnostics returns a snapshot of every input that gates the

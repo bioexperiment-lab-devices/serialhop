@@ -223,6 +223,49 @@ func TestRegistry_Replace_LogsInfoRecord(t *testing.T) {
 	})
 }
 
+func TestDisconnectByPort_EmptyRegistry(t *testing.T) {
+	r := New()
+	if r.DisconnectByPort("COM3") {
+		t.Errorf("DisconnectByPort on empty registry: got true, want false")
+	}
+}
+
+func TestDisconnectByPort_NotFound(t *testing.T) {
+	r := New()
+	r.Replace([]*Device{newDevice(t, "pump_1", "COM3", 10)})
+	if r.DisconnectByPort("COM99") {
+		t.Errorf("DisconnectByPort(COM99): got true, want false")
+	}
+	if _, ok := r.Get("pump_1"); !ok {
+		t.Errorf("DisconnectByPort(COM99) removed pump_1 by mistake")
+	}
+}
+
+func TestDisconnectByPort_RemovesAndClosesMatch(t *testing.T) {
+	r := New()
+	target := newDevice(t, "pump_1", "COM3", 10)
+	other := newDevice(t, "valve_1", "COM4", 30)
+	r.Replace([]*Device{target, other})
+
+	if !r.DisconnectByPort("COM3") {
+		t.Fatalf("DisconnectByPort(COM3): got false, want true")
+	}
+	if _, ok := r.Get("pump_1"); ok {
+		t.Errorf("pump_1 should be removed after DisconnectByPort")
+	}
+	if _, err := target.Conn.Write([]byte{1}); err == nil {
+		t.Errorf("target.Conn should be closed after DisconnectByPort")
+	}
+
+	// Untouched device's port must still be open and registered.
+	if _, ok := r.Get("valve_1"); !ok {
+		t.Errorf("valve_1 should still be registered")
+	}
+	if _, err := other.Conn.Write([]byte{1}); err != nil {
+		t.Errorf("other.Conn should remain open; got err=%v", err)
+	}
+}
+
 func TestDisconnectAll_PopulatedRegistry(t *testing.T) {
 	r := New()
 	devs := []*Device{

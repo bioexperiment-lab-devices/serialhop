@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -139,6 +140,58 @@ func TestServiceCli_GetDevices_IgnoresCacheUserMismatch(t *testing.T) {
 	}
 	if status != StatusOK {
 		t.Errorf("status: got %v, want StatusOK", status)
+	}
+}
+
+func TestServiceCli_DisconnectPort_OK(t *testing.T) {
+	var gotMethod, gotPath, gotPortQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotPortQuery = r.URL.Query().Get("port")
+		_ = json.NewEncoder(w).Encode(api.DisconnectResponse{Released: 1})
+	}))
+	defer srv.Close()
+
+	port := mustPortFromURL(t, srv.URL)
+	cli := NewServiceCli(seedCache(t, port))
+	resp, status, err := cli.DisconnectPort(context.Background(), "COM3")
+	if err != nil {
+		t.Fatalf("DisconnectPort: %v", err)
+	}
+	if status != StatusOK {
+		t.Errorf("status: got %v, want StatusOK", status)
+	}
+	if resp.Released != 1 {
+		t.Errorf("Released: got %d, want 1", resp.Released)
+	}
+	if gotMethod != "POST" {
+		t.Errorf("method: got %s, want POST", gotMethod)
+	}
+	if gotPath != "/devices/disconnect" {
+		t.Errorf("path: got %s, want /devices/disconnect", gotPath)
+	}
+	if gotPortQuery != "COM3" {
+		t.Errorf("port query: got %q, want COM3", gotPortQuery)
+	}
+}
+
+func TestServiceCli_DisconnectPort_NotFoundReturnsSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"device not found","detail":"COM99"}`, http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	port := mustPortFromURL(t, srv.URL)
+	cli := NewServiceCli(seedCache(t, port))
+	resp, status, err := cli.DisconnectPort(context.Background(), "COM99")
+	if !errors.Is(err, ErrPortNotFound) {
+		t.Fatalf("err: got %v, want ErrPortNotFound", err)
+	}
+	if status != StatusOK {
+		t.Errorf("status: got %v, want StatusOK (service was reachable)", status)
+	}
+	if resp.Released != 0 {
+		t.Errorf("Released: got %d, want 0", resp.Released)
 	}
 }
 

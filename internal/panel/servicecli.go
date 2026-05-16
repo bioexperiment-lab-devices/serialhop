@@ -3,9 +3,11 @@ package panel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -112,6 +114,47 @@ func (c *ServiceCli) DisconnectAll(ctx context.Context) (api.DisconnectResponse,
 	var out api.DisconnectResponse
 	status, err := c.do(ctx, "POST", "/devices/disconnect", &out)
 	return out, status, err
+}
+
+// ErrPortNotFound is returned by DisconnectPort when the service reports
+// that no device is currently registered on the requested port (HTTP 404).
+// It's informational — distinct from transport errors — so the panel can
+// surface a "no longer connected" hint and just refresh.
+var ErrPortNotFound = errors.New("port not found")
+
+// DisconnectPort proxies POST /devices/disconnect?port=<name>. Returns
+// Released=1 on success; Released=0 with ErrPortNotFound and StatusOK on
+// 404 (the service was reachable, the device simply wasn't registered).
+// Any other transport / decoding failure surfaces per the standard do()
+// contract.
+func (c *ServiceCli) DisconnectPort(ctx context.Context, port string) (api.DisconnectResponse, ServiceCliStatus, error) {
+	var out api.DisconnectResponse
+	base, status := c.baseURL()
+	if status != StatusOK {
+		return out, status, nil
+	}
+	q := url.Values{"port": {port}}
+	target := base + "/devices/disconnect?" + q.Encode()
+	req, err := http.NewRequestWithContext(ctx, "POST", target, nil)
+	if err != nil {
+		return out, StatusOK, fmt.Errorf("build request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return out, StatusServiceDown, nil
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return out, StatusServiceDown, fmt.Errorf("decode: %w", err)
+		}
+		return out, StatusOK, nil
+	case http.StatusNotFound:
+		return api.DisconnectResponse{Released: 0}, StatusOK, ErrPortNotFound
+	default:
+		return out, StatusServiceDown, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
 }
 
 // GetPorts proxies GET /serial/ports/detailed.
