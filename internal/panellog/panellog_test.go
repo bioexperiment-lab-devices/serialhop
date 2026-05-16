@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/panellog"
 )
@@ -161,5 +160,3 @@ func TestShutdown_IsIdempotent(t *testing.T) {
 		t.Fatalf("second Shutdown: %v", err)
 	}
 }
-
-var _ = time.Second // anchor import; remove if unused

@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -46,14 +45,6 @@ func Init(version string, level slog.Level) (*Manager, error) {
 		return nil, errMissingPath
 	}
 
-	// Migration: delete the legacy breadcrumb file if present.
-	if legacy := paths.PanelErrorLogPath(); legacy != "" {
-		if err := os.Remove(legacy); err != nil && !os.IsNotExist(err) {
-			// Non-fatal — we'll log it once the handler is installed below.
-			defer slog.Warn("panellog: failed to remove legacy file", "path", legacy, "err", err)
-		}
-	}
-
 	sid, err := newSessionID()
 	if err != nil {
 		return nil, fmt.Errorf("panellog: generate session id: %w", err)
@@ -68,7 +59,7 @@ func Init(version string, level slog.Level) (*Manager, error) {
 	levelVar := new(slog.LevelVar)
 	levelVar.Set(level)
 
-	handler := slog.NewJSONHandler(io.Writer(disk), &slog.HandlerOptions{Level: levelVar})
+	handler := slog.NewJSONHandler(disk, &slog.HandlerOptions{Level: levelVar})
 	withPanel := handler.WithAttrs([]slog.Attr{
 		slog.Group("panel",
 			slog.String("session_id", sid),
@@ -78,6 +69,15 @@ func Init(version string, level slog.Level) (*Manager, error) {
 
 	prev := slog.Default()
 	slog.SetDefault(slog.New(withPanel))
+
+	// Migration: delete the legacy breadcrumb file if present.
+	// Runs after slog.SetDefault so the deferred warn lands in the panel handler.
+	if legacy := paths.PanelErrorLogPath(); legacy != "" {
+		if err := os.Remove(legacy); err != nil && !os.IsNotExist(err) {
+			// Non-fatal — log it now that the panel handler is installed.
+			defer slog.Warn("panellog: failed to remove legacy file", "path", legacy, "err", err)
+		}
+	}
 
 	m := &Manager{
 		disk:      disk,
