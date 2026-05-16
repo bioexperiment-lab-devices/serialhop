@@ -35,6 +35,7 @@ func buildRemotes(cfg Config) []string {
 
 func Run(ctx context.Context, cfg Config) error {
 	if _, _, err := net.SplitHostPort(cfg.Server); err != nil {
+		slog.Error("chisel run starting", "err", err.Error())
 		return fmt.Errorf("invalid server %q: %w", cfg.Server, err)
 	}
 	auth := ""
@@ -59,17 +60,26 @@ func Run(ctx context.Context, cfg Config) error {
 	// captured to SerialHop_stderr.log and shipped to Loki.
 	c.Info = true
 	c.Debug = false
-	slog.Info("chisel: starting",
+	slog.Info("chisel run starting",
 		"server", cfg.Server,
 		"remote_port", cfg.RemotePort,
 		"local_port", cfg.LocalPort,
 		"auth", cfg.User != "",
+		"routes_count", len(remotes),
 		"forward_tunnels", len(cfg.ForwardTunnels))
+	slog.Debug("chisel routes", "routes", remotes)
 	if err := c.Start(ctx); err != nil {
 		return fmt.Errorf("start chisel client: %w", err)
 	}
+	slog.Info("chisel run waiting (session live)")
 	if err := c.Wait(); err != nil {
+		if ctx.Err() != nil {
+			slog.Info("chisel session ended", "reason", "context cancelled")
+		} else {
+			slog.Warn("chisel session lost", "reason", err.Error())
+		}
 		return fmt.Errorf("chisel client: %w", err)
 	}
+	slog.Info("chisel run exiting", "err", "")
 	return nil
 }
