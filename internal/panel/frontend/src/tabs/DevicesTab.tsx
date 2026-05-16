@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
-import { GetDevices, Discover, DisconnectAll } from "../wails/go/main/App";
+import { GetDevices, Discover, DisconnectAll, DisconnectPort } from "../wails/go/main/App";
 
 interface DeviceDTO {
   id: string;
@@ -74,6 +74,11 @@ export function DevicesTab() {
     try { await DisconnectAll(); await refresh(); } finally { setBusy(false); }
   };
 
+  const disconnectOne = async (port: string) => {
+    setBusy(true);
+    try { await DisconnectPort(port); await refresh(); } finally { setBusy(false); }
+  };
+
   useEffect(() => { refresh(); }, []);
 
   const empty = resp.devices.length === 0;
@@ -142,7 +147,16 @@ export function DevicesTab() {
                   <td><b style={{ color: "var(--text)" }}>{d.id}</b></td>
                   <td>{d.type}</td>
                   <td>{d.port}</td>
-                  <td />
+                  <td style={{ textAlign: "right" }}>
+                    <Button
+                      variant="danger"
+                      onClick={() => disconnectOne(d.port)}
+                      disabled={busy || !resp.status.reachable}
+                      aria-label={`Disconnect ${d.id}`}
+                    >
+                      Disconnect
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -19,6 +19,17 @@ func (s *Server) handlePostDevicesDisconnect(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, DisconnectResponse{Released: n})
 }
 
+func (s *Server) handlePostDevicesDisconnectByPort(w http.ResponseWriter, r *http.Request) {
+	port := r.PathValue("port")
+	if s.reg.DisconnectByPort(port) {
+		slog.Info("disconnect_port", "port", port, "released", 1)
+		writeJSON(w, http.StatusOK, DisconnectResponse{Released: 1})
+		return
+	}
+	slog.Info("disconnect_port", "port", port, "released", 0)
+	writeError(w, http.StatusNotFound, "device not found", port)
+}
+
 func (s *Server) handleGetSerialPortsDetailed(w http.ResponseWriter, r *http.Request) {
 	ports, err := s.opener.ListDetailed()
 	if err != nil {

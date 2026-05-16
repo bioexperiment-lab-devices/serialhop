@@ -390,6 +390,38 @@ func (a *App) DisconnectAll() DisconnectResult {
 	return res
 }
 
+// DisconnectPort releases exactly the device currently registered on the
+// named serial port. A 404 from the service (the port wasn't registered
+// after all — likely a stale row) is treated as a benign outcome: status
+// stays OK and the footer surfaces a "no longer connected" hint so the
+// UI just refreshes.
+func (a *App) DisconnectPort(port string) DisconnectResult {
+	done := a.logAction("disconnect_port", slog.String("port", port))
+	ctx, cancel := a.callCtx()
+	defer cancel()
+	resp, st, err := a.svc.DisconnectPort(ctx, port)
+	res := DisconnectResult{DisconnectResponse: resp, Status: toTabStatus(st)}
+	switch {
+	case errors.Is(err, ErrPortNotFound):
+		done(nil, slog.Bool("reachable", res.Status.Reachable), slog.Int("released", 0))
+		a.emitEvent("footer:set", map[string]interface{}{
+			"kind": "warn",
+			"text": fmt.Sprintf("Port %s is no longer connected.", port),
+		})
+	case err != nil:
+		done(err, slog.Bool("reachable", false))
+	default:
+		done(nil, slog.Bool("reachable", res.Status.Reachable), slog.Int("released", resp.Released))
+		if st == StatusOK {
+			a.emitEvent("footer:set", map[string]interface{}{
+				"kind": "ok",
+				"text": fmt.Sprintf("Disconnected port=%s.", port),
+			})
+		}
+	}
+	return res
+}
+
 func (a *App) GetPorts() PortsResult {
 	done := a.logAction("get_ports")
 	ctx, cancel := a.callCtx()

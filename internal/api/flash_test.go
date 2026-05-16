@@ -54,6 +54,54 @@ func TestDisconnect_PopulatedRegistry(t *testing.T) {
 	}
 }
 
+func TestDisconnectByPort_NotFound(t *testing.T) {
+	s, reg, _ := newTestServerForFlash(t)
+	reg.Replace([]*registry.Device{
+		{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect/by-port/COM99", nil)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want 404", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"error":"device not found"`) {
+		t.Errorf("body: %q", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"detail":"COM99"`) {
+		t.Errorf("body detail: %q", rr.Body.String())
+	}
+	if len(reg.List()) != 1 {
+		t.Errorf("registry size: got %d, want 1 (404 must not mutate)", len(reg.List()))
+	}
+}
+
+func TestDisconnectByPort_Found(t *testing.T) {
+	s, reg, _ := newTestServerForFlash(t)
+	target := &registry.Device{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")}
+	other := &registry.Device{ID: "b", Type: "valve", TypeCode: 30, Port: "COM4", Conn: labserial.NewFakePort("COM4")}
+	reg.Replace([]*registry.Device{target, other})
+
+	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect/by-port/COM3", nil)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("status: got %d, body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"released":1`) {
+		t.Errorf("body: %q", rr.Body.String())
+	}
+	if _, ok := reg.HasPort("COM3"); ok {
+		t.Errorf("COM3 should be gone from registry")
+	}
+	if _, ok := reg.HasPort("COM4"); !ok {
+		t.Errorf("COM4 must remain in registry")
+	}
+	if _, err := target.Conn.Write([]byte{1}); err == nil {
+		t.Errorf("target.Conn should be closed")
+	}
+}
+
 func TestDetailedPorts_ReturnsAnnotatedPorts(t *testing.T) {
 	s, reg, op := newTestServerForFlash(t)
 	op.Add(labserial.NewFakePort("COM3"))

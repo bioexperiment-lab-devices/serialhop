@@ -4,9 +4,13 @@ package panel
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/api"
 )
 
 // TestGetDevices_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable is the
@@ -64,6 +68,48 @@ func TestDiscover_DevicesSliceMarshalsAsEmptyArrayWhenUnreachable(t *testing.T) 
 	}
 	if strings.Contains(string(b), `"devices":null`) {
 		t.Fatalf(`JSON contains "devices":null: %s`, b)
+	}
+}
+
+func TestDisconnectPort_OKReleasesOne(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = json.NewEncoder(w).Encode(api.DisconnectResponse{Released: 1})
+	}))
+	defer srv.Close()
+
+	app := NewApp()
+	app.svc = NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
+
+	res := app.DisconnectPort("COM3")
+	if res.Released != 1 {
+		t.Errorf("Released: got %d, want 1", res.Released)
+	}
+	if !res.Status.Reachable {
+		t.Errorf("Status.Reachable: got false, want true")
+	}
+	if gotPath != "/devices/disconnect/by-port/COM3" {
+		t.Errorf("path: got %s, want /devices/disconnect/by-port/COM3", gotPath)
+	}
+}
+
+func TestDisconnectPort_NotFoundTreatedAsBenign(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"device not found"}`, http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	app := NewApp()
+	app.svc = NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
+
+	res := app.DisconnectPort("COM99")
+	if res.Released != 0 {
+		t.Errorf("Released: got %d, want 0", res.Released)
+	}
+	// 404 means the service was reachable; only the device wasn't.
+	if !res.Status.Reachable {
+		t.Errorf("Status.Reachable: got false, want true (404 is reachable + missing)")
 	}
 }
 

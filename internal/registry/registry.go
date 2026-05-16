@@ -120,6 +120,36 @@ func (r *Registry) DisconnectAll() int {
 	return n
 }
 
+// DisconnectByPort closes and removes the single device whose Port == name.
+// Returns true if a matching device was found and released, false otherwise.
+// The connection is closed outside the registry mutex so a slow Close cannot
+// stall concurrent readers. Used by POST /devices/disconnect/{port}.
+func (r *Registry) DisconnectByPort(name string) bool {
+	r.mu.Lock()
+	var found *Device
+	var foundID string
+	for id, d := range r.devices {
+		if d.Port == name {
+			found = d
+			foundID = id
+			break
+		}
+	}
+	if found != nil {
+		delete(r.devices, foundID)
+	}
+	r.mu.Unlock()
+
+	if found == nil {
+		return false
+	}
+	slog.Info("registry disconnect by port", "port", name, "id", foundID)
+	if found.Conn != nil {
+		_ = found.Conn.Close()
+	}
+	return true
+}
+
 // Get looks up a device by ID.
 func (r *Registry) Get(id string) (*Device, bool) {
 	r.mu.RLock()
