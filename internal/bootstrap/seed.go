@@ -14,7 +14,9 @@ import (
 //
 // If the cache file is missing or corrupt, SeedCache writes a fresh one
 // with Version=cacheCurrentVersion and only the identity triple
-// populated. Idempotent.
+// populated. Safe to call multiple times: only the identity triple and
+// fetched_at are written; server_info / remote_port / actual_rest_port
+// are preserved on every call.
 func SeedCache(path, host, user, pass string) error {
 	c, err := ReadCacheRaw(path)
 	if err != nil {

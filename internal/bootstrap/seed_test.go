@@ -81,8 +81,24 @@ func TestSeedCache_CorruptCacheGetsReplaced(t *testing.T) {
 	}
 }
 
-func TestSeedCache_IsIdempotent(t *testing.T) {
+func TestSeedCache_DoubleCallPreservesIdentityAndNonIdentityFields(t *testing.T) {
+	// Calling SeedCache twice with the same arguments must leave the
+	// identity triple AND the non-identity fields (set by the prior
+	// Resolve) untouched. FetchedAt is allowed to change.
 	p := filepath.Join(t.TempDir(), "cache.json")
+	prior := Cache{
+		Version:        cacheCurrentVersion,
+		FetchedAt:      "2026-05-01T00:00:00Z",
+		Host:           "h",
+		User:           "u",
+		Pass:           "pw",
+		ServerInfo:     labbridge.ServerInfo{ChiselListenPort: 7000},
+		RemotePort:     8089,
+		ActualRestPort: 49283,
+	}
+	if err := WriteCache(p, prior); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
 	if err := SeedCache(p, "h", "u", "pw"); err != nil {
 		t.Fatalf("SeedCache #1: %v", err)
 	}
@@ -95,5 +111,14 @@ func TestSeedCache_IsIdempotent(t *testing.T) {
 	}
 	if got.Host != "h" || got.User != "u" || got.Pass != "pw" {
 		t.Errorf("identity: got (%q,%q,%q)", got.Host, got.User, got.Pass)
+	}
+	if got.ServerInfo.ChiselListenPort != 7000 {
+		t.Errorf("ServerInfo.ChiselListenPort clobbered: got %d", got.ServerInfo.ChiselListenPort)
+	}
+	if got.RemotePort != 8089 {
+		t.Errorf("RemotePort clobbered: got %d", got.RemotePort)
+	}
+	if got.ActualRestPort != 49283 {
+		t.Errorf("ActualRestPort clobbered: got %d", got.ActualRestPort)
 	}
 }
