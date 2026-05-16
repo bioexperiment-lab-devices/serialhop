@@ -252,7 +252,16 @@ func (a *App) CancelDownload() {
 	}
 }
 
-func (a *App) InstallUpdate() AdminResult { return ctlInstallEvent(a) }
+func (a *App) InstallUpdate() AdminResult {
+	done := a.logAction("install_update")
+	res := ctlInstallEvent(a)
+	var err error
+	if !res.OK && res.ErrorMessage != "" {
+		err = errors.New(res.ErrorMessage)
+	}
+	done(err, slog.Bool("cancelled", res.Cancelled))
+	return res
+}
 
 // RelaunchPanel spawns a detached copy of the panel exe at the path
 // returned by os.Executable() — which, after a successful update, points
