@@ -55,7 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /devices/disconnect", s.handlePostDevicesDisconnect)
 	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
-	return mux
+	return logMiddleware(mux)
 }
 
 func (s *Server) handleGetDevices(w http.ResponseWriter, r *http.Request) {
