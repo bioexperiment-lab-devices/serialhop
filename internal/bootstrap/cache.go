@@ -46,8 +46,16 @@ type Cache struct {
 
 // WriteCache atomically writes c to path. Any existing file at path is
 // replaced. Permissions are 0600.
+//
+// The cache.Pass field intentionally serializes to JSON: the panel reads
+// this file to learn the running service's lab-bridge credentials so
+// status-lamp probes reflect what the service is actually using, not
+// whatever the YAML currently says. The file is written 0600 in the
+// same DataDir that already holds the plaintext lab_bridge.pass in
+// config.yaml — net new exposure is zero. See spec
+// 2026-05-16-cached-creds-for-status-badges-design.
 func WriteCache(path string, c Cache) error {
-	data, err := json.MarshalIndent(c, "", "  ")
+	data, err := json.MarshalIndent(c, "", "  ") //nolint:gosec // see WriteCache godoc
 	if err != nil {
 		return fmt.Errorf("bootstrap: marshal cache: %w", err)
 	}
