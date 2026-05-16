@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { Field } from "../components/Field";
 import { Section } from "../components/Section";
@@ -336,10 +336,10 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
       >
         <Field label="Port" dataField="rest.port"
           helpComponent={<Help title="REST port" what="Local TCP port the SerialHop service binds." defaultVal="0 (OS-assigned)" />}>
-          <input className="shp-input shp-input--mono" type="number" min={0} max={65535}
+          <IntegerInput className="shp-input shp-input--mono" min={0} max={65535}
             value={form.rest.port}
             style={{ maxWidth: 120 }}
-            onChange={ev => setNested("rest", "port", Number(ev.target.value) || 0)} />
+            onChange={v => setNested("rest", "port", v)} />
           <div className="shp-field__hint">0 = OS picks a free port</div>
         </Field>
       </Section>
@@ -387,9 +387,9 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
             />
           }>
           <div className="shp-input-row" style={{ maxWidth: 220 }}>
-            <input className="shp-input shp-input--mono" type="number" min={0}
+            <IntegerInput className="shp-input shp-input--mono" min={0}
               value={form.discovery.post_open_settle_ms}
-              onChange={ev => setNested("discovery", "post_open_settle_ms", Number(ev.target.value) || 0)} />
+              onChange={v => setNested("discovery", "post_open_settle_ms", v)} />
             <span className="shp-muted">ms</span>
           </div>
         </Field>
@@ -505,11 +505,11 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
               when="0 keeps all backups indefinitely."
             />
           }>
-          <input className="shp-input shp-input--mono" type="number" min={0}
+          <IntegerInput className="shp-input shp-input--mono" min={0}
             value={form.flashing.keep_n}
             disabled={flashOff}
             style={{ maxWidth: 100 }}
-            onChange={ev => setNested("flashing", "keep_n", Number(ev.target.value) || 0)} />
+            onChange={v => setNested("flashing", "keep_n", v)} />
         </Field>
       </Section>
 
@@ -571,6 +571,51 @@ const FIELD_LABELS: { path: (c: ConfigDTO) => unknown; label: string }[] = [
 
 function diffFieldLabels(a: ConfigDTO, b: ConfigDTO): string[] {
   return FIELD_LABELS.filter(f => f.path(a) !== f.path(b)).map(f => f.label);
+}
+
+interface IntegerInputProps {
+  value: number;
+  onChange: (n: number) => void;
+  className?: string;
+  style?: React.CSSProperties;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+}
+
+// Controlled number input that keeps a local string buffer so the operator
+// can clear the field to empty. With a directly-controlled number input,
+// clearing emits 0 and the form value snaps back to "0" on the next render —
+// leaving the leading "0" wedged in the UI with no way to erase it. The
+// buffer decouples display from form state: "" displays empty while the
+// form sees 0; in-progress entries like "05" survive the round-trip until
+// the parent's value changes for an external reason (load / discard).
+function IntegerInput({ value, onChange, ...rest }: IntegerInputProps) {
+  const [text, setText] = useState(() => String(value));
+  const lastEmitted = useRef(value);
+
+  useEffect(() => {
+    if (value !== lastEmitted.current) {
+      lastEmitted.current = value;
+      setText(String(value));
+    }
+  }, [value]);
+
+  return (
+    <input
+      {...rest}
+      type="number"
+      value={text}
+      onChange={ev => {
+        const raw = ev.target.value;
+        setText(raw);
+        const parsed = raw === "" ? 0 : Number(raw);
+        const n = Number.isFinite(parsed) ? parsed : 0;
+        lastEmitted.current = n;
+        onChange(n);
+      }}
+    />
+  );
 }
 
 interface ListFieldProps {

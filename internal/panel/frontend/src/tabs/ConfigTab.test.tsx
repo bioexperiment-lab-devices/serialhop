@@ -100,6 +100,36 @@ describe("ConfigTab", () => {
     expect(App.SaveConfig).not.toHaveBeenCalled();
   });
 
+  it("integer fields can be cleared to empty (leading zero is erasable)", async () => {
+    render(<ConfigTab onDirtyChange={() => {}} />);
+    await waitFor(() => screen.getByDisplayValue("h"));
+    // REST port loads as 0 — clearing the input must leave it empty,
+    // not snap back to "0" via the form's number fallback.
+    const portInput = document.querySelector(
+      '[data-field="rest.port"] input',
+    ) as HTMLInputElement;
+    expect(portInput.value).toBe("0");
+    fireEvent.change(portInput, { target: { value: "" } });
+    expect(portInput.value).toBe("");
+    // Typing a fresh value after clearing must work and not carry a leading zero.
+    fireEvent.change(portInput, { target: { value: "8080" } });
+    expect(portInput.value).toBe("8080");
+  });
+
+  it("discard restores integer fields to the loaded value", async () => {
+    const ref = createRef<ConfigTabHandle>();
+    render(<ConfigTab ref={ref} onDirtyChange={() => {}} />);
+    await waitFor(() => screen.getByDisplayValue("h"));
+    const settleInput = document.querySelector(
+      '[data-field="discovery.post_open_settle_ms"] input',
+    ) as HTMLInputElement;
+    expect(settleInput.value).toBe("2000");
+    fireEvent.change(settleInput, { target: { value: "" } });
+    expect(settleInput.value).toBe("");
+    ref.current!.discard();
+    await waitFor(() => expect(settleInput.value).toBe("2000"));
+  });
+
   it("imperative handle: discard() resets the form", async () => {
     const ref = createRef<ConfigTabHandle>();
     render(<ConfigTab ref={ref} onDirtyChange={() => {}} />);
