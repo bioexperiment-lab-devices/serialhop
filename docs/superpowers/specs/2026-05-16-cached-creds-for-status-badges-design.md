@@ -142,7 +142,7 @@ Foreground site: in `runForeground`, before the `bootstrap.Resolve` call at `mai
 
 ### `internal/panel/bindings.go`
 
-- The diag-info section near line 437 (`d.CacheActualRestPort = c.ActualRestPort`) currently reads via `ReadCache(path, user)`. Switch to `ReadCacheRaw` — diag wants to surface "what is actually in the cache", not "what would the cache look like to my user".
+- No code change required. The `Diagnostics()` cache read at lines 425-440 already bypasses `ReadCache` and does its own raw `os.ReadFile` + `json.Unmarshal` (intentionally, per the existing comment, to expose mismatches as debug info). It already surfaces whatever is on disk, which is what we want.
 
 ## Edge cases
 
