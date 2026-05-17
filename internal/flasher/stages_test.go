@@ -351,6 +351,69 @@ func contains(s, substr string) bool {
 	return false
 }
 
+func TestFlash_Backup_IsUserSpaceSizedAndRoundTripFlashable(t *testing.T) {
+	// Regression: backup used to capture the full 32 KiB flash (including the
+	// 512 B optiboot region), so the saved HEX could not be re-flashed through
+	// the normal /flash path — preflight rejects anything > FlashSize -
+	// BootloaderSize. Backup must be exactly user-space-sized so the file
+	// round-trips back as firmware.
+	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
+	// Preload a recognizable pattern across the entire flash so we can verify
+	// the backup captured the full user-space region (not just page 0) and
+	// stopped before the bootloader.
+	pre := make([]byte, avr.FlashSize)
+	for i := range pre {
+		pre[i] = byte(i & 0xFF)
+	}
+	op.fake.PreloadFlash(pre)
+
+	fl, err := New(op, t.TempDir(), 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:  []byte{0x00},
+		Timeout:   500 * time.Millisecond,
+		InterByte: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("Flash: %v", err)
+	}
+	if res.Outcome != OutcomeSuccess {
+		t.Fatalf("setup flash outcome: got %s, want success", res.Outcome)
+	}
+
+	img, err := ParseIntelHex([]byte(res.BackupHex))
+	if err != nil {
+		t.Fatalf("ParseIntelHex(BackupHex): %v", err)
+	}
+	wantSize := avr.FlashSize - avr.BootloaderSize
+	if len(img) != wantSize {
+		t.Errorf("backup size: got %d, want %d (user space)", len(img), wantSize)
+	}
+	for i := 0; i < len(img) && i < wantSize; i++ {
+		if img[i] != byte(i&0xFF) {
+			t.Errorf("backup[%d]: got %02X, want %02X", i, img[i], byte(i&0xFF))
+			break
+		}
+	}
+
+	// Round-trip: feeding the backup back as firmware must pass preflight and
+	// flash successfully on a fresh device.
+	op.fake = ft.NewFakeOptiboot()
+	res2, err := fl.Flash(context.Background(), "COM3", Request{
+		Firmware:  img,
+		Timeout:   500 * time.Millisecond,
+		InterByte: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("re-flash: %v", err)
+	}
+	if res2.Outcome != OutcomeSuccess {
+		t.Errorf("re-flash outcome: got %s (preflight=%+v), want success", res2.Outcome, res2.Stages["preflight"])
+	}
+}
+
 func TestFlash_SkipBackup_Success(t *testing.T) {
 	op := &fakeOpenerForFlasher{port: "COM3", fake: ft.NewFakeOptiboot()}
 	prev := make([]byte, 128)
