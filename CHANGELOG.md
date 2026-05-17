@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.27.0...v0.27.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* cap firmware backup at user space so it round-trips through /flash ([#138](https://github.com/bioexperiment-lab-devices/serialhop/issues/138)) ([4efc4ef](https://github.com/bioexperiment-lab-devices/serialhop/commit/4efc4ef320bf3a7b5a434e8f9635b66db3134b10))
+
 ## [0.27.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.26.0...v0.27.0) (2026-05-16)
 
 
