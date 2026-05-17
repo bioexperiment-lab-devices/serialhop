@@ -65,15 +65,23 @@ func runPreflight(s *runState) bool {
 }
 
 // runBackup opens the port at the bootloader baud, pulses DTR to enter
-// optiboot, syncs, then page-reads the entire flash. The image bytes are
-// stored on s.backupBytes for use by rollback. The image is rendered to
-// Intel HEX, saved to disk, and the inline copy stored on s.res.BackupHex.
+// optiboot, syncs, then page-reads the user-space region of flash. The image
+// bytes are stored on s.backupBytes for use by rollback. The image is rendered
+// to Intel HEX, saved to disk, and the inline copy stored on s.res.BackupHex.
 // On any failure, marks downstream stages as skipped and returns false.
+//
+// Backup deliberately stops at FlashSize - BootloaderSize. Optiboot's BLB
+// lock bits make the top 512 B effectively unwritable through the bootloader,
+// so including those bytes in the backup would (a) push the saved HEX past
+// the /flash preflight ceiling and make it unflashable through the normal
+// path, and (b) cause rollback to issue ProgPage writes the bootloader
+// rejects.
 func runBackup(s *runState, c *stkClient) bool {
 	slog.Info("flasher stage start", "stage", "backup", "port", s.port)
 	start := time.Now()
-	img := make([]byte, avr.FlashSize)
-	for off := 0; off < avr.FlashSize; off += avr.PageSize {
+	backupSize := avr.FlashSize - avr.BootloaderSize
+	img := make([]byte, backupSize)
+	for off := 0; off < backupSize; off += avr.PageSize {
 		if err := c.LoadAddress(s.req.Timeout, uint16(off/2)); err != nil {
 			s.recordStage("backup", "failed", "load_address: "+err.Error(), time.Since(start))
 			slog.Info("flash_stage", "port", s.port, "stage", "backup", "status", "failed", "duration_ms", time.Since(start).Milliseconds())
