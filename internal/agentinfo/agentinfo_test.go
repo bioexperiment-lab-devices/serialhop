@@ -68,3 +68,37 @@ func TestSnapshot_JSONShape(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshot_BuildSHAFromVersion(t *testing.T) {
+	cases := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{"release with describe suffix", "0.27.1+abc1234", "abc1234"},
+		{"plain semver", "0.27.1", ""},
+		{"dev default", "dev", ""},
+		{"multi-plus stays at first", "0.27.1+abc+xyz", "abc+xyz"},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := internalversion.Version
+			t.Cleanup(func() { internalversion.Version = orig })
+			internalversion.Version = tc.version
+			if got := Snapshot().BuildSHA; got != tc.want {
+				t.Errorf("BuildSHA(%q): got %q, want %q", tc.version, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInfoJSON_OmitsBuildSHAWhenEmpty(t *testing.T) {
+	b, err := json.Marshal(Info{Version: "dev", OS: "linux", Arch: "amd64"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"build_sha"`) {
+		t.Errorf("build_sha should be omitted when empty: %s", b)
+	}
+}

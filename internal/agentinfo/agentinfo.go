@@ -7,6 +7,7 @@ package agentinfo
 import (
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	internalversion "github.com/bioexperiment-lab-devices/serialhop/internal/version"
@@ -23,6 +24,17 @@ type Info struct {
 	UptimeSeconds int64  `json:"uptime_seconds"`
 }
 
+// extractBuildSHA returns everything after the first '+' in v, or "" if
+// there is no '+'. Mirrors the format produced by tools/buildcmd which
+// concatenates the assets/version.json string with a git-describe suffix.
+func extractBuildSHA(v string) string {
+	i := strings.IndexByte(v, '+')
+	if i < 0 {
+		return ""
+	}
+	return v[i+1:]
+}
+
 // startedAt is captured at package init. The agent imports agentinfo from
 // the long-running app.Run path, so this is a close approximation of
 // process start. Off by at most the time between binary entry and the
@@ -37,6 +49,7 @@ func Snapshot() Info {
 	host, _ := os.Hostname() // empty on error — handler still returns 200
 	return Info{
 		Version:       internalversion.Version,
+		BuildSHA:      extractBuildSHA(internalversion.Version),
 		OS:            runtime.GOOS,
 		Arch:          runtime.GOARCH,
 		Hostname:      host,
