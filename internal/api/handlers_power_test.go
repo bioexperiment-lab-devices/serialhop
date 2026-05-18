@@ -155,3 +155,58 @@ func TestEnableKeepAwake_Returns500OnSyscallFailure(t *testing.T) {
 		t.Errorf("ka.Active() = true after failed Enable")
 	}
 }
+
+func TestDisableKeepAwake_FlipsActive(t *testing.T) {
+	srv, ka := powerTestServer(t)
+	_ = ka.Enable("test")
+
+	req := httptest.NewRequest(http.MethodPost, "/power/keep-awake/disable", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d", rec.Code)
+	}
+	var resp keepAwakeStatusBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Active {
+		t.Errorf("response active = true after Disable")
+	}
+	if ka.Active() {
+		t.Errorf("ka.Active() = true after Disable")
+	}
+}
+
+func TestDisableKeepAwake_IsIdempotent(t *testing.T) {
+	srv, _ := powerTestServer(t)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/power/keep-awake/disable", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("call %d status: got %d", i, rec.Code)
+		}
+	}
+}
+
+func TestDisableKeepAwake_Returns500OnSyscallFailure(t *testing.T) {
+	ka := &errorKeepAwake{active: true, disableErr: errSyscallFake}
+	srv := powerTestServerWith(t, ka)
+	req := httptest.NewRequest(http.MethodPost, "/power/keep-awake/disable", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 500 {
+		t.Fatalf("status: got %d", rec.Code)
+	}
+	var body ErrorBody
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error != "keep-awake disable failed" {
+		t.Errorf("error code: got %q", body.Error)
+	}
+	if !ka.Active() {
+		t.Errorf("ka.Active() = false after failed Disable; service-side flag must stay aligned with attempted OS state")
+	}
+}

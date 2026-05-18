@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
 	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)
 	mux.HandleFunc("POST /power/keep-awake/enable", s.handlePostKeepAwakeEnable)
+	mux.HandleFunc("POST /power/keep-awake/disable", s.handlePostKeepAwakeDisable)
 	return logMiddleware(mux)
 }
 
@@ -390,6 +391,19 @@ func (s *Server) handlePostKeepAwakeEnable(w http.ResponseWriter, _ *http.Reques
 	if err := s.keepAwake.Enable(reason); err != nil {
 		slog.Warn("keep-awake enable failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "keep-awake enable failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
+}
+
+// handlePostKeepAwakeDisable clears the power request. Idempotent. On
+// syscall failure returns 500; the service-side Active flag is left at
+// its current value so the next Enable short-circuits (consistent with
+// our best-effort knowledge of OS state).
+func (s *Server) handlePostKeepAwakeDisable(w http.ResponseWriter, _ *http.Request) {
+	if err := s.keepAwake.Disable(); err != nil {
+		slog.Warn("keep-awake disable failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "keep-awake disable failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
