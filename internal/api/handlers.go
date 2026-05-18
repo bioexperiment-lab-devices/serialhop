@@ -61,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
 	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
+	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)
 	return logMiddleware(mux)
 }
 
@@ -366,4 +367,16 @@ func toDTOs(devs []*registry.Device) []DeviceDTO {
 func (s *Server) handleGetAgentInfo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, agentinfo.Snapshot())
+}
+
+// keepAwakeStatusBody is the response body for the three /power/keep-awake
+// routes. Defined here, not in types.go, so it stays close to the
+// handlers that produce it.
+type keepAwakeStatusBody struct {
+	Active bool `json:"active"`
+}
+
+// handleGetKeepAwake reports the current power-request state.
+func (s *Server) handleGetKeepAwake(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
 }
