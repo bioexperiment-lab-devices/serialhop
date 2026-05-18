@@ -360,7 +360,6 @@ func toDTOs(devs []*registry.Device) []DeviceDTO {
 // polling. Best-effort: never fails. See
 // docs/superpowers/specs/2026-05-18-agent-info-endpoint-design.md.
 func (s *Server) handleGetAgentInfo(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(agentinfo.Snapshot())
+	writeJSON(w, http.StatusOK, agentinfo.Snapshot())
 }
