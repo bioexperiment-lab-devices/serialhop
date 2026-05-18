@@ -102,3 +102,23 @@ func TestInfoJSON_OmitsBuildSHAWhenEmpty(t *testing.T) {
 		t.Errorf("build_sha should be omitted when empty: %s", b)
 	}
 }
+
+func TestInfoJSON_OmitsMachineIDWhenEmpty(t *testing.T) {
+	b, err := json.Marshal(Info{Version: "dev", OS: "linux", Arch: "amd64"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"machine_id"`) {
+		t.Errorf("machine_id should be omitted when empty: %s", b)
+	}
+}
+
+func TestInfoJSON_IncludesMachineIDWhenPresent(t *testing.T) {
+	b, err := json.Marshal(Info{Version: "dev", OS: "windows", Arch: "amd64", MachineID: "AAAA-BBBB"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"machine_id":"AAAA-BBBB"`) {
+		t.Errorf("machine_id should be present when set: %s", b)
+	}
+}

@@ -53,6 +53,7 @@ func Snapshot() Info {
 		OS:            runtime.GOOS,
 		Arch:          runtime.GOARCH,
 		Hostname:      host,
+		MachineID:     readMachineID(),
 		UptimeSeconds: int64(time.Since(startedAt).Seconds()),
 	}
 }
