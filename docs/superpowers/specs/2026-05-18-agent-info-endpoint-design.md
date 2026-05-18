@@ -80,8 +80,8 @@ Field semantics:
 
 | Field | Type | Required | Source |
 |---|---|---|---|
-| `version` | string | yes | `internalversion.Base()` (already baked in via `-ldflags -X` at build time; see `internal/version/version.go:7` and `tools/buildcmd/main.go:74-76`). |
-| `build_sha` | string | no | The segment after `+` in `version` (the `git describe` suffix). Omitted when empty. |
+| `version` | string | yes | `internalversion.Version` — the **raw** value baked in via `-ldflags -X` at build time (e.g. `"0.27.1+abc1234"`; see `internal/version/version.go:7` and `tools/buildcmd/main.go:74-76`). Uses the full string, *not* `Base()`, so the server can distinguish different builds of the same release. |
+| `build_sha` | string | no | The segment after the first `+` in `internalversion.Version` (the `git describe` suffix). Omitted (`omitempty`) when the version contains no `+`. |
 | `os` | string | yes | `runtime.GOOS`. |
 | `arch` | string | yes | `runtime.GOARCH`. |
 | `hostname` | string | yes (but may be empty) | `os.Hostname()`. Empty string on error — do not fail the handler. |
