@@ -22,7 +22,7 @@ func readMachineID() string {
 		slog.Warn("agentinfo: open Cryptography key", "err", err)
 		return ""
 	}
-	defer k.Close()
+	defer func() { _ = k.Close() }()
 
 	v, _, err := k.GetStringValue("MachineGuid")
 	if err != nil {
