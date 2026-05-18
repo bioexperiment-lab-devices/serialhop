@@ -46,7 +46,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -137,7 +137,7 @@ jobs:
         if: steps.changes.outputs.ui != 'true'
         run: echo "No UI-relevant paths changed; skipping rendered-UI checks."
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.changes.outputs.ui == 'true'
         with:
           node-version: 22
