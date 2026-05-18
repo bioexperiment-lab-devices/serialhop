@@ -556,3 +556,42 @@ func TestPostCommand_ReconnectFailsToOpen(t *testing.T) {
 		t.Errorf("device should NOT have been removed (only identity-change does that)")
 	}
 }
+
+func TestGetAgentInfo_200JSON(t *testing.T) {
+	reg := registry.New()
+	srv := newTestServer(t, reg, nil)
+	req := httptest.NewRequest(http.MethodGet, "/agent/info", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type: got %q, want application/json", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control: got %q, want no-store", cc)
+	}
+
+	var got map[string]any
+	decode(t, rec.Body, &got)
+	for _, key := range []string{"version", "os", "arch", "hostname", "uptime_seconds"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("required key %q missing from response: %v", key, got)
+		}
+	}
+}
+
+func TestGetAgentInfo_RejectsNonGET(t *testing.T) {
+	reg := registry.New()
+	srv := newTestServer(t, reg, nil)
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/agent/info", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /agent/info: got %d, want 405", method, rec.Code)
+		}
+	}
+}

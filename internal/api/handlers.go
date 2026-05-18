@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/agentinfo"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
@@ -55,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /devices/disconnect", s.handlePostDevicesDisconnect)
 	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
+	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
 	return logMiddleware(mux)
 }
 
@@ -352,4 +354,13 @@ func toDTOs(devs []*registry.Device) []DeviceDTO {
 		})
 	}
 	return out
+}
+
+// handleGetAgentInfo returns the agent's self-description for server-side
+// polling. Best-effort: never fails. See
+// docs/superpowers/specs/2026-05-18-agent-info-endpoint-design.md.
+func (s *Server) handleGetAgentInfo(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(agentinfo.Snapshot())
 }
