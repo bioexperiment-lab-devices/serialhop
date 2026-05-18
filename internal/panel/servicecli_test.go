@@ -207,3 +207,87 @@ func mustPortFromURL(t *testing.T, raw string) int {
 	}
 	return p
 }
+
+func TestServiceCli_GetKeepAwake(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/power/keep-awake" || r.Method != http.MethodGet {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"active": true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cli := NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
+	got, status, err := cli.GetKeepAwake(context.Background())
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if status != StatusOK {
+		t.Errorf("status: got %v, want StatusOK", status)
+	}
+	if !got.Active {
+		t.Errorf("active = false")
+	}
+}
+
+func TestServiceCli_EnableKeepAwake(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/power/keep-awake/enable" || r.Method != http.MethodPost {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		hits++
+		_, _ = w.Write([]byte(`{"active": true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cli := NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
+	got, status, err := cli.EnableKeepAwake(context.Background())
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if status != StatusOK || !got.Active {
+		t.Errorf("got %+v, status=%v", got, status)
+	}
+	if hits != 1 {
+		t.Errorf("hits: got %d, want 1", hits)
+	}
+}
+
+func TestServiceCli_DisableKeepAwake(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/power/keep-awake/disable" || r.Method != http.MethodPost {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"active": false}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cli := NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
+	got, status, err := cli.DisableKeepAwake(context.Background())
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if status != StatusOK || got.Active {
+		t.Errorf("got %+v, status=%v", got, status)
+	}
+}
+
+func TestServiceCli_KeepAwake_ServiceDownOn500(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"keep-awake enable failed","detail":"boom"}`, http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	cli := NewServiceCli(seedCache(t, mustPortFromURL(t, srv.URL)))
+	_, status, err := cli.EnableKeepAwake(context.Background())
+	if status != StatusServiceDown {
+		t.Errorf("status: got %v, want StatusServiceDown", status)
+	}
+	if err == nil {
+		t.Errorf("err = nil; want non-nil")
+	}
+}

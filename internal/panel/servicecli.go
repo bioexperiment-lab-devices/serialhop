@@ -163,3 +163,30 @@ func (c *ServiceCli) GetPorts(ctx context.Context) (api.DetailedPortsResponse, S
 	status, err := c.do(ctx, "GET", "/serial/ports/detailed", &out)
 	return out, status, err
 }
+
+// KeepAwakeStatus is the response body shared by the three
+// /power/keep-awake endpoints.
+type KeepAwakeStatus struct {
+	Active bool `json:"active"`
+}
+
+// GetKeepAwake proxies GET /power/keep-awake.
+func (c *ServiceCli) GetKeepAwake(ctx context.Context) (KeepAwakeStatus, ServiceCliStatus, error) {
+	var out KeepAwakeStatus
+	status, err := c.do(ctx, "GET", "/power/keep-awake", &out)
+	return out, status, err
+}
+
+// EnableKeepAwake proxies POST /power/keep-awake/enable.
+func (c *ServiceCli) EnableKeepAwake(ctx context.Context) (KeepAwakeStatus, ServiceCliStatus, error) {
+	var out KeepAwakeStatus
+	status, err := c.do(ctx, "POST", "/power/keep-awake/enable", &out)
+	return out, status, err
+}
+
+// DisableKeepAwake proxies POST /power/keep-awake/disable.
+func (c *ServiceCli) DisableKeepAwake(ctx context.Context) (KeepAwakeStatus, ServiceCliStatus, error) {
+	var out KeepAwakeStatus
+	status, err := c.do(ctx, "POST", "/power/keep-awake/disable", &out)
+	return out, status, err
+}
