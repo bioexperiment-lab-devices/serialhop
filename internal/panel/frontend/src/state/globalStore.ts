@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { EventsOn, EventsOff } from "../wails/runtime/runtime";
-import { StartLogStream } from "../wails/go/main/App";
+import { StartLogStream, GetKeepAwake } from "../wails/go/main/App";
 import {
   UpdateState,
   type ButtonStatePayload,
   type FooterPayload,
+  type KeepAwakePayload,
   type LampPayload,
   type LampWhich,
   type LogLinePayload,
@@ -21,6 +22,7 @@ interface LampState {
 
 const DEFAULT_LAMP: LampState = { tone: "grey", label: "Checking…" };
 const DEFAULT_BUTTONS: ButtonStatePayload = { install: false, uninstall: false, restart: false };
+const DEFAULT_KEEPAWAKE: KeepAwakePayload = { active: false, reachable: false };
 
 // Bound the in-memory log buffer so a chatty stream can't blow up the
 // renderer. Matches the value the LogsTab used previously.
@@ -54,12 +56,19 @@ export function useGlobalUiState() {
   // which was the entire reason logs "disappeared" when switching tabs.
   const [logStream, setLogStream] = useState<StreamID>("service");
   const [logLines, setLogLines] = useState<LogLinePayload[]>([]);
+  const [keepAwake, setKeepAwake] = useState<KeepAwakePayload>(DEFAULT_KEEPAWAKE);
 
   useEffect(() => {
     const onWarn = (data: { message: string }) => setWarn(data.message);
     const onClear = () => setWarn(undefined);
-    const onLamp = (p: LampPayload) =>
+    let prevServiceTone: Tone | undefined;
+    const onLamp = (p: LampPayload) => {
       setLamps(prev => ({ ...prev, [p.which]: { tone: p.tone, label: p.label, sub: p.sub } }));
+      if (p.which === "service" && p.tone === "green" && prevServiceTone !== "green") {
+        GetKeepAwake().then(res => setKeepAwake(res)).catch(() => { /* ignore */ });
+      }
+      if (p.which === "service") prevServiceTone = p.tone;
+    };
     const onFooter = (p: FooterPayload) => setFooter(p);
     const onButtons = (p: ButtonStatePayload) => setButtons(p);
     const onUpdate = (p: UpdateStatePayload) => setUpdate(p);
@@ -69,6 +78,7 @@ export function useGlobalUiState() {
     EventsOn("footer:set", onFooter);
     EventsOn("buttons:state", onButtons);
     EventsOn("update:state", onUpdate);
+    GetKeepAwake().then(res => setKeepAwake(res)).catch(() => { /* ignore */ });
     return () => {
       EventsOff("warn:set");
       EventsOff("warn:clear");
@@ -114,5 +124,5 @@ export function useGlobalUiState() {
   const setStream = useCallback((next: StreamID) => setLogStream(next), []);
   const logState: LogStreamState = { stream: logStream, setStream, lines: logLines };
 
-  return { warn, footer, lamps, buttons, update, logState };
+  return { warn, footer, lamps, buttons, update, logState, keepAwake, setKeepAwake };
 }

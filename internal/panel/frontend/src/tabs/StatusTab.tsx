@@ -2,11 +2,19 @@ import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Lamp } from "../components/Lamp";
 import { Help } from "../components/Help";
-import { UpdateState, type ButtonStatePayload, type LampWhich, type Tone, type UpdateStatePayload } from "../types";
+import {
+  UpdateState,
+  type ButtonStatePayload,
+  type KeepAwakePayload,
+  type LampWhich,
+  type Tone,
+  type UpdateStatePayload,
+} from "../types";
 import {
   InstallService, UninstallService, RestartService,
   DownloadUpdate, CancelDownload, InstallUpdate, OpenReleaseNotes,
   RelaunchPanel,
+  EnableKeepAwake, DisableKeepAwake,
 } from "../wails/go/main/App";
 import { EventsEmit } from "../wails/runtime/runtime";
 
@@ -17,6 +25,8 @@ interface Props {
   buttons: ButtonStatePayload;
   update: UpdateStatePayload;
   configDirty?: boolean;
+  keepAwake: KeepAwakePayload;
+  setKeepAwake: (next: KeepAwakePayload) => void;
 }
 
 function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
@@ -26,8 +36,36 @@ function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
   return undefined;
 }
 
-export function StatusTab({ lamps, buttons, update, configDirty }: Props) {
+export function StatusTab({ lamps, buttons, update, configDirty, keepAwake, setKeepAwake }: Props) {
   const [busy, setBusy] = useState(false);
+  const [paBusy, setPaBusy] = useState(false);
+
+  const onToggleKeepAwake = async () => {
+    setPaBusy(true);
+    try {
+      const fn = keepAwake.active ? DisableKeepAwake : EnableKeepAwake;
+      const res = await fn();
+      setKeepAwake({
+        active: res.active,
+        reachable: res.reachable,
+        reason: res.reason,
+        error_message: res.error_message,
+      });
+    } finally {
+      setPaBusy(false);
+    }
+  };
+
+  const paLampTone: Tone = !keepAwake.reachable ? "grey" : keepAwake.active ? "green" : "grey";
+  const paLampLabel = !keepAwake.reachable ? "—" : keepAwake.active ? "On" : "Off";
+  const paLampSub = !keepAwake.reachable
+    ? "Service unreachable"
+    : keepAwake.active
+      ? "System will not sleep or auto-shutdown."
+      : undefined;
+  const paButtonLabel = keepAwake.active ? "Disable" : "Enable";
+  const paButtonVariant: "primary" | "default" = keepAwake.active ? "default" : "primary";
+  const paButtonDisabled = paBusy || !keepAwake.reachable;
 
   // When the install pipeline reaches Installed, ask the Go side to
   // spawn the new exe and quit this one. A brief delay lets the
@@ -71,6 +109,25 @@ export function StatusTab({ lamps, buttons, update, configDirty }: Props) {
         <Lamp name="Reverse tunnel" tone={lamps.tunnel.tone} label={lamps.tunnel.label} sub={lamps.tunnel.sub}>
           <Help title="Tunnel" what="State of this machine's Chisel reverse tunnel into the lab-bridge." />
         </Lamp>
+      </section>
+
+      <div className="shp-h">Power</div>
+      <section className="shp-lamps">
+        <Lamp name="Keep system awake" tone={paLampTone} label={paLampLabel} sub={paLampSub}>
+          <Help
+            title="Keep system awake"
+            what="Prevents Windows from idling into sleep, hibernate, or scheduled automatic shutdown while the SerialHop service is running. Has no effect on user-initiated shutdown, restart, or sign-out. Cleared if the service stops, crashes, or is updated."
+          />
+        </Lamp>
+        <div className="shp-service-actions">
+          <Button
+            variant={paButtonVariant}
+            disabled={paButtonDisabled}
+            onClick={onToggleKeepAwake}
+          >
+            {paButtonLabel}
+          </Button>
+        </div>
       </section>
 
       <div className="shp-h">Service control</div>
