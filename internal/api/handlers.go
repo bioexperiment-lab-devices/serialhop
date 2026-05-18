@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
 	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
 	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)
+	mux.HandleFunc("POST /power/keep-awake/enable", s.handlePostKeepAwakeEnable)
 	return logMiddleware(mux)
 }
 
@@ -378,5 +379,18 @@ type keepAwakeStatusBody struct {
 
 // handleGetKeepAwake reports the current power-request state.
 func (s *Server) handleGetKeepAwake(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
+}
+
+// handlePostKeepAwakeEnable activates the power request. Idempotent.
+// On syscall failure returns 500 with the underlying error in `detail`;
+// the service-side Active flag stays unchanged on failure.
+func (s *Server) handlePostKeepAwakeEnable(w http.ResponseWriter, _ *http.Request) {
+	const reason = "SerialHop panel: operator-requested keep-awake"
+	if err := s.keepAwake.Enable(reason); err != nil {
+		slog.Warn("keep-awake enable failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "keep-awake enable failed", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
 }
