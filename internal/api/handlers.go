@@ -13,6 +13,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/agentinfo"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -26,6 +27,7 @@ type Server struct {
 	rawSerialEnabled bool
 	flasher          flasher.Flasher
 	flashingEnabled  bool
+	keepAwake        power.KeepAwake
 }
 
 func New(
@@ -35,6 +37,7 @@ func New(
 	rawSerialEnabled bool,
 	fl flasher.Flasher,
 	flashingEnabled bool,
+	keepAwake power.KeepAwake,
 ) *Server {
 	return &Server{
 		reg:              reg,
@@ -43,6 +46,7 @@ func New(
 		rawSerialEnabled: rawSerialEnabled,
 		flasher:          fl,
 		flashingEnabled:  flashingEnabled,
+		keepAwake:        keepAwake,
 	}
 }
 

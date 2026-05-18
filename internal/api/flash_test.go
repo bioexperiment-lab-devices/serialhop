@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -17,7 +18,12 @@ func newTestServerForFlash(t *testing.T) (*Server, *registry.Registry, *labseria
 	t.Helper()
 	reg := registry.New()
 	op := labserial.NewFakeOpener()
-	s := New(reg, nil, op, true, nil, false)
+	ka, err := power.New()
+	if err != nil {
+		t.Fatalf("power.New: %v", err)
+	}
+	t.Cleanup(func() { _ = ka.Close() })
+	s := New(reg, nil, op, true, nil, false, ka)
 	return s, reg, op
 }
 
@@ -155,7 +161,12 @@ func newTestServerWithFlash(t *testing.T, fl flasher.Flasher, enabled bool) (*Se
 	t.Helper()
 	reg := registry.New()
 	op := labserial.NewFakeOpener()
-	s := New(reg, nil, op, true, fl, enabled)
+	ka, err := power.New()
+	if err != nil {
+		t.Fatalf("power.New: %v", err)
+	}
+	t.Cleanup(func() { _ = ka.Close() })
+	s := New(reg, nil, op, true, fl, enabled, ka)
 	return s, reg, op
 }
 
