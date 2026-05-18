@@ -117,11 +117,11 @@ internal/agentinfo/
 **`machineid_windows.go`:**
 
 - Reads `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` via `golang.org/x/sys/windows/registry`.
-- Returns `(string, error)`. Errors are logged at warn level in the caller and the field is omitted.
+- Returns `string`. On any error (registry locked, key missing, permission denied) it logs a warning via `slog.Warn` and returns `""` — `Snapshot()` then omits the field from JSON. The caller has no error to handle, which matches the package's best-effort contract.
 
 **`machineid_other.go`:**
 
-- Returns `("", nil)`. Compiles on all non-Windows platforms so CLAUDE.md's cross-platform rule holds.
+- Returns `""`. Compiles on all non-Windows platforms so CLAUDE.md's cross-platform rule holds.
 
 ### 4.2 Handler wiring (`internal/api`)
 
