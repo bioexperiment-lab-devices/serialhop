@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.27.1...v0.28.0) (2026-05-18)
+
+
+### Features
+
+* add GET /agent/info for server-pulled agent state ([#142](https://github.com/bioexperiment-lab-devices/serialhop/issues/142)) ([7394d56](https://github.com/bioexperiment-lab-devices/serialhop/commit/7394d56cfffcd95a0817626da77d9e9d15bac15b))
+
 ## [0.27.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.27.0...v0.27.1) (2026-05-17)
 
 
