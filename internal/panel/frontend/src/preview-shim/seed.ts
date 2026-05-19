@@ -54,6 +54,7 @@ interface Store {
   footer: FooterPayload | null;
   update: UpdateStatePayload;
   activeLogStream: "service" | "stderr" | "panel" | null;
+  keepAwakeActive: boolean;
 }
 
 export const store: Store = {
@@ -69,6 +70,7 @@ export const store: Store = {
   footer: { kind: "ok", text: "All systems nominal.", time: new Date().toISOString() },
   update: { state: UpdateState.Idle, release_tag: "" },
   activeLogStream: null,
+  keepAwakeActive: false,
 };
 
 export function applyScenario(s: ScenarioId): void {

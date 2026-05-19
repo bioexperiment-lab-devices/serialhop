@@ -13,6 +13,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/agentinfo"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -26,6 +27,7 @@ type Server struct {
 	rawSerialEnabled bool
 	flasher          flasher.Flasher
 	flashingEnabled  bool
+	keepAwake        power.KeepAwake
 }
 
 func New(
@@ -35,6 +37,7 @@ func New(
 	rawSerialEnabled bool,
 	fl flasher.Flasher,
 	flashingEnabled bool,
+	keepAwake power.KeepAwake,
 ) *Server {
 	return &Server{
 		reg:              reg,
@@ -43,6 +46,7 @@ func New(
 		rawSerialEnabled: rawSerialEnabled,
 		flasher:          fl,
 		flashingEnabled:  flashingEnabled,
+		keepAwake:        keepAwake,
 	}
 }
 
@@ -57,6 +61,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
 	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
+	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)
+	mux.HandleFunc("POST /power/keep-awake/enable", s.handlePostKeepAwakeEnable)
+	mux.HandleFunc("POST /power/keep-awake/disable", s.handlePostKeepAwakeDisable)
 	return logMiddleware(mux)
 }
 
@@ -362,4 +369,42 @@ func toDTOs(devs []*registry.Device) []DeviceDTO {
 func (s *Server) handleGetAgentInfo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, agentinfo.Snapshot())
+}
+
+// keepAwakeStatusBody is the response body for the three /power/keep-awake
+// routes. Defined here, not in types.go, so it stays close to the
+// handlers that produce it.
+type keepAwakeStatusBody struct {
+	Active bool `json:"active"`
+}
+
+// handleGetKeepAwake reports the current power-request state.
+func (s *Server) handleGetKeepAwake(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
+}
+
+// handlePostKeepAwakeEnable activates the power request. Idempotent.
+// On syscall failure returns 500 with the underlying error in `detail`;
+// the service-side Active flag stays unchanged on failure.
+func (s *Server) handlePostKeepAwakeEnable(w http.ResponseWriter, _ *http.Request) {
+	const reason = "SerialHop panel: operator-requested keep-awake"
+	if err := s.keepAwake.Enable(reason); err != nil {
+		slog.Warn("keep-awake enable failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "keep-awake enable failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
+}
+
+// handlePostKeepAwakeDisable clears the power request. Idempotent. On
+// syscall failure returns 500; the service-side Active flag is left at
+// its current value so the next Enable short-circuits (consistent with
+// our best-effort knowledge of OS state).
+func (s *Server) handlePostKeepAwakeDisable(w http.ResponseWriter, _ *http.Request) {
+	if err := s.keepAwake.Disable(); err != nil {
+		slog.Warn("keep-awake disable failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "keep-awake disable failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, keepAwakeStatusBody{Active: s.keepAwake.Active()})
 }

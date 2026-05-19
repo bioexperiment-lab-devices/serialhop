@@ -49,6 +49,16 @@ export function DownloadUpdate(): Promise<void> { return call("DownloadUpdate");
 export function CancelDownload(): Promise<void> { return call("CancelDownload"); }
 export function InstallUpdate(): Promise<{ ok: boolean; error_message?: string; cancelled?: boolean }> { return call("InstallUpdate"); }
 
+export function GetKeepAwake(): Promise<{ active: boolean; reachable: boolean; reason?: string; error_message?: string }> {
+  return call("GetKeepAwake");
+}
+export function EnableKeepAwake(): Promise<{ active: boolean; reachable: boolean; reason?: string; error_message?: string }> {
+  return call("EnableKeepAwake");
+}
+export function DisableKeepAwake(): Promise<{ active: boolean; reachable: boolean; reason?: string; error_message?: string }> {
+  return call("DisableKeepAwake");
+}
+
 // RelaunchPanel spawns a detached copy of the current panel exe and
 // quits this one. The OS file at os.Executable() is the freshly
 // installed exe after a successful update; the running panel is still

@@ -110,4 +110,27 @@ export const App: Record<string, (...args: any[]) => Promise<any>> = {
   RecordFrontendCrash: async (message: string, source: string, _stack: string) => {
     console.info("[preview] RecordFrontendCrash", { message, source });
   },
+
+  GetKeepAwake: async () => ({
+    active: store.keepAwakeActive,
+    reachable: store.lamps.service.tone !== "red",
+  }),
+  EnableKeepAwake: async () => {
+    await delay(150);
+    if (store.lamps.service.tone === "red") {
+      return { active: false, reachable: false, reason: "service_down" };
+    }
+    store.keepAwakeActive = true;
+    emit("footer:set", { kind: "ok", text: "Keep-awake enabled.", time: new Date().toISOString() });
+    return { active: true, reachable: true };
+  },
+  DisableKeepAwake: async () => {
+    await delay(150);
+    if (store.lamps.service.tone === "red") {
+      return { active: store.keepAwakeActive, reachable: false, reason: "service_down" };
+    }
+    store.keepAwakeActive = false;
+    emit("footer:set", { kind: "ok", text: "Keep-awake disabled.", time: new Date().toISOString() });
+    return { active: false, reachable: true };
+  },
 };

@@ -51,3 +51,10 @@ export interface ButtonStatePayload {
   uninstall: boolean;
   restart: boolean;
 }
+
+export interface KeepAwakePayload {
+  active: boolean;
+  reachable: boolean;
+  reason?: string;          // "service_down" | "unreachable" | undefined
+  error_message?: string;
+}

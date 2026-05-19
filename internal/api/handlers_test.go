@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -28,7 +29,12 @@ func newTestServer(t *testing.T, reg *registry.Registry, disc DiscoverFn) http.H
 	if disc == nil {
 		disc = fakeDiscoverFn(nil, nil)
 	}
-	return New(reg, disc, serial.NewFakeOpener(), false, nil, false).Handler()
+	ka, err := power.New()
+	if err != nil {
+		t.Fatalf("power.New: %v", err)
+	}
+	t.Cleanup(func() { _ = ka.Close() })
+	return New(reg, disc, serial.NewFakeOpener(), false, nil, false, ka).Handler()
 }
 
 func decode(t *testing.T, body io.Reader, into any) {
@@ -131,7 +137,12 @@ func TestPostDiscover_ClosesOldPortsBeforeProbing(t *testing.T) {
 		return []*registry.Device{}, nil
 	}
 
-	srv := New(reg, discoverFn, serial.NewFakeOpener(), false, nil, false).Handler()
+	ka2, err := power.New()
+	if err != nil {
+		t.Fatalf("power.New: %v", err)
+	}
+	t.Cleanup(func() { _ = ka2.Close() })
+	srv := New(reg, discoverFn, serial.NewFakeOpener(), false, nil, false, ka2).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/discover", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)

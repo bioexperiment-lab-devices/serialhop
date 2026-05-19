@@ -2,11 +2,19 @@ import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Lamp } from "../components/Lamp";
 import { Help } from "../components/Help";
-import { UpdateState, type ButtonStatePayload, type LampWhich, type Tone, type UpdateStatePayload } from "../types";
+import {
+  UpdateState,
+  type ButtonStatePayload,
+  type KeepAwakePayload,
+  type LampWhich,
+  type Tone,
+  type UpdateStatePayload,
+} from "../types";
 import {
   InstallService, UninstallService, RestartService,
   DownloadUpdate, CancelDownload, InstallUpdate, OpenReleaseNotes,
   RelaunchPanel,
+  EnableKeepAwake, DisableKeepAwake,
 } from "../wails/go/main/App";
 import { EventsEmit } from "../wails/runtime/runtime";
 
@@ -17,6 +25,8 @@ interface Props {
   buttons: ButtonStatePayload;
   update: UpdateStatePayload;
   configDirty?: boolean;
+  keepAwake: KeepAwakePayload;
+  setKeepAwake: (next: KeepAwakePayload) => void;
 }
 
 function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
@@ -26,8 +36,42 @@ function updateTone(s: UpdateState): "green" | "red" | "blue" | undefined {
   return undefined;
 }
 
-export function StatusTab({ lamps, buttons, update, configDirty }: Props) {
+export function StatusTab({ lamps, buttons, update, configDirty, keepAwake, setKeepAwake }: Props) {
   const [busy, setBusy] = useState(false);
+  const [paBusy, setPaBusy] = useState(false);
+
+  const onToggleKeepAwake = async () => {
+    setPaBusy(true);
+    try {
+      const fn = keepAwake.active ? DisableKeepAwake : EnableKeepAwake;
+      const res = await fn();
+      setKeepAwake({
+        active: res.active,
+        reachable: res.reachable,
+        reason: res.reason,
+        error_message: res.error_message,
+      });
+    } finally {
+      setPaBusy(false);
+    }
+  };
+
+  const paState: "on" | "off" | "unreachable" = !keepAwake.reachable
+    ? "unreachable"
+    : keepAwake.active
+      ? "on"
+      : "off";
+  const paPresets: Record<typeof paState, { tone: Tone; label: string; sub?: string; action: string | null }> = {
+    on:          { tone: "green", label: "On",  sub: "System will not sleep or auto-shutdown.", action: "Click to disable" },
+    off:         { tone: "grey",  label: "Off", sub: "Click to keep the system awake.",         action: "Click to enable" },
+    unreachable: { tone: "grey",  label: "—",   sub: "Service unreachable",                     action: null },
+  };
+  const paCfg = paPresets[paState];
+  const paInFlight = paBusy;
+  const paActionLabel = paInFlight
+    ? (paState === "on" ? "Disabling…" : "Enabling…")
+    : paCfg.action;
+  const paDisabled = paState === "unreachable" || paInFlight;
 
   // When the install pipeline reaches Installed, ask the Go side to
   // spawn the new exe and quit this one. A brief delay lets the
@@ -72,6 +116,44 @@ export function StatusTab({ lamps, buttons, update, configDirty }: Props) {
           <Help title="Tunnel" what="State of this machine's Chisel reverse tunnel into the lab-bridge." />
         </Lamp>
       </section>
+
+      <div className="shp-h">Power</div>
+      <div className="shp-power-row">
+        <button
+          type="button"
+          className="shp-lamp shp-lamp--power shp-lamp--clickable"
+          data-disabled={paDisabled ? "true" : "false"}
+          disabled={paDisabled}
+          aria-pressed={paState === "unreachable" ? undefined : paState === "on"}
+          aria-busy={paInFlight || undefined}
+          aria-disabled={paDisabled || undefined}
+          onClick={onToggleKeepAwake}
+        >
+          <div className="shp-lamp__row">
+            <span className="shp-lamp__name">Keep system awake</span>
+            <span
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: "inline-flex" }}
+            >
+              <Help
+                title="Keep system awake"
+                what="Prevents Windows from idling into sleep, hibernate, or scheduled automatic shutdown while the SerialHop service is running."
+                when="Has no effect on user-initiated shutdown, restart, or sign-out. Cleared if the service stops, crashes, or is updated."
+              />
+            </span>
+          </div>
+          <div className="shp-lamp__state">
+            <span className="shp-lamp__dot" data-tone={paCfg.tone} />
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <span className="shp-lamp__label">{paCfg.label}</span>
+              {paCfg.sub && <span className="shp-lamp__sub">{paCfg.sub}</span>}
+            </div>
+            {paActionLabel && (
+              <span className="shp-lamp__action">{paActionLabel}</span>
+            )}
+          </div>
+        </button>
+      </div>
 
       <div className="shp-h">Service control</div>
       <div className="shp-service-actions">

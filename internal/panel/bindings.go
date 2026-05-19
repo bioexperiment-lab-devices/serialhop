@@ -59,6 +59,19 @@ type AdminResult struct {
 	Cancelled    bool   `json:"cancelled,omitempty"`
 }
 
+// KeepAwakeResult is the SPA-facing result of GetKeepAwake /
+// EnableKeepAwake / DisableKeepAwake. Reachable=false means the
+// service couldn't be reached; Reason is "service_down" or
+// "unreachable" per the standard panel reachability vocabulary.
+// ErrorMessage carries the underlying detail when the service
+// returned a 500 (syscall failure).
+type KeepAwakeResult struct {
+	Active       bool   `json:"active"`
+	Reachable    bool   `json:"reachable"`
+	Reason       string `json:"reason,omitempty"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
 type ServiceTabStatusDTO struct {
 	Reachable bool   `json:"reachable"`
 	Reason    string `json:"reason,omitempty"` // "service_down" | "unreachable" | ""
@@ -266,6 +279,75 @@ func (a *App) InstallUpdate() AdminResult {
 	}
 	done(err, slog.Bool("cancelled", res.Cancelled))
 	return res
+}
+
+func (a *App) GetKeepAwake() KeepAwakeResult {
+	done := a.logAction("keepawake_get")
+	ctx, cancel := a.callCtx()
+	defer cancel()
+	out, st, err := a.svc.GetKeepAwake(ctx)
+	res := keepAwakeResult(out, st, err)
+	done(err, slog.Bool("active", res.Active), slog.Bool("reachable", res.Reachable))
+	return res
+}
+
+func (a *App) EnableKeepAwake() KeepAwakeResult {
+	done := a.logAction("keepawake_enable")
+	ctx, cancel := a.callCtx()
+	defer cancel()
+	out, st, err := a.svc.EnableKeepAwake(ctx)
+	res := keepAwakeResult(out, st, err)
+	done(err, slog.Bool("active", res.Active), slog.Bool("reachable", res.Reachable))
+	emitKeepAwakeFooter(a, res, "Keep-awake enabled")
+	return res
+}
+
+func (a *App) DisableKeepAwake() KeepAwakeResult {
+	done := a.logAction("keepawake_disable")
+	ctx, cancel := a.callCtx()
+	defer cancel()
+	out, st, err := a.svc.DisableKeepAwake(ctx)
+	res := keepAwakeResult(out, st, err)
+	done(err, slog.Bool("active", res.Active), slog.Bool("reachable", res.Reachable))
+	emitKeepAwakeFooter(a, res, "Keep-awake disabled")
+	return res
+}
+
+// keepAwakeResult translates a (status, error) from ServiceCli into the
+// SPA-facing DTO. Mirrors the toTabStatus mapping for the Reason field
+// but adds an ErrorMessage when the service-side handler returned a 500.
+func keepAwakeResult(out KeepAwakeStatus, st ServiceCliStatus, err error) KeepAwakeResult {
+	switch st {
+	case StatusOK:
+		return KeepAwakeResult{Active: out.Active, Reachable: true}
+	case StatusServiceDown:
+		res := KeepAwakeResult{Reachable: false, Reason: "service_down"}
+		if err != nil {
+			res.ErrorMessage = err.Error()
+		}
+		return res
+	}
+	return KeepAwakeResult{Reachable: false, Reason: "unreachable"}
+}
+
+func emitKeepAwakeFooter(a *App, res KeepAwakeResult, okPrefix string) {
+	switch {
+	case res.Reachable && res.ErrorMessage == "":
+		a.emitEvent("footer:set", map[string]interface{}{
+			"kind": "ok",
+			"text": okPrefix + " at " + time.Now().Format("15:04:05"),
+		})
+	case res.ErrorMessage != "":
+		a.emitEvent("footer:set", map[string]interface{}{
+			"kind": "err",
+			"text": "Keep-awake failed: " + res.ErrorMessage,
+		})
+	default:
+		a.emitEvent("footer:set", map[string]interface{}{
+			"kind": "err",
+			"text": "Keep-awake failed: service unreachable",
+		})
+	}
 }
 
 // RelaunchPanel spawns a detached copy of the panel exe at the path

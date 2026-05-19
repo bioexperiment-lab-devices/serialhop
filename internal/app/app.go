@@ -15,6 +15,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
@@ -76,7 +77,12 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		}
 	}
 	flashingEnabled := cfg.Flashing.Enabled && fl != nil
-	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, fl, flashingEnabled)
+	keepAwake, err := power.New()
+	if err != nil {
+		return fmt.Errorf("power.New: %w", err)
+	}
+	defer func() { _ = keepAwake.Close() }()
+	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, fl, flashingEnabled, keepAwake)
 
 	chiselDone := make(chan error, 1)
 	go func() {
