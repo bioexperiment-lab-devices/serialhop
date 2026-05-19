@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.28.0...v0.29.0) (2026-05-19)
+
+
+### Features
+
+* keep-awake button on Status tab (panel + service) ([#144](https://github.com/bioexperiment-lab-devices/serialhop/issues/144)) ([40cc476](https://github.com/bioexperiment-lab-devices/serialhop/commit/40cc476c827d6e9f7df8b7f0d7e4d6dfe66db53e))
+
 ## [0.28.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.27.1...v0.28.0) (2026-05-18)
 
 
