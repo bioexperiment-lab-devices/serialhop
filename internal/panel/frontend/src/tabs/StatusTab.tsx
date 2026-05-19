@@ -56,16 +56,22 @@ export function StatusTab({ lamps, buttons, update, configDirty, keepAwake, setK
     }
   };
 
-  const paLampTone: Tone = !keepAwake.reachable ? "grey" : keepAwake.active ? "green" : "grey";
-  const paLampLabel = !keepAwake.reachable ? "—" : keepAwake.active ? "On" : "Off";
-  const paLampSub = !keepAwake.reachable
-    ? "Service unreachable"
+  const paState: "on" | "off" | "unreachable" = !keepAwake.reachable
+    ? "unreachable"
     : keepAwake.active
-      ? "System will not sleep or auto-shutdown."
-      : undefined;
-  const paButtonLabel = keepAwake.active ? "Disable" : "Enable";
-  const paButtonVariant: "primary" | "default" = keepAwake.active ? "default" : "primary";
-  const paButtonDisabled = paBusy || !keepAwake.reachable;
+      ? "on"
+      : "off";
+  const paPresets: Record<typeof paState, { tone: Tone; label: string; sub?: string; action: string | null }> = {
+    on:          { tone: "green", label: "On",  sub: "System will not sleep or auto-shutdown.", action: "Click to disable" },
+    off:         { tone: "grey",  label: "Off", sub: "Click to keep the system awake.",         action: "Click to enable" },
+    unreachable: { tone: "grey",  label: "—",   sub: "Service unreachable",                     action: null },
+  };
+  const paCfg = paPresets[paState];
+  const paInFlight = paBusy;
+  const paActionLabel = paInFlight
+    ? (paState === "on" ? "Disabling…" : "Enabling…")
+    : paCfg.action;
+  const paDisabled = paState === "unreachable" || paInFlight;
 
   // When the install pipeline reaches Installed, ask the Go side to
   // spawn the new exe and quit this one. A brief delay lets the
@@ -112,23 +118,42 @@ export function StatusTab({ lamps, buttons, update, configDirty, keepAwake, setK
       </section>
 
       <div className="shp-h">Power</div>
-      <section className="shp-lamps">
-        <Lamp name="Keep system awake" tone={paLampTone} label={paLampLabel} sub={paLampSub}>
-          <Help
-            title="Keep system awake"
-            what="Prevents Windows from idling into sleep, hibernate, or scheduled automatic shutdown while the SerialHop service is running. Has no effect on user-initiated shutdown, restart, or sign-out. Cleared if the service stops, crashes, or is updated."
-          />
-        </Lamp>
-        <div className="shp-service-actions">
-          <Button
-            variant={paButtonVariant}
-            disabled={paButtonDisabled}
-            onClick={onToggleKeepAwake}
-          >
-            {paButtonLabel}
-          </Button>
-        </div>
-      </section>
+      <div className="shp-power-row">
+        <button
+          type="button"
+          className="shp-lamp shp-lamp--power shp-lamp--clickable"
+          data-disabled={paDisabled ? "true" : "false"}
+          disabled={paDisabled}
+          aria-pressed={paState === "unreachable" ? undefined : paState === "on"}
+          aria-busy={paInFlight || undefined}
+          aria-disabled={paDisabled || undefined}
+          onClick={onToggleKeepAwake}
+        >
+          <div className="shp-lamp__row">
+            <span className="shp-lamp__name">Keep system awake</span>
+            <span
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: "inline-flex" }}
+            >
+              <Help
+                title="Keep system awake"
+                what="Prevents Windows from idling into sleep, hibernate, or scheduled automatic shutdown while the SerialHop service is running."
+                when="Has no effect on user-initiated shutdown, restart, or sign-out. Cleared if the service stops, crashes, or is updated."
+              />
+            </span>
+          </div>
+          <div className="shp-lamp__state">
+            <span className="shp-lamp__dot" data-tone={paCfg.tone} />
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <span className="shp-lamp__label">{paCfg.label}</span>
+              {paCfg.sub && <span className="shp-lamp__sub">{paCfg.sub}</span>}
+            </div>
+            {paActionLabel && (
+              <span className="shp-lamp__action">{paActionLabel}</span>
+            )}
+          </div>
+        </button>
+      </div>
 
       <div className="shp-h">Service control</div>
       <div className="shp-service-actions">

@@ -377,6 +377,59 @@ body {
   font-family: 'IBM Plex Mono', monospace;
 }
 
+/* ===== Power row ===== */
+.shp-power-row {
+  margin-bottom: 18px;
+}
+.shp-lamp--clickable {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  color: inherit;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.shp-lamp--clickable:hover:not([data-disabled="true"]) {
+  border-color: var(--border-strong);
+  background: var(--surface-strip);
+}
+.shp-lamp__action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--text-secondary);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.shp-lamp--clickable:hover:not([data-disabled="true"]) .shp-lamp__action {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.shp-lamp--clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.shp-lamp--clickable:active:not([data-disabled="true"]) {
+  background: var(--surface-sunken);
+}
+.shp-lamp--clickable[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.shp-lamp--power .shp-lamp__state {
+  align-items: center;
+}
+
 /* ===== Help icon ===== */
 .shp-help {
   width: 16px; height: 16px;
