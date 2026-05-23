@@ -4,167 +4,334 @@
 
 # SerialHop
 
-Single-binary Go application that exposes serial-port lab devices to a remote HTTP client through a chisel reverse tunnel. Runs as a Windows service; managed through a small native control-panel window. Streams its own logs back to the central Loki/Grafana stack over the same chisel session.
+The Windows agent for [lab-bridge](https://github.com/bioexperiment-lab-devices/lab-bridge). SerialHop runs on a lab PC, discovers serial-attached instruments (peristaltic pumps, distribution valves, densitometers), and exposes a local REST API to lab-bridge over a chisel reverse tunnel — letting researchers operate those instruments from a shared JupyterLab environment without opening any inbound port on the lab network.
 
-## Build
+If you have a Windows PC sitting behind NAT with serial-attached lab instruments wired to it, and you'd like a remote JupyterLab session to talk to them, this is what runs on that PC.
 
-Default target is Windows / amd64:
+```mermaid
+flowchart LR
+  R[Researcher] -->|JupyterLab| LB[lab-bridge VPS]
+  LB --> Proxy[auth proxy]
+  Proxy <-->|chisel reverse tunnel| SH[SerialHop on lab PC]
+  SH -->|serial port| I[Lab instruments]
+  SH -. log shipper .-> Loki[(Loki on VPS)]
 ```
-task build
+
+## Install
+
+Download `SerialHop-Setup-vX.Y.Z.exe` from the [releases page](https://github.com/bioexperiment-lab-devices/serialhop/releases/latest) (or your lab management UI) and run it.
+
+Silent / scripted install: `SerialHop-Setup.exe --silent --dir "<path>"`. See [`docs/superpowers/specs/2026-05-15-installer-design.md`](docs/superpowers/specs/2026-05-15-installer-design.md) for the full flag set and upgrade/downgrade behavior.
+
+## Control panel — feature tour
+
+The panel is a Wails v2 + React desktop window. It opens by double-clicking `SerialHop.exe` and drives the underlying Windows service. Frameless, responsive (720 px collapse breakpoint), with a sticky titlebar.
+
+### Status
+
+Three lamps and three buttons.
+
+- **Lamps**: Local service (SCM state), Lab-bridge server (reachability + health probe to the configured server), Reverse tunnel (chisel session state from this machine).
+- **Buttons**: Install / Uninstall / Restart. All three elevate via UAC.
+- When a newer release is available, an **Update** row appears here: download → SHA-256 verify → install with automatic rollback if the service fails to come back up.
+- If the panel crashed on its last run, a prior-crash report is surfaced inline.
+
+### Config
+
+Typed editor over `%ProgramData%\SerialHop\SerialHop_config.yaml`. Field-level validation (lab-bridge host as IPv4 or RFC 1123 hostname; integer fields can be cleared). Dirty-state guard on tab switch — switching away with unsaved edits opens a modal listing exactly which fields are dirty. The default save flow is **Save & restart**, so config changes take effect immediately.
+
+### Devices
+
+Discovered devices with **type** (`pump` / `valve` / `densitometer`), **type code**, and **port**. Send raw command bytes per row. Per-row Disconnect releases that one port without tearing down the rest of the registry.
+
+### Ports
+
+Every enumerated COM port plus its USB descriptor (VID, PID, SerialNumber, Product). A filter box narrows the list. Send raw bytes to a port without a discovered device on it (gated by `raw_serial.enabled: true` in the config).
+
+### Logs
+
+Live tail of the structured logs under `%ProgramData%\SerialHop\logs\`. Newest-first ordering, sticky filter bar (level + free-text), inline log-detail view for the structured fields, on-open backlog so you can read what happened before the panel opened.
+
+## REST API
+
+The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from outside **only** through the chisel reverse tunnel that the lab-bridge auth proxy fronts. All requests and responses are JSON. Errors follow `{ "error": "<short>", "detail": "<long>" }`.
+
+| Method | Path | Purpose | Gate |
+| --- | --- | --- | --- |
+| `POST` | `/discover` | Run a fresh discovery and return the device list | — |
+| `GET`  | `/devices` | Return the cached device list | — |
+| `POST` | `/devices/{id}/command` | Send raw bytes to a discovered device; optionally read a reply | — |
+| `POST` | `/devices/disconnect` | Release all device handles; with `?port=<name>` release just that one | — |
+| `GET`  | `/serial/ports` | List enumerated COM ports with discovery state | `raw_serial.enabled` |
+| `GET`  | `/serial/ports/detailed` | Same, plus USB descriptors | always available |
+| `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device | `raw_serial.enabled` |
+| `POST` | `/flash/{port}` | Pre-backup → flash → byte-verify → optional test → auto-rollback | `flashing.enabled` |
+| `GET`  | `/agent/info` | Agent self-description for server-pulled state | — |
+
+Discovered device types: `pump` (type code `10`), `valve` (`30`), `densitometer` (`70`).
+
+<details>
+<summary><b>Discovery &amp; device commands</b> — <code>POST /discover</code>, <code>GET /devices</code>, <code>POST /devices/{id}/command</code></summary>
+
+`POST /discover` runs a fresh probe pass over every enumerated COM port and replaces the in-memory registry. `GET /devices` returns the same shape from the cached registry without re-probing.
+
+```json
+{
+  "devices": [
+    { "id": "pump-COM3", "type": "pump", "type_code": 10, "port": "COM3" },
+    { "id": "valve-COM7", "type": "valve", "type_code": 30, "port": "COM7" }
+  ],
+  "discovered_at": "2026-05-23T12:34:56Z"
+}
 ```
 
-Override target via env variables:
+`POST /devices/{id}/command` writes raw bytes to the device's serial handle and optionally reads a reply. Request body:
+
+```json
+{ "command": [85, 1, 2, 3] }
 ```
-task build GOOS=linux GOARCH=arm64
+
+Each element must be `0..255`; total length must be `1..1024`. Body is capped at 32 KiB. Optional query parameters:
+
+| Param | Range | Default | Effect |
+| --- | --- | --- | --- |
+| `timeout_ms` | 1..60000 | 100 (1000 if `expected_response_bytes>0`) | Total read deadline. |
+| `inter_byte_ms` | 1..1000 | 25 (50 if `expected_response_bytes>0`) | Frame-end gap. |
+| `wait_for_response` | `true` / `false` | `true` | Skip the read entirely if `false`. |
+| `expected_response_bytes` | `-1` or 1..1024 | `-1` (no length hint) | Stop early once N bytes have been read. |
+
+Response:
+
+```json
+{ "response": [170, 1, 2, 3] }
 ```
 
-Output: `dist/SerialHop.exe`.
+Behavior:
+- `409 Conflict` if a discovery pass is in progress or the device is busy with another command.
+- `503 Service Unavailable` if the I/O fails after a reconnect attempt. If the re-probe finds a different type code, the device is removed from the registry and a `503` with `"device identity changed"` is returned.
+- Bytes sent and received are logged at `debug` level as integer arrays for round-trip auditing.
 
-The build embeds an icon, a UAC manifest (`asInvoker`), and version metadata via `goversioninfo`. The first build downloads `goversioninfo` automatically. `assets/manifest.xml` is generated at build time from `assets/manifest.template.xml` and the version in `assets/version.json` (the generated file is gitignored). The version baked into the binary via `-ldflags -X` is `<base>+<git-describe>` — e.g. `0.3.0+v0.3.0` on a clean release, `0.3.0+v0.3.0-7-gabc1234-dirty` on a working-tree dev build.
+</details>
 
-`jq` is required on the build host. Preinstalled on all GitHub-hosted runners; `brew install jq` on macOS or `apt-get install jq` on Debian/Ubuntu.
+<details>
+<summary><b>Disconnect</b> — <code>POST /devices/disconnect[?port=&lt;name&gt;]</code></summary>
 
-## Releases
+Releases serial handles in the registry. Always available — no config gate.
 
-Releases are managed by [release-please](https://github.com/googleapis/release-please). The flow is fully hands-off:
+- No query: releases every open device handle.
+- `?port=COM3`: releases just the device on `COM3`, leaving the rest of the registry untouched. `404` if no device is registered on that port.
 
-1. Merge a `feat:` / `fix:` PR to `main`.
-2. release-please opens (or updates) a release PR titled `chore(main): release X.Y.Z`. It's authored by a dedicated GitHub App, so `pr.yml` checks fire automatically.
-3. Watch `verify` go green on the release PR.
-4. Click **Squash and merge** on the release PR.
-5. The `release-build` job runs on `windows-latest` and publishes a GitHub Release with `SerialHop-vX.Y.Z.exe`, `SHA256SUMS.txt`, and a Sigstore build-provenance attestation.
+```json
+{ "released": 3 }
+```
 
-There is no scheduled cadence — releases ship only when the release PR is merged by hand.
+</details>
+
+<details>
+<summary><b>Raw serial</b> — <code>GET /serial/ports</code>, <code>GET /serial/ports/detailed</code>, <code>POST /serial/ports/{port}/command</code></summary>
+
+The detailed listing is always available and is what the panel's Ports tab uses:
+
+```json
+{
+  "ports": [
+    {
+      "name": "COM3", "is_usb": true,
+      "vid": "2341", "pid": "0043",
+      "serial_number": "85731303530...", "product": "Arduino Uno",
+      "discovered": true, "device_id": "pump-COM3"
+    }
+  ]
+}
+```
+
+`GET /serial/ports` and `POST /serial/ports/{port}/command` are gated by `raw_serial.enabled: true`. The command endpoint accepts the same body and query params as `/devices/{id}/command`, plus `post_open_settle_ms` (0..60000) to override the per-port settle delay after `Open`. It rejects ports that already have a discovered device with `409 Conflict` and `"use /devices/{id}/command instead"`.
+
+</details>
+
+<details>
+<summary><b>Firmware flashing</b> — <code>POST /flash/{port}</code></summary>
+
+Off by default. Set `flashing.enabled: true` to enable. AVR / optiboot only (Arduino Uno R3 today).
+
+```json
+{
+  "firmware": ":100000000C9434000C9456000C9456000C94560062\n…:00000001FF\n",
+  "test_command": "55 01",
+  "expected_response": "AA 01",
+  "skip_backup": false
+}
+```
+
+The response is a multi-stage outcome with a pre-flash backup (saved to disk on the lab machine *and* returned inline), byte-verify, optional test, and auto-rollback on any post-erase failure. `skip_backup: true` shaves ~8 s on a 32 KB sketch but disables rollback.
+
+See [`docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md`](docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md) for the full request/response shape, the staged-status semantics, and the recovery-hint behavior.
+
+</details>
+
+<details>
+<summary><b>Agent info</b> — <code>GET /agent/info</code></summary>
+
+Best-effort self-description for the lab-bridge server to pull. Never fails.
+
+```json
+{
+  "version": "0.28.0+v0.28.0",
+  "build_sha": "v0.28.0",
+  "os": "windows",
+  "arch": "amd64",
+  "hostname": "LAB-PC-04",
+  "machine_id": "f0c1ab12-34cd-5e67-8901-234567890abc",
+  "uptime_seconds": 8412
+}
+```
+
+`build_sha` is everything after the first `+` in `version`. `machine_id` is the Windows `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`; omitted on non-Windows builds. See [`docs/superpowers/specs/2026-05-18-agent-info-endpoint-design.md`](docs/superpowers/specs/2026-05-18-agent-info-endpoint-design.md).
+
+</details>
+
+For the canonical contract (discovery semantics, type codes, error envelope) see [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md).
+
+## Architecture
+
+SerialHop ships as one Go binary. The binary checks how it was launched and chooses one of four roles:
+
+| Launched via | Role |
+| --- | --- |
+| SCM (after install) | Service worker — owns the REST listener, registry, discovery, flasher, chisel client, log shipper. |
+| Double-click | Control panel — Wails v2 + React, drives the service over Wails bindings. |
+| `--admin-action=<install\|uninstall\|restart\|update>` | Short-lived UAC-elevated child invoked by the panel to talk to SCM. |
+| `--foreground` | Console developer mode (JSON logs to stdout, Ctrl-C to stop). |
+
+```mermaid
+flowchart TB
+  subgraph lab[Lab PC]
+    Panel["Panel process<br/>WebView2 + Wails (internal/panel)"]
+    Service["Service worker<br/>internal/winsvc → internal/app"]
+    Admin["Admin-action child<br/>UAC-elevated, short-lived"]
+    Panel -- "spawns" --> Admin
+    Admin -- "SCM ops" --> Service
+    Panel -. "HTTP probes" .-> Service
+  end
+  subgraph vps[lab-bridge VPS]
+    Proxy[Auth proxy]
+    LokiSvc[Loki]
+  end
+  Service == "chisel reverse R:port:127.0.0.1:api" ==> Proxy
+  Service == "chisel forward 127.0.0.1:3100 → loki:3100" ==> LokiSvc
+```
+
+The chisel client opens **exactly two routes** (`internal/chisel/client.go`): a reverse route that exposes the local REST listener on the chisel server's loopback (the lab-bridge auth proxy fronts it), and a forward route that opens `127.0.0.1:3100` on the lab machine for the in-process log shipper to POST to. No SOCKS, no remote shell, no file transfer — see [`SECURITY.md`](SECURITY.md) for the full threat model.
+
+**Log shipper.** Every line written to `SerialHop.log` and `SerialHop_stderr.log` is mirrored to the in-VPS Loki through the forward tunnel. Gated on `lab_bridge.user` being set (no auth → no allowlist match → no-op). In-memory ring buffer (10 000 records, drop-oldest); pushes are gzipped JSON, batched up to 500 records or 2 s, with backoff on 5xx and drop-batch on 4xx. Labels: `client`, `stream`, `service`, `version`. The on-disk rotated files (10 MB × 3 backups) remain the durable record. See [`docs/superpowers/specs/2026-04-28-log-streaming-design.md`](docs/superpowers/specs/2026-04-28-log-streaming-design.md).
+
+**State on disk** lives under `%ProgramData%\SerialHop\`:
+
+- `SerialHop_config.yaml` — typed config (host, credentials, gates, log level).
+- `logs\SerialHop.log`, `logs\SerialHop_stderr.log` — slog JSON and chisel/panic output, rotated at 10 MB × 3.
+- `cache\server-info.json` — last lab-bridge `/server-info` response, seeded so the panel's lamp probes work before the first network round-trip.
+- Panel crash-journal entries, surfaced on next launch.
+
+The install directory holds only binaries.
+
+**Package map** (`internal/<pkg>`):
+
+| Package | Role |
+| --- | --- |
+| `agentinfo` | Assembles the `GET /agent/info` snapshot. |
+| `api` | REST handlers, route mux, log middleware, error envelope. |
+| `app` | Top-level service composition (registry, discovery, REST, chisel, log shipper). |
+| `bootstrap` | Fetches and caches lab-bridge server-info on startup. |
+| `chisel` | Embedded chisel client; configures the two routes. |
+| `config` | Typed config, validation, scaffold writer. |
+| `discovery` | Serial probe (`\x55` probe bytes, post-open settle, type decoding). |
+| `flasher` | Intel HEX parser + STK500v1/optiboot driver + backup/verify/rollback. |
+| `labbridge` | Typed HTTP client for lab-bridge endpoints. |
+| `logship` | Ring buffer + gzipped batch shipper to Loki. |
+| `panel` | Wails app, bindings, lamp state, probes, crash journal, update controller. Frontend under `internal/panel/frontend`. |
+| `panellog` | `slog.Handler` that broadcasts records to the panel UI. |
+| `paths` | `%ProgramData%` path helpers and `EnsureDirs`. |
+| `registry` | In-memory device registry with per-device mutex and port-keyed index. |
+| `serial` | Port opener, framing reader, USB-descriptor enumerator. |
+| `slogtest` | slog test helpers. |
+| `updater` | Auto-update state machine (check → download → verify → install → rollback). |
+| `version` | Version string assembly from `-ldflags`. |
+| `winsvc` | SCM service worker; install/uninstall/restart; admin-action child. |
+
+Per-feature designs live under [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+## Developer guide
+
+### Prerequisites
+
+- Go (version pinned in `go.mod`).
+- Node — only needed when working on the panel frontend or running `task preview`.
+- `jq` on the build host (preinstalled on GitHub-hosted runners; `brew install jq` on macOS, `apt-get install jq` on Debian/Ubuntu).
+
+### Task targets
+
+| Task | Purpose |
+| --- | --- |
+| `task build` | Build `dist/SerialHop.exe`. Override with `task build GOOS=linux GOARCH=arm64`. Embeds icon, UAC manifest, version metadata. |
+| `task installer` | Build `dist/SerialHop-Setup.exe`. Depends on a fresh `task build` to produce the embedded payload. |
+| `task test` | Run all unit tests. Auto-runs `lint:secrets` first. |
+| `task lint:secrets` | Fail if any `slog.*` call logs a config secret (`cfg.LabBridge.Pass`). |
+| `task preview` | Run the panel UI in a desktop browser on macOS / Linux via a Wails-runtime shim — no Windows or WebView2 needed. |
+| `task tidy` | `go mod tidy`. |
+| `task clean` | Remove build outputs and generated resources. |
+
+Generated artifacts are gitignored — never commit `dist/`, `*.exe`, `assets/manifest.xml`, `cmd/serialhop/resource_windows.syso`.
+
+### Pre-PR verify pipeline
+
+`pr.yml` runs all of these. Run them locally first; a failed CI round-trip is wasted minutes.
+
+```
+gofmt -l .                     # must print nothing
+go vet ./...
+golangci-lint run              # errcheck, staticcheck, unused, ineffassign, gosec
+go test -race -count=1 ./...
+govulncheck ./...
+```
+
+### Branch & PR flow
+
+- `main` is protected. No direct pushes. Every change lands via PR, squash-merged, linear history.
+- PR titles are Conventional Commits — `pr.yml` blocks merge if they aren't. Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `revert`.
+- The PR title becomes the squash commit on `main` and feeds release-please. One PR = one logical change.
+- Never write `BREAKING CHANGE:` in the body unless you actually want a major bump.
+
+### Releases
+
+The release flow is fully automated by `release-please.yml`:
+
+1. Merge `feat:` / `fix:` PRs to `main`.
+2. release-please opens (or updates) a release PR titled `chore(main): release X.Y.Z`.
+3. When the release PR's `verify` job goes green, squash-merge it.
+4. The `release-build` job runs on `windows-latest` and publishes `SerialHop-vX.Y.Z.exe`, `SerialHop-Setup-vX.Y.Z.exe`, `SHA256SUMS.txt`, and a Sigstore build-provenance attestation.
 
 Verify a downloaded binary:
+
 ```
 gh release download vX.Y.Z -p "SerialHop-*.exe" -p "SHA256SUMS.txt"
 shasum -a 256 -c SHA256SUMS.txt
 gh attestation verify SerialHop-vX.Y.Z.exe --owner bioexperiment-lab-devices
 ```
 
-## Install on a Windows lab machine
+Don't hand-edit `.release-please-manifest.json` or the version strings in `assets/version.json` — release-please owns them. Don't create git tags or GitHub releases manually.
 
-1. Download `SerialHop-Setup-vX.Y.Z.exe` from the [releases page](https://github.com/bioexperiment-lab-devices/serialhop/releases/latest) or from the lab management UI.
-2. Double-click the installer. Approve the UAC prompt.
-3. Accept the default install location (`C:\Program Files\SerialHop`) or browse to a custom path. Click **Install**.
-4. SerialHop opens automatically. The panel pops up a **Set credentials** dialog — enter your `lab_bridge.user` and `lab_bridge.pass`; the panel verifies them against the lab-bridge server and writes them to the config file.
-5. Click **Install** in the panel. UAC prompts; approve. The service is registered as `SerialHop` (auto-start at boot, runs as LocalSystem) and started immediately.
+### Cross-platform testing
 
-A desktop shortcut named **SerialHop** is created during step 3 and points at `<install_dir>\SerialHop.exe`. The shortcut name is intentionally version-less: subsequent auto-updates rename the binary in place under the same filename, so the icon keeps working across releases.
+Tests must pass on both macOS and Windows. Windows-only code (service worker, real SCM client, UAC helpers) lives in `_windows.go` files; their logic is covered by fakes that compile and run on macOS / Linux.
 
-Re-running the installer on an already-installed machine:
+### Where to read more
 
-- Same version: refreshes the desktop shortcut and exits with "already installed" — no service restart.
-- Newer installer: performs an in-place upgrade (stop service → rename → start service, with rollback on failure).
-- Older installer: refused unless re-run with `--allow-downgrade`.
-
-Silent / scripted installs (admin shell):
-
-```
-SerialHop-Setup-vX.Y.Z.exe --silent --dir "C:\Program Files\SerialHop" --no-shortcut
-```
-
-Flags: `--silent` (no dialog; implies `--no-launch`), `--dir <path>`, `--no-launch`, `--no-shortcut`, `--allow-downgrade`, `--version`.
-
-### Manual install (advanced)
-
-If you prefer to copy the binary by hand (e.g., on an air-gapped box):
-
-1. Copy `SerialHop.exe` to an install location (e.g., `C:\Program Files\SerialHop\` or `C:\Tools\SerialHop\`).
-2. Double-click the `.exe`. The control panel opens.
-3. Enter credentials, click **Install** in the panel.
-
-After install (either path):
-
-- The service runs across reboots without the panel being open.
-- To apply config changes: edit the YAML file, then click **Restart** in the panel.
-- To remove: click **Uninstall** in the panel, then delete the install directory.
-- Logs go to `%ProgramData%\SerialHop\logs\` (`SerialHop.log` for slog JSON, `SerialHop_stderr.log` for chisel state and panic traces, both rotated at 10 MB with 3 backups). Click **Open logs folder** to open the directory in Explorer.
-- Config lives at `%ProgramData%\SerialHop\SerialHop_config.yaml`. Click **Open config file** to edit.
-
-### Auto-update
-
-The control panel checks GitHub Releases on open (and every 6 h while it stays open) and, if a newer version is available, surfaces a row above the buttons:
-
-```
-Update: v0.7.0 available  [Download]  [Release notes]
-```
-
-**Download** fetches `SerialHop-vX.Y.Z.exe` and `SHA256SUMS.txt` into the install directory, verifies the SHA-256, and changes the button to **Install update**. **Install update** triggers a UAC prompt; if approved, the service is stopped, the current `SerialHop.exe` is renamed to `SerialHop.exe.old`, the staged binary is moved into place, the service is restarted, and `.old` is best-effort deleted on the next panel launch. If the service fails to come back up, the install is automatically rolled back to the previous version.
-
-The panel process itself keeps running from the renamed `.old` until it's closed and reopened — the on-disk service binary swaps without taking down the panel window.
-
-To disable update checks entirely (e.g., on air-gapped lab machines):
-
-```yaml
-auto_update:
-  enabled: false
-```
-
-## Windows Defender false positives
-
-The combination this binary uses — Go static link, `-H windowsgui`, embedded chisel reverse tunnel, Windows service worker — matches the heuristic shape of a RAT closely enough that Defender (and some other AV engines) sometimes quarantines the `.exe` on download or first run. Build flags already mitigate the most common triggers (`-trimpath`, no symbol stripping, populated version metadata), but unsigned binaries hit zero SmartScreen reputation on every new release, so flagging can recur.
-
-If a release is flagged:
-
-1. **Submit the exact `.exe` to Microsoft** as a false positive: https://www.microsoft.com/en-us/wdsi/filesubmission. Mark it "Software developer" → "Incorrectly detected." Turnaround is usually 24-48h; once accepted, a definitions update whitelists the SHA-256 globally.
-2. **Restore from quarantine and re-test.** Defender caches verdicts by hash, so a clean rebuild produces a new hash that has to be re-evaluated.
-3. **Long-term**: a code-signing certificate (OV ~$200/yr, EV ~$400/yr) is the only durable fix. EV builds SmartScreen reputation immediately; OV accrues it over downloads.
-
-Operators installing on lab machines can also add `C:\Tools\SerialHop\` (or wherever the `.exe` lives) to Defender's exclusion list as a stopgap.
-
-## Run modes
-
-The single binary detects how it was launched and behaves accordingly:
-
-| Launched via               | Mode               |
-| -------------------------- | ------------------ |
-| SCM (after install)        | Service worker     |
-| Double-click               | Control panel      |
-| `--admin-action=...` (UAC) | Internal: SCM op   |
-| `--foreground`             | Console developer mode (legacy behavior; JSON logs to stdout, Ctrl-C to stop) |
-
-## REST API
-
-The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from outside **only** through the chisel reverse tunnel.
-
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/discover` | Run a fresh discovery and return the device list |
-| `GET`  | `/devices`  | Return the cached device list |
-| `POST` | `/devices/{id}/command` | Send raw bytes to a discovered device; optionally read a reply |
-| `POST` | `/devices/disconnect` | Close every serial handle in the registry. Always available. |
-| `GET`  | `/serial/ports` | List enumerated serial ports, annotated with discovery state (gated by `raw_serial.enabled`) |
-| `GET`  | `/serial/ports/detailed` | List ports with USB descriptors (VID/PID/SerialNumber/Product). Always available. |
-| `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device (gated by `raw_serial.enabled`) |
-| `POST` | `/flash/{port}` | Pre-backup, flash, byte-verify, optional test, auto-rollback (gated by `flashing.enabled`) |
-
-Discovered device types: `pump` (type code 10), `valve` (30), `densitometer` (70). See [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md) for full request/response shapes and behavior.
-
-**Remote firmware flashing.** With `flashing.enabled: true`, the operator can POST an Intel HEX firmware image to `POST /flash/{port}` and receive a complete stage-by-stage outcome including a pre-flash backup (saved on the lab machine *and* returned inline). On any post-backup failure, SerialHop attempts to roll back to the backup automatically. Pass `skip_backup: true` in the request body to omit the backup phase (~8 s faster on a 32 KB sketch, but post-erase failures become unrecoverable — no rollback target). AVR / optiboot only (Arduino Uno R3). Off by default. See `docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md` for the full design.
-
-## Log streaming to Loki
-
-In service mode, the client streams every line written to `SerialHop.log` and `SerialHop_stderr.log` to the in-VPS Loki via a forward tunnel (`127.0.0.1:3100 → loki:3100`) added to the same chisel session. The on-disk rotated files remain the durable record; Loki is a queryable mirror.
-
-- Gated on `lab_bridge.user` being set — without auth the server's per-user allowlist won't grant the route, and the shipper is a no-op (a one-time `slog.Warn` is emitted at startup).
-- In-memory ring buffer (10 000 records, drop-oldest on overflow) decouples disk writes from network. Pushes are gzipped JSON, batched up to 500 records or 2 s, with backoff retry on 5xx and drop-batch on 4xx.
-- Labels: `client` (`lab_bridge.user`), `stream` (`stdout`/`stderr`), `service` (`serialhop`), `version`. Filter on these in Grafana.
-
-Foreground developer mode does not ship — stdout there is a real terminal the developer is already watching. See [`docs/superpowers/specs/2026-04-28-log-streaming-design.md`](docs/superpowers/specs/2026-04-28-log-streaming-design.md) for the full design.
-
-## Tests
-
-```
-task test
-```
-
-Tests run on macOS and Windows. The Windows-only files (service worker, real SCM client, walk panel, UAC elevation helpers) are silently skipped on non-Windows hosts; their logic is covered by tests against fakes.
+- [`CLAUDE.md`](CLAUDE.md) — agent-friendly working notes (CI gotchas, generated-artifact rules, tooling conventions).
+- [`docs/superpowers/specs/`](docs/superpowers/specs/) — per-feature designs (installer, auto-update, log streaming, panel UI, firmware flashing, etc.).
 
 ## Security
 
-Threat model and vulnerability-reporting instructions are in [`SECURITY.md`](SECURITY.md). It also addresses the "is this a RAT?" question in detail.
+Threat model and vulnerability-reporting instructions live in [`SECURITY.md`](SECURITY.md).
 
 ## License
 
