@@ -73,6 +73,9 @@ Intro: bound to `127.0.0.1` on the lab machine; reachable from outside **only** 
 | `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device | `raw_serial.enabled` |
 | `POST` | `/flash/{port}` | Pre-backup → flash → byte-verify → optional test → auto-rollback | `flashing.enabled` |
 | `GET` | `/agent/info` | Agent self-description for server-pulled state | — |
+| `GET` | `/power/keep-awake` | Report keep-awake state | — |
+| `POST` | `/power/keep-awake/enable` | Activate keep-awake (idempotent) | — |
+| `POST` | `/power/keep-awake/disable` | Clear keep-awake (idempotent) | — |
 
 **Collapsible `<details>` blocks** (one per endpoint family) with shape examples:
 
@@ -81,6 +84,7 @@ Intro: bound to `127.0.0.1` on the lab machine; reachable from outside **only** 
 - **Raw serial** (`GET /serial/ports`, `GET /serial/ports/detailed`, `POST /serial/ports/{port}/command`) — port DTO shape, `post_open_settle_ms` override, and the 409 "port has discovered device → use `/devices/{id}/command`" branch.
 - **Flashing** (`POST /flash/{port}`) — short request example (`firmware`, `test_command`, `expected_response`, `skip_backup`), one-line description of the staged-outcome response, link to `docs/superpowers/specs/2026-05-12-remote-firmware-flashing-design.md` for full payload.
 - **Agent info** (`GET /agent/info`) — snapshot example; pointer to `docs/superpowers/specs/2026-05-18-agent-info-endpoint-design.md`.
+- **Keep-awake** (`GET /power/keep-awake`, `POST /power/keep-awake/enable`, `POST /power/keep-awake/disable`) — shared `{ "active": bool }` body, idempotent enable/disable, Windows `PowerRequestSystemRequired` is process-bound so the OS clears it on service exit.
 
 Cross-link to `docs/superpowers/specs/2026-04-26-lab-devices-client-design.md` once at the bottom of the section for the canonical reference.
 
@@ -125,6 +129,7 @@ Install directory holds only binaries.
 - `panel` — Wails app, bindings, lamp state, probes, crash journal, update controller; frontend lives under `internal/panel/frontend`.
 - `panellog` — slog handler that broadcasts records to the panel UI.
 - `paths` — `%ProgramData%` paths and `EnsureDirs`.
+- `power` — `KeepAwake` interface backed by Windows `PowerRequestSystemRequired`; non-Windows fake for tests.
 - `registry` — in-memory device registry with per-device mutex and port-keyed reverse index.
 - `serial` — port opener, framing reader, USB-descriptor enumerator.
 - `slogtest` — slog test helpers.
