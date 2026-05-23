@@ -29,10 +29,11 @@ The panel is a Wails v2 + React desktop window. It opens by double-clicking `Ser
 
 ### Status
 
-Three lamps and three buttons.
+Lamps, service-control buttons, and a keep-awake toggle.
 
 - **Lamps**: Local service (SCM state), Lab-bridge server (reachability + health probe to the configured server), Reverse tunnel (chisel session state from this machine).
-- **Buttons**: Install / Uninstall / Restart. All three elevate via UAC.
+- **Service control**: Install / Uninstall / Restart. All three elevate via UAC.
+- **Keep-awake toggle**: tells Windows not to idle into sleep or run a scheduled automatic shutdown while it's on. The request is held by the service process and is reflected in `powercfg /requests`; clearing it (or stopping the service) lets normal power management resume.
 - When a newer release is available, an **Update** row appears here: download → SHA-256 verify → install with automatic rollback if the service fails to come back up.
 - If the panel crashed on its last run, a prior-crash report is surfaced inline.
 
@@ -67,6 +68,9 @@ The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from ou
 | `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device | `raw_serial.enabled` |
 | `POST` | `/flash/{port}` | Pre-backup → flash → byte-verify → optional test → auto-rollback | `flashing.enabled` |
 | `GET`  | `/agent/info` | Agent self-description for server-pulled state | — |
+| `GET`  | `/power/keep-awake` | Report keep-awake state | — |
+| `POST` | `/power/keep-awake/enable` | Activate keep-awake (idempotent) | — |
+| `POST` | `/power/keep-awake/disable` | Clear keep-awake (idempotent) | — |
 
 Discovered device types: `pump` (type code `10`), `valve` (`30`), `densitometer` (`70`).
 
@@ -190,6 +194,19 @@ Best-effort self-description for the lab-bridge server to pull. Never fails.
 
 </details>
 
+<details>
+<summary><b>Keep-awake</b> — <code>GET /power/keep-awake</code>, <code>POST /power/keep-awake/enable</code>, <code>POST /power/keep-awake/disable</code></summary>
+
+Drives the Status tab's keep-awake toggle. The service holds a Windows `PowerRequest` (type `PowerRequestSystemRequired`) for as long as keep-awake is on; clearing it (or stopping the service) releases the request. All three endpoints return the same body, and `enable` / `disable` are idempotent.
+
+```json
+{ "active": true }
+```
+
+`enable` and `disable` return `500` with the syscall error in `detail` on failure; the service-side `Active` flag is left at its prior value. The request is process-bound, so the operating system clears it automatically if the service crashes.
+
+</details>
+
 For the canonical contract (discovery semantics, type codes, error envelope) see [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md).
 
 ## Architecture
@@ -251,6 +268,7 @@ The install directory holds only binaries.
 | `panel` | Wails app, bindings, lamp state, probes, crash journal, update controller. Frontend under `internal/panel/frontend`. |
 | `panellog` | `slog.Handler` that broadcasts records to the panel UI. |
 | `paths` | `%ProgramData%` path helpers and `EnsureDirs`. |
+| `power` | `KeepAwake` interface backed by Windows `PowerRequestSystemRequired`; non-Windows fake for tests. |
 | `registry` | In-memory device registry with per-device mutex and port-keyed index. |
 | `serial` | Port opener, framing reader, USB-descriptor enumerator. |
 | `slogtest` | slog test helpers. |
