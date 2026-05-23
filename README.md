@@ -43,6 +43,8 @@ Typed editor over `%ProgramData%\SerialHop\SerialHop_config.yaml`. Field-level v
 
 Set `auto_update.enabled: false` in the YAML to disable update checks (e.g., on air-gapped lab machines).
 
+See [`docs/configuration.md`](docs/configuration.md) for the full configuration guide: every field, common tasks (rotate credentials, restrict discovery, enable raw serial or flashing), and when to use the panel vs. editing the YAML directly.
+
 ### Devices
 
 Discovered devices with **type** (`pump` / `valve` / `densitometer`), **type code**, and **port**. Send raw command bytes per row. Per-row Disconnect releases that one port without tearing down the rest of the registry.
