@@ -39,7 +39,9 @@ Lamps, service-control buttons, and a keep-awake toggle.
 
 ### Config
 
-Typed editor over `%ProgramData%\SerialHop\SerialHop_config.yaml`. Field-level validation (lab-bridge host as IPv4 or RFC 1123 hostname; integer fields can be cleared). Dirty-state guard on tab switch — switching away with unsaved edits opens a modal listing exactly which fields are dirty. The default save flow is **Save & restart**, so config changes take effect immediately.
+Typed editor over `%ProgramData%\SerialHop\SerialHop_config.yaml`. Field-level validation (lab-bridge host as IPv4 or RFC 1123 hostname; integer fields can be cleared). Dirty-state guard on tab switch — switching away with unsaved edits opens a modal listing exactly which fields are dirty. The default save flow is **Save & restart**, so config changes take effect immediately. An **Open config file** button reveals the YAML in Explorer if you need to edit it directly.
+
+Set `auto_update.enabled: false` in the YAML to disable update checks (e.g., on air-gapped lab machines).
 
 ### Devices
 
@@ -51,7 +53,7 @@ Every enumerated COM port plus its USB descriptor (VID, PID, SerialNumber, Produ
 
 ### Logs
 
-Live tail of the structured logs under `%ProgramData%\SerialHop\logs\`. Newest-first ordering, sticky filter bar (level + free-text), inline log-detail view for the structured fields, on-open backlog so you can read what happened before the panel opened.
+Live tail of the structured logs under `%ProgramData%\SerialHop\logs\`. Newest-first ordering, sticky filter bar (level + free-text), inline log-detail view for the structured fields, on-open backlog so you can read what happened before the panel opened. An **Open logs folder** button reveals the directory in Explorer.
 
 ## REST API
 
@@ -219,6 +221,7 @@ SerialHop ships as one Go binary. The binary checks how it was launched and choo
 | Double-click | Control panel — Wails v2 + React, drives the service over Wails bindings. |
 | `--admin-action=<install\|uninstall\|restart\|update>` | Short-lived UAC-elevated child invoked by the panel to talk to SCM. |
 | `--foreground` | Console developer mode (JSON logs to stdout, Ctrl-C to stop). |
+| `--version` | Print the binary's version string and exit. |
 
 ```mermaid
 flowchart TB
