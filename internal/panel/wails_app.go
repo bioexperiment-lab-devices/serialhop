@@ -41,6 +41,7 @@ type App struct {
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
 	probeDedup    *probeDedup
 	panelLog      *panellog.Manager
+	streaming     *StreamingLifecycle
 }
 
 // SetPanelLog wires the panellog manager so SaveConfig can update the
@@ -131,6 +132,16 @@ func (a *App) startup(ctx context.Context) {
 		}
 	})
 	go a.scmPollLoop(ctx)
+
+	a.streaming = NewStreamingLifecycle(
+		paths.PanelEndpointPath(),
+		paths.ArmedCamerasPath(),
+		paths.FFmpegPath(),
+		"-authorization",
+	)
+	if err := a.streaming.Start(ctx); err != nil {
+		slog.Error("streaming subsystem failed to start", "err", err)
+	}
 }
 
 func (a *App) updateRecheckLoop(ctx context.Context) {
@@ -146,9 +157,12 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 	}
 }
 
-func (a *App) shutdown(_ context.Context) {
+func (a *App) shutdown(ctx context.Context) {
 	if a.logTail != nil {
 		a.logTail.stop()
+	}
+	if a.streaming != nil {
+		_ = a.streaming.Stop(ctx)
 	}
 }
 
