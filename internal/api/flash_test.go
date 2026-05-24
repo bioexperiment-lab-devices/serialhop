@@ -23,7 +23,7 @@ func newTestServerForFlash(t *testing.T) (*Server, *registry.Registry, *labseria
 		t.Fatalf("power.New: %v", err)
 	}
 	t.Cleanup(func() { _ = ka.Close() })
-	s := New(reg, nil, op, true, nil, false, ka)
+	s := New(reg, nil, op, true, nil, false, ka, nil)
 	return s, reg, op
 }
 
@@ -166,7 +166,7 @@ func newTestServerWithFlash(t *testing.T, fl flasher.Flasher, enabled bool) (*Se
 		t.Fatalf("power.New: %v", err)
 	}
 	t.Cleanup(func() { _ = ka.Close() })
-	s := New(reg, nil, op, true, fl, enabled, ka)
+	s := New(reg, nil, op, true, fl, enabled, ka, nil)
 	return s, reg, op
 }
 
