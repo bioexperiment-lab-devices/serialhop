@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -39,7 +40,7 @@ func StartSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 		cfg.GracefulPeriod = DefaultGracefulStopGrace
 	}
 	cmd := exec.CommandContext(ctx, cfg.Argv[0], cfg.Argv[1:]...) //nolint:gosec // argv is constructed by trusted callers (Manager builds it from FFmpegResolver.Path + BuildWHIPArgs), not user input
-	cmd.Env = append(cmd.Env, cfg.Env...)
+	cmd.Env = append(os.Environ(), cfg.Env...)
 	applyPlatformAttrs(cmd) // session_windows / session_other
 	stderr, err := cmd.StderrPipe()
 	if err != nil {

@@ -90,6 +90,33 @@ func TestSession_HardKillsAfterGracePeriod(t *testing.T) {
 	}
 }
 
+func TestSession_EnvInheritsAndExtends(t *testing.T) {
+	bin := buildFakeFFmpeg(t)
+	t.Setenv("STREAMER_TEST_INHERITED", "yes")
+	// Spawn fake_ffmpeg with FAKE_FFMPEG_EXIT_FAST=1 and an additional
+	// env var; the child writes its env count to stderr (we expect both
+	// the inherited STREAMER_TEST_INHERITED and the explicit one).
+	s, err := StartSession(context.Background(), SessionConfig{
+		Argv: []string{bin},
+		Env:  []string{"STREAMER_TEST_EXPLICIT=yes", "FAKE_FFMPEG_DUMP_ENV=1", "FAKE_FFMPEG_EXIT_FAST=1"},
+	})
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	<-s.Done()
+	// The last stderr line is the only one captured; we want both env
+	// markers to have appeared at some point. To make the assertion
+	// deterministic, fake_ffmpeg writes a single line containing both
+	// values' presence indicators.
+	last := s.LastError()
+	if !contains(last, "inherited=yes") {
+		t.Errorf("inherited env not visible to child; LastError = %q", last)
+	}
+	if !contains(last, "explicit=yes") {
+		t.Errorf("explicit env not visible to child; LastError = %q", last)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

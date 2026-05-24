@@ -21,9 +21,22 @@ import (
 func main() {
 	fmt.Fprintln(os.Stderr, "fake_ffmpeg: started")
 	if os.Getenv("FAKE_FFMPEG_EXIT_FAST") == "1" {
-		fmt.Fprintln(os.Stderr, "fake_ffmpeg: exiting fast")
+		if os.Getenv("FAKE_FFMPEG_DUMP_ENV") == "1" {
+			fmt.Fprintf(os.Stderr, "fake_ffmpeg: env inherited=%s explicit=%s\n",
+				yesNo(os.Getenv("STREAMER_TEST_INHERITED") == "yes"),
+				yesNo(os.Getenv("STREAMER_TEST_EXPLICIT") == "yes"),
+			)
+		} else {
+			fmt.Fprintln(os.Stderr, "fake_ffmpeg: exiting fast")
+		}
 		time.Sleep(50 * time.Millisecond)
 		os.Exit(1)
+	}
+	if os.Getenv("FAKE_FFMPEG_DUMP_ENV") == "1" {
+		fmt.Fprintf(os.Stderr, "fake_ffmpeg: env inherited=%s explicit=%s\n",
+			yesNo(os.Getenv("STREAMER_TEST_INHERITED") == "yes"),
+			yesNo(os.Getenv("STREAMER_TEST_EXPLICIT") == "yes"),
+		)
 	}
 	ignore := os.Getenv("FAKE_FFMPEG_IGNORE_SIGNALS") == "1"
 
@@ -41,4 +54,11 @@ func main() {
 		// Safety: don't hang the test suite.
 		os.Exit(2)
 	}
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
