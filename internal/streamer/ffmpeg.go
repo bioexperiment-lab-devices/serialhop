@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -79,4 +80,87 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// WHIPArgs is the per-session input that determines the ffmpeg argv.
+type WHIPArgs struct {
+	BinaryPath  string
+	CameraLabel string
+	SessionID   string
+	WHIPURL     string
+
+	// BearerFlag is the ffmpeg WHIP-muxer flag name that carries the
+	// bearer token (e.g. "-authorization"). The exact name depends on the
+	// pinned ffmpeg build's WHIP muxer; the implementer confirms it
+	// against the binary picked in Task 4.
+	BearerFlag  string
+	BearerToken string
+
+	Width        int
+	Height       int
+	Framerate    int
+	BitrateKbps  int
+	KeyframeIntv int
+}
+
+// BuildWHIPArgs produces the full argv for a WHIP publish session.
+func BuildWHIPArgs(in WHIPArgs) []string {
+	w := in.Width
+	if w == 0 {
+		w = DefaultVideoWidth
+	}
+	h := in.Height
+	if h == 0 {
+		h = DefaultVideoHeight
+	}
+	fps := in.Framerate
+	if fps == 0 {
+		fps = DefaultFramerate
+	}
+	br := in.BitrateKbps
+	if br == 0 {
+		br = DefaultBitrateKbps
+	}
+	g := in.KeyframeIntv
+	if g == 0 {
+		g = DefaultKeyframeInterval
+	}
+	return []string{
+		in.BinaryPath,
+		"-hide_banner",
+		"-loglevel", "error",
+		"-f", "dshow",
+		"-rtbufsize", "256M",
+		"-framerate", strconv.Itoa(fps),
+		"-video_size", strconv.Itoa(w) + "x" + strconv.Itoa(h),
+		"-i", "video=" + in.CameraLabel,
+		"-c:v", "libx264",
+		"-preset", "veryfast",
+		"-tune", "zerolatency",
+		"-profile:v", "baseline",
+		"-level", "3.1",
+		"-pix_fmt", "yuv420p",
+		"-b:v", strconv.Itoa(br) + "k",
+		"-maxrate", strconv.Itoa(br) + "k",
+		"-bufsize", strconv.Itoa(2*br) + "k",
+		"-g", strconv.Itoa(g),
+		"-keyint_min", strconv.Itoa(g),
+		"-metadata", "serialhop_session=" + in.SessionID,
+		"-f", "whip",
+		in.BearerFlag, "Bearer " + in.BearerToken,
+		in.WHIPURL,
+	}
+}
+
+// RedactedArgs returns a copy of argv suitable for logging — bearer
+// tokens replaced with `Bearer ****`.
+func RedactedArgs(args []string) []string {
+	out := make([]string, len(args))
+	copy(out, args)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] == "-authorization" || out[i] == "-bearer_token" {
+			out[i+1] = "Bearer ****"
+		}
+	}
+	return out
 }
