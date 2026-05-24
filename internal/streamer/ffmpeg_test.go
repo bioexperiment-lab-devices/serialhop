@@ -65,7 +65,7 @@ func TestBuildWHIPArgs(t *testing.T) {
 		SessionID:    "01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 		WHIPURL:      "https://lab.example.com/streamer/whip/01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 		BearerFlag:   "-authorization",
-		BearerToken:  "tk_F2k9q_secret",
+		BearerToken:  "test-token-value-123",
 		Width:        1280,
 		Height:       720,
 		Framerate:    24,
@@ -85,7 +85,7 @@ func TestBuildWHIPArgs(t *testing.T) {
 		"-g", "48",
 		"-metadata", "serialhop_session=01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 		"-f", "whip",
-		"-authorization", "Bearer tk_F2k9q_secret",
+		"-authorization", "Bearer test-token-value-123",
 		"https://lab.example.com/streamer/whip/01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 	}
 	for _, want := range mustHave {
@@ -99,6 +99,23 @@ func TestBuildWHIPArgs(t *testing.T) {
 		if !found {
 			t.Errorf("args missing %q\nactual: %q", want, args)
 		}
+	}
+
+	// URL must be the last positional.
+	if got := args[len(args)-1]; got != "https://lab.example.com/streamer/whip/01HXYZ8K2NQM4R6V9P3T1W5Z7B" {
+		t.Errorf("URL must be last positional; last arg = %q", got)
+	}
+
+	// Bearer flag and "Bearer <token>" must be adjacent.
+	foundPair := false
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-authorization" && args[i+1] == "Bearer test-token-value-123" {
+			foundPair = true
+			break
+		}
+	}
+	if !foundPair {
+		t.Errorf("expected -authorization immediately followed by 'Bearer <token>', got argv: %q", args)
 	}
 }
 
@@ -117,5 +134,17 @@ func TestBuildWHIPArgs_TokenNotInOrderedLog(t *testing.T) {
 		if strings.Contains(a, "SECRET") {
 			t.Fatalf("token leaked into redacted args: %q", red)
 		}
+	}
+
+	// Redaction must replace the token slot with the canonical mask.
+	foundMask := false
+	for _, a := range red {
+		if a == "Bearer ****" {
+			foundMask = true
+			break
+		}
+	}
+	if !foundMask {
+		t.Errorf("expected 'Bearer ****' to appear in redacted args, got %q", red)
 	}
 }

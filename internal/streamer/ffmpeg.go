@@ -153,13 +153,18 @@ func BuildWHIPArgs(in WHIPArgs) []string {
 }
 
 // RedactedArgs returns a copy of argv suitable for logging — bearer
-// tokens replaced with `Bearer ****`.
+// tokens replaced with `Bearer ****`. We mask values both by adjacency
+// to a known bearer flag and by `Bearer ` prefix, so a future change
+// to the WHIP-muxer flag name doesn't silently leak.
 func RedactedArgs(args []string) []string {
 	out := make([]string, len(args))
 	copy(out, args)
-	for i := 0; i < len(out)-1; i++ {
-		if out[i] == "-authorization" || out[i] == "-bearer_token" {
+	for i := 0; i < len(out); i++ {
+		if i < len(out)-1 && (out[i] == "-authorization" || out[i] == "-bearer_token") {
 			out[i+1] = "Bearer ****"
+		}
+		if strings.HasPrefix(out[i], "Bearer ") {
+			out[i] = "Bearer ****"
 		}
 	}
 	return out
