@@ -137,3 +137,95 @@ func ReadCache(path, user string) (Cache, error) {
 func ReadCacheRaw(path string) (Cache, error) {
 	return readCacheFile(path)
 }
+
+const panelEndpointCurrentVersion = 1
+
+// ErrPanelEndpointMissing is returned by ReadPanelEndpoint when the
+// endpoint file is absent, unparseable, or version-mismatched. Callers
+// should treat all of these the same: the panel is not running, or
+// has not yet announced its listener address.
+var ErrPanelEndpointMissing = errors.New("bootstrap: panel endpoint missing")
+
+// PanelEndpoint is the on-disk schema for panel-endpoint.json. The
+// panel writes this file once its localhost streaming listener is
+// bound, so the service can proxy /v1/cam/* requests to it. The PID
+// lets the service detect orphaned endpoint files left over from a
+// crashed panel.
+type PanelEndpoint struct {
+	Version   int    `json:"version"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	PID       int    `json:"pid"`
+	StartedAt string `json:"started_at"`
+}
+
+// WritePanelEndpoint atomically writes e to path. Any existing file at
+// path is replaced. Permissions are 0600. The Version field is set
+// automatically.
+func WritePanelEndpoint(path string, e PanelEndpoint) error {
+	e.Version = panelEndpointCurrentVersion
+	data, err := json.MarshalIndent(e, "", "  ")
+	if err != nil {
+		return fmt.Errorf("bootstrap: marshal panel endpoint: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "panel-endpoint.json.*.tmp")
+	if err != nil {
+		return fmt.Errorf("bootstrap: create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("bootstrap: write temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("bootstrap: close temp: %w", err)
+	}
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("bootstrap: chmod temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("bootstrap: rename temp: %w", err)
+	}
+	return nil
+}
+
+// ReadPanelEndpoint reads the panel-endpoint file at path. Any failure
+// (missing file, parse error, version mismatch) returns
+// ErrPanelEndpointMissing; corrupt and version-mismatched files are
+// deleted as a side effect.
+func ReadPanelEndpoint(path string) (PanelEndpoint, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path is paths.PanelEndpointPath()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return PanelEndpoint{}, ErrPanelEndpointMissing
+		}
+		slog.Warn("bootstrap: read panel endpoint failed", "path", path, "err", err)
+		return PanelEndpoint{}, ErrPanelEndpointMissing
+	}
+	var e PanelEndpoint
+	if err := json.Unmarshal(data, &e); err != nil {
+		slog.Warn("bootstrap: panel endpoint corrupt; deleting", "path", path, "err", err)
+		_ = os.Remove(path)
+		return PanelEndpoint{}, ErrPanelEndpointMissing
+	}
+	if e.Version != panelEndpointCurrentVersion {
+		slog.Warn("bootstrap: panel endpoint version mismatch; deleting", "path", path, "version", e.Version)
+		_ = os.Remove(path)
+		return PanelEndpoint{}, ErrPanelEndpointMissing
+	}
+	return e, nil
+}
+
+// DeletePanelEndpoint removes the panel-endpoint file at path. A
+// missing file is not an error — the goal state (file absent) is
+// already achieved.
+func DeletePanelEndpoint(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("bootstrap: delete panel endpoint: %w", err)
+	}
+	return nil
+}

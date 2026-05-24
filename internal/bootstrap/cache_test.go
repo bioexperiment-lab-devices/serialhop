@@ -275,6 +275,46 @@ func TestReadCacheRaw_CorruptJSONDeletesAndReturnsMissing(t *testing.T) {
 	}
 }
 
+func TestWriteReadPanelEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel-endpoint.json")
+	in := PanelEndpoint{
+		Host:      "127.0.0.1",
+		Port:      49217,
+		PID:       12345,
+		StartedAt: "2026-05-24T13:45:00Z",
+	}
+	if err := WritePanelEndpoint(path, in); err != nil {
+		t.Fatalf("WritePanelEndpoint: %v", err)
+	}
+	out, err := ReadPanelEndpoint(path)
+	if err != nil {
+		t.Fatalf("ReadPanelEndpoint: %v", err)
+	}
+	if out.Port != 49217 || out.PID != 12345 || out.Host != "127.0.0.1" {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+}
+
+func TestReadPanelEndpoint_Missing(t *testing.T) {
+	_, err := ReadPanelEndpoint(filepath.Join(t.TempDir(), "nope.json"))
+	if !errors.Is(err, ErrPanelEndpointMissing) {
+		t.Fatalf("want ErrPanelEndpointMissing, got %v", err)
+	}
+}
+
+func TestReadPanelEndpoint_VersionMismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel-endpoint.json")
+	if err := os.WriteFile(path, []byte(`{"version": 99, "host":"127.0.0.1","port":1,"pid":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ReadPanelEndpoint(path)
+	if !errors.Is(err, ErrPanelEndpointMissing) {
+		t.Fatalf("want ErrPanelEndpointMissing for version mismatch, got %v", err)
+	}
+}
+
 func TestReadCache_LegacyV1FileHasEmptyHostAndPass(t *testing.T) {
 	// Simulates a v1 cache written before this change: no host/pass keys.
 	p := filepath.Join(t.TempDir(), "cache.json")

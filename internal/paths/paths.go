@@ -165,6 +165,45 @@ func ServerInfoCachePath() string {
 	return filepath.Join(d, ServerInfoCacheFileName)
 }
 
+const (
+	FFmpegBinaryName      = "ffmpeg.exe"
+	PanelEndpointFileName = "panel-endpoint.json"
+	ArmedCamerasFileName  = "armed-cameras.json"
+)
+
+// FFmpegPath returns <DataDir>/ffmpeg.exe, or "" if DataDir is empty.
+// The binary is written by the installer (see Task 17) and read by
+// the panel when launching streaming sessions.
+func FFmpegPath() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, FFmpegBinaryName)
+}
+
+// PanelEndpointPath returns <DataDir>/panel-endpoint.json, or "" if
+// DataDir is empty. The panel writes this file on startup so the
+// service can discover the panel's localhost listener address.
+func PanelEndpointPath() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, PanelEndpointFileName)
+}
+
+// ArmedCamerasPath returns <DataDir>/armed-cameras.json, or "" if
+// DataDir is empty. The panel reads/writes this file to remember
+// which cameras the user has armed for streaming across restarts.
+func ArmedCamerasPath() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, ArmedCamerasFileName)
+}
+
 // EnsureDirs creates DataDir, LogsDir, and StateDir with os.MkdirAll (0o750).
 // Idempotent. Returns an error if DataDir() is empty or MkdirAll fails.
 // On Windows the Unix mode bits are advisory; the actual ACL inherits
