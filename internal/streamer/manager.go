@@ -143,7 +143,7 @@ func NewManager(cfg ManagerConfig) Manager {
 		armed, _ := cfg.Store.Load()
 		for _, a := range armed {
 			m.cameras[a.ID] = &managedCam{
-				Camera:    Camera{ID: a.ID, Label: a.Label},
+				Camera:    Camera(a),
 				Armed:     true,
 				Connected: false, // will be flipped on Refresh
 			}
