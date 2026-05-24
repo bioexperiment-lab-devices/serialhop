@@ -1,0 +1,6 @@
+[dshow @ 000001a2b3c4d000] "Logitech HD Pro Webcam C920"
+[dshow @ 000001a2b3c4d000]   Alternative name "@device:pnp:\\?\usb#vid_046d&pid_082d&mi_00#7&3a23cf2f&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\global"
+[dshow @ 000001a2b3c4d000] DirectShow audio devices
+[dshow @ 000001a2b3c4d000] "Microphone (HD Pro Webcam C920)"
+[dshow @ 000001a2b3c4d000]   Alternative name "@device:cm:{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{ABCDEF}"
+dummy: Immediate exit requested

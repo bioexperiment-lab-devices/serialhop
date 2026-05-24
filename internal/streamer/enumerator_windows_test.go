@@ -1,0 +1,72 @@
+//go:build windows
+
+package streamer
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestParseListDevices_TwoCameras(t *testing.T) {
+	data := readFixture(t, "ffmpeg_list_devices_two.txt")
+	got, err := parseListDevices(data)
+	if err != nil {
+		t.Fatalf("parseListDevices: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 video devices, got %d (%+v)", len(got), got)
+	}
+	if got[0].Label != "Logitech HD Pro Webcam C920" {
+		t.Errorf("got[0].Label = %q", got[0].Label)
+	}
+	if got[0].ID == "" || !strings_contains(got[0].ID, "vid_046d") {
+		t.Errorf("got[0].ID = %q (expected the Alternative name)", got[0].ID)
+	}
+	if got[1].Label != "Microsoft Camera Front" {
+		t.Errorf("got[1].Label = %q", got[1].Label)
+	}
+}
+
+func TestParseListDevices_OneCamera(t *testing.T) {
+	data := readFixture(t, "ffmpeg_list_devices_one.txt")
+	got, err := parseListDevices(data)
+	if err != nil {
+		t.Fatalf("parseListDevices: %v", err)
+	}
+	if len(got) != 1 || got[0].Label != "Logitech HD Pro Webcam C920" {
+		t.Fatalf("want 1 camera C920, got %+v", got)
+	}
+}
+
+func TestParseListDevices_Empty(t *testing.T) {
+	data := readFixture(t, "ffmpeg_list_devices_empty.txt")
+	got, err := parseListDevices(data)
+	if err != nil {
+		t.Fatalf("parseListDevices: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("want 0 cameras, got %d", len(got))
+	}
+}
+
+// strings_contains is a tiny helper so the test file doesn't import "strings"
+// next to a real-package method named the same.
+func strings_contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func readFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	p := filepath.Join("testdata", name)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", p, err)
+	}
+	return b
+}
