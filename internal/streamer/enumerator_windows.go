@@ -44,42 +44,54 @@ func (e *dshowEnumerator) List(ctx context.Context) ([]Camera, error) {
 //
 // Format (one device occupies two consecutive lines):
 //
-//	[dshow @ ...] "Friendly name"
+//	[dshow @ ...] "Friendly name" (video)
 //	[dshow @ ...]   Alternative name "@device:pnp:\\..."
 //
-// We stop appending devices once we see the audio-devices marker.
+// Audio devices appear with the suffix "(audio)" and are skipped. The
+// "(video)" / "(audio)" tag is the discriminator; section headers
+// (e.g. "DirectShow audio devices") are ignored entirely because their
+// position relative to device lines is not load-bearing across ffmpeg
+// builds.
+//
+// The error return is currently always nil but is reserved for future
+// hard-failure cases (e.g. malformed input) so callers — notably
+// dshowEnumerator.List and the manager that treats List failures as
+// recoverable — don't have to change signature later.
 func parseListDevices(raw []byte) ([]Camera, error) {
-	const audioMarker = "DirectShow audio devices"
 	const altNamePrefix = "Alternative name "
+	const videoTag = "(video)"
+	const audioTag = "(audio)"
 
 	var cameras []Camera
 	var pending *Camera // the camera whose Alternative name we expect next
 
-	lines := bytes.Split(raw, []byte("\n"))
-	inAudio := false
-	for _, ln := range lines {
-		s := string(bytes.TrimRight(ln, "\r"))
-		if i := strings.Index(s, "] "); i >= 0 && strings.HasPrefix(s, "[dshow @") {
-			s = strings.TrimSpace(s[i+2:])
-		} else {
+	for _, ln := range bytes.Split(raw, []byte("\n")) {
+		s := strings.TrimRight(string(ln), "\r")
+		// Strip the "[dshow @ ...] " prefix.
+		i := strings.Index(s, "] ")
+		if i < 0 || !strings.HasPrefix(s, "[dshow @") {
 			continue
 		}
-		if strings.HasPrefix(s, audioMarker) {
-			inAudio = true
-			continue
-		}
-		if inAudio {
-			continue
-		}
-		// Friendly name line: starts and ends with a quote.
-		if strings.HasPrefix(s, `"`) && strings.HasSuffix(s, `"`) && len(s) >= 2 {
-			label := strings.TrimSuffix(strings.TrimPrefix(s, `"`), `"`)
-			pending = &Camera{Label: label}
-			cameras = append(cameras, *pending)
+		s = strings.TrimSpace(s[i+2:])
+
+		// Device line: ends with "(video)" or "(audio)".
+		if strings.HasSuffix(s, videoTag) {
+			label := extractQuotedLabel(strings.TrimSuffix(s, videoTag))
+			if label == "" {
+				pending = nil
+				continue
+			}
+			cameras = append(cameras, Camera{Label: label})
 			pending = &cameras[len(cameras)-1]
 			continue
 		}
-		// Alternative name line.
+		if strings.HasSuffix(s, audioTag) {
+			pending = nil
+			continue
+		}
+
+		// Alternative name line for the most recent device (video only;
+		// pending is nil after an audio device).
 		if pending != nil && strings.HasPrefix(s, altNamePrefix) {
 			rest := strings.TrimPrefix(s, altNamePrefix)
 			rest = strings.TrimSpace(rest)
@@ -88,8 +100,9 @@ func parseListDevices(raw []byte) ([]Camera, error) {
 			pending = nil
 		}
 	}
-	// Discard cameras that didn't get an Alternative name — without a stable
-	// id we'd violate the protocol's id-stability contract.
+
+	// Discard cameras that didn't get an Alternative name — without a
+	// stable id we'd violate the protocol's id-stability contract.
 	out := cameras[:0]
 	for _, c := range cameras {
 		if c.ID != "" {
@@ -97,4 +110,16 @@ func parseListDevices(raw []byte) ([]Camera, error) {
 		}
 	}
 	return out, nil
+}
+
+// extractQuotedLabel returns the substring between the first and last
+// double-quote in s. Whitespace outside the quotes is ignored.
+func extractQuotedLabel(s string) string {
+	s = strings.TrimSpace(s)
+	first := strings.IndexByte(s, '"')
+	last := strings.LastIndexByte(s, '"')
+	if first < 0 || last <= first {
+		return ""
+	}
+	return s[first+1 : last]
 }
