@@ -1,4 +1,4 @@
-type TabId = "status" | "config" | "devices" | "ports" | "logs";
+type TabId = "status" | "config" | "devices" | "ports" | "cameras" | "logs";
 
 interface TabBarProps {
   active: TabId;
@@ -11,6 +11,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "config", label: "Config" },
   { id: "devices", label: "Devices" },
   { id: "ports", label: "Ports" },
+  { id: "cameras", label: "Cameras" },
   { id: "logs", label: "Logs" },
 ];
 

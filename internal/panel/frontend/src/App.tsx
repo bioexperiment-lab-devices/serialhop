@@ -10,6 +10,7 @@ import { StatusTab } from "./tabs/StatusTab";
 import { ConfigTab, type ConfigTabHandle } from "./tabs/ConfigTab";
 import { DevicesTab } from "./tabs/DevicesTab";
 import { PortsTab } from "./tabs/PortsTab";
+import { CamerasTab } from "./tabs/CamerasTab";
 import { LogsTab } from "./tabs/LogsTab";
 import { GetVersion, LoadConfigFromDisk, TriggerProbe } from "./wails/go/main/App";
 import { useGlobalUiState } from "./state/globalStore";
@@ -19,6 +20,7 @@ const TAB_LABELS: Record<TabId, string> = {
   config: "Config",
   devices: "Devices",
   ports: "Ports",
+  cameras: "Cameras",
   logs: "Logs",
 };
 
@@ -103,6 +105,11 @@ export function App() {
             {tab === "ports" && (
               <ErrorBoundary scope="tab:ports" version={version}>
                 <PortsTab />
+              </ErrorBoundary>
+            )}
+            {tab === "cameras" && (
+              <ErrorBoundary scope="tab:cameras" version={version}>
+                <CamerasTab />
               </ErrorBoundary>
             )}
             {tab === "logs" && (
