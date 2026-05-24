@@ -2,6 +2,7 @@ package streamer
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"sync/atomic"
@@ -157,6 +158,13 @@ func TestManager_Stop_Mismatch_409(t *testing.T) {
 	if got := sp.live.Load(); got != 1 {
 		t.Fatalf("active session must be preserved on 409 stop, live=%d", got)
 	}
+	body, ok := out.Body.(map[string]string)
+	if !ok {
+		t.Fatalf("Stop body should be map[string]string, got %T (%+v)", out.Body, out.Body)
+	}
+	if body["active_session_id"] != "S1" {
+		t.Errorf("active_session_id = %q, want %q", body["active_session_id"], "S1")
+	}
 }
 
 func TestManager_Stop_NoActive_204(t *testing.T) {
@@ -177,5 +185,115 @@ func TestManager_UnarmKillsActiveSession(t *testing.T) {
 	}
 	if got := sp.live.Load(); got != 0 {
 		t.Fatalf("unarm must kill active session, live=%d", got)
+	}
+}
+
+func TestManager_Shutdown_KillsAllSessions(t *testing.T) {
+	m, sp := newTestManager(t)
+	if err := m.SetArmed("cam-A", true); err != nil {
+		t.Fatalf("SetArmed cam-A: %v", err)
+	}
+	if err := m.SetArmed("cam-B", true); err != nil {
+		t.Fatalf("SetArmed cam-B: %v", err)
+	}
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "A1", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-B", StartRequest{SessionID: "B1", WHIPURL: "u", WHIPToken: "tk"})
+	if got := sp.live.Load(); got != 2 {
+		t.Fatalf("want 2 live before Shutdown, got %d", got)
+	}
+	if err := m.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if got := sp.live.Load(); got != 0 {
+		t.Fatalf("want 0 live after Shutdown, got %d", got)
+	}
+}
+
+type mutableEnum struct{ cams []Camera }
+
+func (m *mutableEnum) List(_ context.Context) ([]Camera, error) { return m.cams, nil }
+
+func TestManager_Refresh_DisconnectThenReconnect(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(filepath.Join(dir, "armed-cameras.json"))
+	enum := &mutableEnum{cams: []Camera{{ID: "cam-A", Label: "Cam A"}}}
+	m := NewManager(ManagerConfig{
+		Store:       store,
+		Enumerator:  enum,
+		Spawner:     &fakeSpawner{},
+		FFmpegReady: func() error { return nil },
+		BearerFlag:  "-authorization",
+	}).(*manager)
+	if _, err := m.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if err := m.SetArmed("cam-A", true); err != nil {
+		t.Fatalf("SetArmed: %v", err)
+	}
+
+	// Disconnect.
+	enum.cams = nil
+	if _, err := m.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh disconnect: %v", err)
+	}
+	views := m.Cameras()
+	if len(views) != 1 || views[0].Armed != true || views[0].Connected != false {
+		t.Fatalf("after disconnect want 1 cam armed+disconnected, got %+v", views)
+	}
+	if tr := m.Translations(); len(tr) != 0 {
+		t.Fatalf("disconnected armed cam must NOT appear in translations: %+v", tr)
+	}
+
+	// Reconnect.
+	enum.cams = []Camera{{ID: "cam-A", Label: "Cam A (renamed)"}}
+	if _, err := m.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh reconnect: %v", err)
+	}
+	views = m.Cameras()
+	if len(views) != 1 || views[0].Armed != true || views[0].Connected != true {
+		t.Fatalf("after reconnect want 1 cam armed+connected, got %+v", views)
+	}
+	if views[0].Label != "Cam A (renamed)" {
+		t.Errorf("label should refresh: got %q", views[0].Label)
+	}
+	if tr := m.Translations(); len(tr) != 1 || tr[0].ID != "cam-A" {
+		t.Fatalf("after reconnect translations should include cam-A: %+v", tr)
+	}
+}
+
+type errSpawner struct{ msg string }
+
+func (e errSpawner) Start(_ context.Context, _ []string) (sessionHandle, error) {
+	return nil, fmt.Errorf("%s", e.msg)
+}
+
+func TestManager_Start_SpawnerError_503AndLastError(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(filepath.Join(dir, "armed-cameras.json"))
+	m := NewManager(ManagerConfig{
+		Store:       store,
+		Enumerator:  fakeEnumeratorFixed{cams: []Camera{{ID: "cam-A", Label: "Cam A"}}},
+		Spawner:     errSpawner{msg: "no device"},
+		FFmpegReady: func() error { return nil },
+		BearerFlag:  "-authorization",
+	}).(*manager)
+	if _, err := m.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if err := m.SetArmed("cam-A", true); err != nil {
+		t.Fatalf("SetArmed: %v", err)
+	}
+	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
+	if out.Status != http.StatusServiceUnavailable {
+		t.Fatalf("want 503 on spawn error, got %d", out.Status)
+	}
+	// LastError surfaces in the next Cameras() snapshot.
+	for _, v := range m.Cameras() {
+		if v.ID == "cam-A" {
+			if v.LastErrorMsg == "" {
+				t.Fatalf("LastErrorMsg should be set after spawn failure: %+v", v)
+			}
+			break
+		}
 	}
 }

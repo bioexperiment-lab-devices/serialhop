@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -246,9 +247,7 @@ func (m *manager) persistLocked() {
 		}
 	}
 	if err := m.store.Save(armed); err != nil {
-		// Don't fail the in-memory update; surface a UI-visible error elsewhere.
-		// Persistence error logged by callers if needed.
-		_ = err
+		slog.Warn("streamer: persisting armed cameras failed", "err", err, "count", len(armed))
 	}
 }
 
@@ -273,6 +272,15 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 			return StartOutcome{Status: http.StatusAccepted, Body: struct{}{}}
 		}
 		// Replace-on-conflict: kill old below the lock.
+		//
+		// We drop the manager lock here so the blocking Stop() can complete
+		// without serializing all manager operations. This intentionally
+		// admits a narrow race window: a concurrent Start for the same
+		// cameraID with a third session_id can slip in during the unlock-
+		// Stop-relock-spawn window and leak its ffmpeg child. For a single-
+		// operator panel that's acceptable; if multi-viewer coordination
+		// ever needs to race at the panel, introduce a per-camera lock or
+		// a single-flight guard.
 		oldHandle := cur.handle
 		delete(m.sessions, cameraID)
 		m.mu.Unlock()
@@ -303,6 +311,9 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 		sessionID: in.SessionID,
 		startedAt: time.Now(),
 		handle:    h,
+	}
+	if c, ok := m.cameras[cameraIDLocked]; ok {
+		c.LastError = "" // fresh successful spawn clears any previous error
 	}
 	m.mu.Unlock()
 	go m.watchSession(cameraIDLocked, in.SessionID, h)
