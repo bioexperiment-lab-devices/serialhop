@@ -55,11 +55,19 @@ type Cache struct {
 // config.yaml — net new exposure is zero. See spec
 // 2026-05-16-cached-creds-for-status-badges-design.
 func WriteCache(path string, c Cache) error {
-	data, err := json.MarshalIndent(c, "", "  ") //nolint:gosec // see WriteCache godoc
+	return writeJSONAtomic(path, c) //nolint:gosec // see WriteCache godoc
+}
+
+// writeJSONAtomic writes JSON to path via temp-file + chmod 0o600 + rename.
+// The temp file is created in the same directory so rename is atomic on
+// the same filesystem. On any error the temp file is removed; the
+// destination is never partially written.
+func writeJSONAtomic(path string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("bootstrap: marshal cache: %w", err)
+		return fmt.Errorf("bootstrap: marshal: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "server-info.cache.json.*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("bootstrap: create temp: %w", err)
 	}
@@ -164,33 +172,7 @@ type PanelEndpoint struct {
 // automatically.
 func WritePanelEndpoint(path string, e PanelEndpoint) error {
 	e.Version = panelEndpointCurrentVersion
-	data, err := json.MarshalIndent(e, "", "  ")
-	if err != nil {
-		return fmt.Errorf("bootstrap: marshal panel endpoint: %w", err)
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "panel-endpoint.json.*.tmp")
-	if err != nil {
-		return fmt.Errorf("bootstrap: create temp: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("bootstrap: write temp: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("bootstrap: close temp: %w", err)
-	}
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("bootstrap: chmod temp: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("bootstrap: rename temp: %w", err)
-	}
-	return nil
+	return writeJSONAtomic(path, e)
 }
 
 // ReadPanelEndpoint reads the panel-endpoint file at path. Any failure

@@ -313,6 +313,46 @@ func TestReadPanelEndpoint_VersionMismatch(t *testing.T) {
 	if !errors.Is(err, ErrPanelEndpointMissing) {
 		t.Fatalf("want ErrPanelEndpointMissing for version mismatch, got %v", err)
 	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("version-mismatched file should have been deleted, stat err = %v", err)
+	}
+}
+
+func TestReadPanelEndpoint_CorruptJSONDeletesAndReturnsMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel-endpoint.json")
+	if err := os.WriteFile(path, []byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ReadPanelEndpoint(path)
+	if !errors.Is(err, ErrPanelEndpointMissing) {
+		t.Fatalf("want ErrPanelEndpointMissing, got %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("corrupt file should have been deleted, stat err = %v", err)
+	}
+}
+
+func TestDeletePanelEndpoint_RemovesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "panel-endpoint.json")
+	if err := WritePanelEndpoint(path, PanelEndpoint{Host: "127.0.0.1", Port: 1, PID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeletePanelEndpoint(path); err != nil {
+		t.Fatalf("DeletePanelEndpoint: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("file should be gone, stat err = %v", err)
+	}
+}
+
+func TestDeletePanelEndpoint_MissingFileIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "does-not-exist.json")
+	if err := DeletePanelEndpoint(path); err != nil {
+		t.Fatalf("DeletePanelEndpoint on missing file: %v", err)
+	}
 }
 
 func TestReadCache_LegacyV1FileHasEmptyHostAndPass(t *testing.T) {
