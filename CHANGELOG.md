@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.0...v0.31.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* validate camera_id and session_id on Stop ([#157](https://github.com/bioexperiment-lab-devices/serialhop/issues/157)) ([ed47855](https://github.com/bioexperiment-lab-devices/serialhop/commit/ed47855d023ee8b5444b8205501cbb4ac33d3849))
+
 ## [0.31.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.30.0...v0.31.0) (2026-05-25)
 
 
