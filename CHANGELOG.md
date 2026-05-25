@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.6](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.5...v0.31.6) (2026-05-25)
+
+
+### Bug Fixes
+
+* **streamer:** combined stdout+stderr buffer; bump ffmpeg loglevel to info ([#167](https://github.com/bioexperiment-lab-devices/serialhop/issues/167)) ([1b49790](https://github.com/bioexperiment-lab-devices/serialhop/commit/1b49790a6bb9f8de898d8c85c8efabf32282155e))
+
 ## [0.31.5](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.4...v0.31.5) (2026-05-25)
 
 
