@@ -49,7 +49,25 @@ func (s *Store) Load() ([]ArmedCamera, error) {
 		slog.Warn("streamer: armed cameras version mismatch; treating as empty", "path", s.path, "version", af.Version)
 		return nil, nil
 	}
-	return af.Cameras, nil
+	// Drop entries whose ids don't match the URL-safe slug charset.
+	// Pre-v0.32.0 installs stored the raw DirectShow alternative name
+	// (with backslashes, hashes, etc.); those never round-tripped
+	// through the lab-bridge POST path and need to be re-armed under
+	// the new slug form.
+	filtered := af.Cameras[:0]
+	dropped := 0
+	for _, c := range af.Cameras {
+		if CameraIDPattern.MatchString(c.ID) {
+			filtered = append(filtered, c)
+		} else {
+			dropped++
+		}
+	}
+	if dropped > 0 {
+		slog.Info("streamer: dropped pre-slug armed-cameras entries; operator must re-arm",
+			"path", s.path, "dropped", dropped, "kept", len(filtered))
+	}
+	return filtered, nil
 }
 
 // Save atomically replaces the persisted list.

@@ -81,3 +81,32 @@ func TestStore_SaveAtomic(t *testing.T) {
 		}
 	}
 }
+
+func TestStore_DropsPreSlugEntriesOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "armed-cameras.json")
+	// File written by a pre-v0.32.0 install: the raw DirectShow
+	// alternative name as the id. Mixed with one already-slugged
+	// entry so we verify the filter is selective, not all-or-nothing.
+	body := `{
+  "version": 1,
+  "cameras": [
+    {"id": "@device_pnp_\\?\\usb#vid_046d&pid_08e5", "label": "HD Pro Webcam C920"},
+    {"id": "cam-deadbeefcafebabe", "label": "Already Slugged"},
+    {"id": "@device_pnp_\\?\\usb#vid_1bcf&pid_2b95", "label": "Integrated Webcam"}
+  ]
+}`
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewStore(p).Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 entry kept (the already-slugged one), got %d (%+v)", len(got), got)
+	}
+	if got[0].ID != "cam-deadbeefcafebabe" {
+		t.Fatalf("want slug entry kept, got %+v", got[0])
+	}
+}
