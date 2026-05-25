@@ -8,6 +8,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/streamer"
 )
 
@@ -21,9 +22,20 @@ func (a *App) ListCameras() streamer.StreamingState {
 	}
 	m := a.streaming.Manager()
 	return streamer.StreamingState{
-		Cameras:  m.Cameras(),
-		FfmpegOK: ffmpegOK(m),
+		Cameras:       m.Cameras(),
+		FfmpegOK:      ffmpegOK(m),
+		LastEnumError: m.LastEnumError(),
 	}
+}
+
+// DiagnoseCameras runs a one-shot probe against the bundled ffmpeg
+// binary and returns whatever it sees — the path resolution result,
+// whether the file exists, the version banner, and the raw stderr from
+// `ffmpeg -list_devices true -f dshow -i dummy`. Intended for the
+// "Diagnose" button on the Cameras tab; surfaces enough detail to
+// distinguish "ffmpeg missing" from "cameras are MediaFoundation-only".
+func (a *App) DiagnoseCameras() streamer.FFmpegDiagnostics {
+	return streamer.Diagnose(context.Background(), paths.FFmpegPath())
 }
 
 // SetCameraArmed flips the armed bit on a single camera. Emits a

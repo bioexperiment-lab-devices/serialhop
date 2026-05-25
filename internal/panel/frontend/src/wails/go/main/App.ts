@@ -106,6 +106,16 @@ export interface CameraView {
 export interface StreamingState {
   cameras: CameraView[];
   ffmpeg_ok: boolean;
+  last_enum_error?: string;
+}
+
+export interface FFmpegDiagnostics {
+  ffmpeg_path: string;
+  binary_exists: boolean;
+  version_line?: string;
+  version_error?: string;
+  list_devices_raw?: string;
+  list_devices_error?: string;
 }
 
 export function ListCameras(): Promise<StreamingState> {
@@ -116,4 +126,7 @@ export function SetCameraArmed(id: string, armed: boolean): Promise<void> {
 }
 export function RefreshCameras(): Promise<void> {
   return call<void>("RefreshCameras");
+}
+export function DiagnoseCameras(): Promise<FFmpegDiagnostics> {
+  return call<FFmpegDiagnostics>("DiagnoseCameras");
 }
