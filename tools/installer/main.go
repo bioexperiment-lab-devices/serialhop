@@ -93,6 +93,7 @@ func newProductionRunner() *Runner {
 		DialSCM:        winsvc.DialSCM,
 		BundledVersion: internalversion.Base(),
 		Payload:        payload,
+		FFmpegPayload:  ffmpegPayload,
 	}
 }
 

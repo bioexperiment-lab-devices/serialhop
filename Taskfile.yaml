@@ -58,9 +58,19 @@ tasks:
           -manifest=tools/installer/manifest.xml
           tools/installer/version.json
 
+  fetch-ffmpeg:
+    desc: Download + SHA-256-verify the pinned ffmpeg.exe into tools/installer/payload/. Idempotent; re-uses an existing valid file.
+    sources:
+      - internal/streamer/ffmpeg_build.go
+      - tools/fetch-ffmpeg/main.go
+    generates:
+      - tools/installer/payload/ffmpeg.exe
+    cmds:
+      - go run ./tools/fetch-ffmpeg -out tools/installer/payload/ffmpeg.exe
+
   installer:
-    desc: Build the installer (depends on a fresh `task build` to produce the embedded payload).
-    deps: [build, installer-resource]
+    desc: Build the installer (depends on a fresh `task build` plus a fetched ffmpeg.exe payload).
+    deps: [build, installer-resource, fetch-ffmpeg]
     cmds:
       - cp dist/SerialHop.exe tools/installer/payload/SerialHop.exe
       - go run ./tools/buildcmd -o dist/SerialHop-Setup.exe -goos windows -goarch amd64 -tags production -extra-ldflags="-H windowsgui" ./tools/installer
@@ -91,4 +101,4 @@ tasks:
   clean:
     desc: Remove build outputs and generated resources.
     cmds:
-      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}} assets/manifest.xml tools/installer/manifest.xml tools/installer/resource_windows.syso tools/installer/payload/SerialHop.exe
+      - rm -rf {{.OUTPUT_DIR}} {{.RESOURCE_FILE}} assets/manifest.xml tools/installer/manifest.xml tools/installer/resource_windows.syso tools/installer/payload/SerialHop.exe tools/installer/payload/ffmpeg.exe
