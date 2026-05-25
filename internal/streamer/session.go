@@ -1,12 +1,12 @@
 package streamer
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,30 +28,31 @@ type SessionConfig struct {
 	GracefulPeriod time.Duration
 }
 
-// stderrTailCap is the maximum number of stderr lines we keep per
-// session. ffmpeg's startup output is normally < 20 lines and a
-// failure log is usually short; 32 covers both cases without
-// unbounded memory if the child goes chatty.
-const stderrTailCap = 32
+// stderrTailMaxBytes caps the captured stderr+stdout per session.
+// ffmpeg's startup output is typically < 4 KB; a verbose failure log is
+// usually under 16 KB. We cap at 64 KB to avoid unbounded memory if the
+// child writes a flood before exiting.
+const stderrTailMaxBytes = 64 * 1024
 
 // Session is a running ffmpeg child.
+//
+// stderr (and stdout — combined) is captured into an internal
+// bytes.Buffer by exec.Cmd's own internal copy goroutines, not by a
+// manual drainer. Go's os/exec guarantees those goroutines finish
+// before cmd.Wait() returns, so accessing the buffer after Done() is
+// race-free without our own synchronization. This replaces an earlier
+// pipe+Scanner design that had a subtle race for fast-exiting children
+// (the drainer hadn't read the pipe yet when consumers queried it).
 type Session struct {
 	cfg SessionConfig
 
-	cmd  *exec.Cmd
-	done chan struct{}
-	// drained closes when drainStderr has finished reading the child's
-	// stderr pipe. wait() blocks on it before closing `done`, so any
-	// consumer that reads StderrTail() after Done() sees the complete
-	// tail rather than racing with the drainer. Critical when ffmpeg
-	// dies fast — without this, a 10 ms init failure looked like
-	// "exited silently" even though the diagnostic was right there.
-	drained chan struct{}
+	cmd    *exec.Cmd
+	output *bytes.Buffer // populated by exec.Cmd; safe to read after <-Done()
+	done   chan struct{}
 
-	mu         sync.Mutex
-	stderrTail []string // ring of the last ≤stderrTailCap lines, oldest first
-	exitCode   int
-	exitErr    error
+	mu       sync.Mutex
+	exitCode int
+	exitErr  error
 }
 
 // StartSession launches the child.
@@ -69,48 +70,37 @@ func StartSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 	cmd := exec.CommandContext(ctx, cfg.BinaryPath, cfg.Args...) //nolint:gosec // see SessionConfig godoc — trust boundary documented and validated at Manager.Start
 	cmd.Env = append(os.Environ(), cfg.Env...)
 	applyPlatformAttrs(cmd) // session_windows / session_other
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("streamer: stderr pipe: %w", err)
-	}
+
+	// Combined stdout+stderr capture into a single buffer. We wrap with
+	// a limited writer so a runaway child can't grow the buffer past
+	// stderrTailMaxBytes. exec.Cmd serializes writes from its two
+	// internal copy goroutines (one per stream) through this single
+	// Writer, so the combined buffer sees an interleaved-but-complete
+	// transcript with no data race.
+	buf := &bytes.Buffer{}
+	limited := &cappedWriter{buf: buf, cap: stderrTailMaxBytes}
+	cmd.Stdout = limited
+	cmd.Stderr = limited
+
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("streamer: start: %w", err)
 	}
 	s := &Session{
-		cfg:     cfg,
-		cmd:     cmd,
-		done:    make(chan struct{}),
-		drained: make(chan struct{}),
+		cfg:    cfg,
+		cmd:    cmd,
+		output: buf,
+		done:   make(chan struct{}),
 	}
-	go s.drainStderr(stderr)
 	go s.wait()
 	return s, nil
 }
 
-func (s *Session) drainStderr(r io.Reader) {
-	defer close(s.drained)
-	scan := bufio.NewScanner(r)
-	scan.Buffer(make([]byte, 16*1024), 64*1024)
-	for scan.Scan() {
-		line := scan.Text()
-		s.mu.Lock()
-		if len(s.stderrTail) >= stderrTailCap {
-			s.stderrTail = append(s.stderrTail[1:], line)
-		} else {
-			s.stderrTail = append(s.stderrTail, line)
-		}
-		s.mu.Unlock()
-	}
-}
-
 func (s *Session) wait() {
+	// exec.Cmd's Wait blocks until the child exits AND the internal
+	// stdout/stderr copy goroutines finish. After Wait returns, our
+	// output buffer is stable — no more writes can occur — so
+	// consumers reading via Done() see the complete transcript.
 	err := s.cmd.Wait()
-	// Block until the drainer has fully consumed the pipe before
-	// signalling Done. cmd.Wait closes the pipe when the child exits;
-	// the scanner then returns EOF, the drain loop exits, and `drained`
-	// closes. Consumers that read StderrTail after <-Done() are now
-	// guaranteed to see every line ffmpeg wrote.
-	<-s.drained
 	s.mu.Lock()
 	s.exitErr = err
 	if s.cmd.ProcessState != nil {
@@ -130,32 +120,28 @@ func (s *Session) ExitCode() int {
 	return s.exitCode
 }
 
-// LastError returns the last stderr line. Kept for backwards compat
-// with callers that surface a one-line indicator; for richer
-// debugging use StderrTail.
+// LastError returns the last non-blank line from the captured
+// transcript. Kept for backwards compat; for richer debugging use
+// StderrTail.
 func (s *Session) LastError() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.stderrTail) == 0 {
+	all := s.StderrTail()
+	if all == "" {
 		return ""
 	}
-	return s.stderrTail[len(s.stderrTail)-1]
+	lines := strings.Split(all, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if ln := strings.TrimSpace(lines[i]); ln != "" {
+			return ln
+		}
+	}
+	return ""
 }
 
-// StderrTail returns the recent stderr lines joined with newlines.
-// Capped to stderrTailCap lines; empty when nothing has been captured
-// (e.g. child exited before writing anything).
+// StderrTail returns the captured stdout+stderr transcript. Only safe
+// to call after Done() is closed; before that, exec.Cmd's internal
+// goroutines may still be writing.
 func (s *Session) StderrTail() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.stderrTail) == 0 {
-		return ""
-	}
-	out := s.stderrTail[0]
-	for _, ln := range s.stderrTail[1:] {
-		out += "\n" + ln
-	}
-	return out
+	return s.output.String()
 }
 
 // PID returns the OS process id.
@@ -171,4 +157,29 @@ func (s *Session) Stop(ctx context.Context) error {
 	case <-time.After(s.cfg.GracefulPeriod):
 	}
 	return hardKill(s.cmd)
+}
+
+// cappedWriter wraps a bytes.Buffer to enforce an upper bound on the
+// captured transcript. ffmpeg can be verbose if it doesn't die
+// immediately; without a cap a long-running session would slowly
+// accumulate megabytes of debug output in panel memory.
+type cappedWriter struct {
+	buf *bytes.Buffer
+	cap int
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	remain := w.cap - w.buf.Len()
+	if remain <= 0 {
+		// Pretend we consumed it; the producer keeps writing but we
+		// silently drop. We return n=len(p) so exec.Cmd's copy loop
+		// doesn't error out.
+		return len(p), nil
+	}
+	if len(p) > remain {
+		w.buf.Write(p[:remain])
+		w.buf.WriteString("\n... (truncated)")
+		return len(p), nil
+	}
+	return w.buf.Write(p)
 }
