@@ -342,8 +342,19 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 		BearerFlag:  m.bearerFlag,
 		BearerToken: in.WHIPToken,
 	})
+	// Loud audit log: prove we actually invoked ffmpeg, and with what
+	// argv (token redacted). Operators / support tickets grep for
+	// "streamer: spawning ffmpeg" to confirm /start reached this code.
+	slog.Info("streamer: spawning ffmpeg",
+		"binary", m.ffmpegPath,
+		"camera_id", cameraIDLocked,
+		"camera_label", label,
+		"session_id", in.SessionID,
+		"argv", RedactedArgs(args))
+	spawnedAt := time.Now()
 	h, err := m.spawner.Start(ctx, m.ffmpegPath, args)
 	if err != nil {
+		slog.Error("streamer: ffmpeg spawn failed", "err", err, "camera_id", cameraIDLocked)
 		m.mu.Lock()
 		c.LastError = err.Error()
 		m.mu.Unlock()
@@ -353,21 +364,30 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 	m.sessions[cameraIDLocked] = &activeSess{
 		cameraID:  cameraIDLocked,
 		sessionID: in.SessionID,
-		startedAt: time.Now(),
+		startedAt: spawnedAt,
 		handle:    h,
 	}
 	if c, ok := m.cameras[cameraIDLocked]; ok {
 		c.LastError = "" // fresh successful spawn clears any previous error
 	}
 	m.mu.Unlock()
-	go m.watchSession(cameraIDLocked, in.SessionID, h)
+	go m.watchSession(cameraIDLocked, in.SessionID, h, spawnedAt)
 	m.onChange()
 	return StartOutcome{Status: http.StatusAccepted, Body: struct{}{}}
 }
 
-func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle) {
+// initFailureWindow is the threshold below which we treat a session
+// exit as "ffmpeg never made it past initialization". A WHIP publish
+// that actually opens a TCP socket to the lab-bridge edge would
+// normally take a few seconds for ICE + DTLS even on the local LAN;
+// anything shorter is overwhelmingly likely to be an argv parse
+// error, codec init failure, or dshow open failure.
+const initFailureWindow = 5 * time.Second
+
+func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle, spawnedAt time.Time) {
 	<-h.Done()
 	tail := h.StderrTail()
+	uptime := time.Since(spawnedAt)
 	m.mu.Lock()
 	if cur, ok := m.sessions[cameraID]; ok && cur.sessionID == sessionID {
 		delete(m.sessions, cameraID)
@@ -390,10 +410,24 @@ func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle) {
 		}
 	}
 	m.mu.Unlock()
-	// Permanent record in the panel log so the operator can grep
-	// `streamer: session exited` against StderrTail post-mortem,
-	// even if the UI was closed when the failure happened.
-	slog.Warn("streamer: session exited", "camera_id", cameraID, "session_id", sessionID, "stderr_tail", tail)
+	// Permanent record in the panel log. Use slog.Error (not Warn)
+	// when the session dies inside initFailureWindow — that's the
+	// signature of ffmpeg never reaching the network code, which is
+	// the failure mode that prompted lab-bridge to ask us to log
+	// loudly.
+	if uptime < initFailureWindow {
+		slog.Error("streamer: session exited (init failure suspected)",
+			"camera_id", cameraID,
+			"session_id", sessionID,
+			"uptime", uptime.String(),
+			"stderr_tail", tail)
+	} else {
+		slog.Warn("streamer: session exited",
+			"camera_id", cameraID,
+			"session_id", sessionID,
+			"uptime", uptime.String(),
+			"stderr_tail", tail)
+	}
 	m.onChange()
 }
 
