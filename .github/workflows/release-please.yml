@@ -3,6 +3,13 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Manual recovery path: if a squash-commit body trips
+  # conventional-commits-parser (the parser is strict about parens and
+  # markdown link syntax in commit bodies), release-please skips the
+  # commit and may produce "Considering: 0 commits" → no release PR.
+  # workflow_dispatch lets a maintainer re-trigger the whole flow from
+  # the Actions tab without needing to push a no-op commit to main.
+  workflow_dispatch:
 
 concurrency:
   group: release-please-main
