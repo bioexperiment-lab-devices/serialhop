@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.5](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.4...v0.31.5) (2026-05-25)
+
+
+### Bug Fixes
+
+* **streamer:** block Session.Done until stderr drainer finishes; log exit code ([#165](https://github.com/bioexperiment-lab-devices/serialhop/issues/165)) ([636d520](https://github.com/bioexperiment-lab-devices/serialhop/commit/636d5202aab2e821c4d65fb7479e083bb73ecaa2))
+
 ## [0.31.4](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.3...v0.31.4) (2026-05-25)
 
 
