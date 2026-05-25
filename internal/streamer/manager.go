@@ -380,6 +380,16 @@ func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle) {
 }
 
 func (m *manager) Stop(cameraID, sessionID string) StopOutcome {
+	// Mirror the validation Start runs (allowlist before map lookup) so
+	// a malformed Stop lands as 400 rather than silently 204-ing on an
+	// unknown id. Keeps both endpoints symmetric for the protocol's
+	// session_id stale-stop guard to behave predictably.
+	if err := validateCameraID(cameraID); err != nil {
+		return StopOutcome{Status: http.StatusBadRequest, Body: map[string]string{"error": err.Error()}}
+	}
+	if !sessionIDPattern.MatchString(sessionID) {
+		return StopOutcome{Status: http.StatusBadRequest, Body: map[string]string{"error": "session_id contains invalid characters or is empty"}}
+	}
 	m.mu.Lock()
 	cur, ok := m.sessions[cameraID]
 	if !ok {
