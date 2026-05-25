@@ -182,6 +182,29 @@ func TestManager_Stop_NoActive_204(t *testing.T) {
 	}
 }
 
+func TestManager_Stop_InputValidation(t *testing.T) {
+	m, _ := newTestManager(t)
+	_ = m.SetArmed("cam-A", true)
+	cases := []struct {
+		name      string
+		camera    string
+		sessionID string
+	}{
+		{"empty camera id", "", "S1"},
+		{"control char in camera id", "cam\nINJECT", "S1"},
+		{"empty session id", "cam-A", ""},
+		{"session id with space", "cam-A", "S 1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := m.Stop(tc.camera, tc.sessionID)
+			if out.Status != http.StatusBadRequest {
+				t.Fatalf("want 400, got %d (%+v)", out.Status, out)
+			}
+		})
+	}
+}
+
 func TestManager_UnarmKillsActiveSession(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
