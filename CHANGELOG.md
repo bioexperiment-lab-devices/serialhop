@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.2...v0.31.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* **streamer:** pass raw bearer token to ffmpeg whip muxer; capture stderr tail ([#161](https://github.com/bioexperiment-lab-devices/serialhop/issues/161)) ([d4a675d](https://github.com/bioexperiment-lab-devices/serialhop/commit/d4a675d67836fa33d9a128e873d7db43c72abba2))
+
 ## [0.31.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.1...v0.31.2) (2026-05-25)
 
 
