@@ -258,19 +258,36 @@ func TestPanelLogPaths_Empty(t *testing.T) {
 	}
 }
 
-func TestFFmpegPath(t *testing.T) {
-	t.Setenv("SERIALHOP_DATA_DIR", "/tmp/sh")
-	want := filepath.Join("/tmp/sh", "ffmpeg.exe")
+func TestFFmpegPath_TracksInstallDir(t *testing.T) {
+	// ffmpeg.exe lives next to SerialHop.exe in the install dir
+	// (Program Files), NOT in %ProgramData% — it's a shipped binary.
+	t.Setenv("SERIALHOP_INSTALL_DIR", `C:\Program Files\SerialHop`)
+	want := filepath.Join(`C:\Program Files\SerialHop`, "ffmpeg.exe")
 	if got := FFmpegPath(); got != want {
 		t.Fatalf("FFmpegPath = %q, want %q", got, want)
 	}
 }
 
-func TestFFmpegPath_NoDataDir(t *testing.T) {
-	t.Setenv("SERIALHOP_DATA_DIR", "")
-	t.Setenv("ProgramData", "")
-	if got := FFmpegPath(); got != "" {
-		t.Fatalf("FFmpegPath should be empty when no data dir; got %q", got)
+func TestFFmpegPath_OverrideViaEnv(t *testing.T) {
+	t.Setenv("SERIALHOP_INSTALL_DIR", "/tmp/install")
+	want := filepath.Join("/tmp/install", "ffmpeg.exe")
+	if got := FFmpegPath(); got != want {
+		t.Fatalf("FFmpegPath = %q, want %q", got, want)
+	}
+}
+
+func TestInstallDir_FallsBackToExecutableDir(t *testing.T) {
+	// With no override, InstallDir() resolves to the directory of the
+	// running test binary — guarantees non-empty (os.Executable always
+	// returns something for a running Go test binary) and doesn't
+	// depend on a Program Files install existing on the test host.
+	t.Setenv("SERIALHOP_INSTALL_DIR", "")
+	got := InstallDir()
+	if got == "" {
+		t.Fatalf("InstallDir() should derive from os.Executable() when env unset; got empty")
+	}
+	if !filepath.IsAbs(got) {
+		t.Errorf("InstallDir() should be absolute; got %q", got)
 	}
 }
 

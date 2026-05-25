@@ -1,14 +1,27 @@
 // Package paths owns the on-disk layout for the SerialHop client.
 //
-// In production, DataDir resolves to %ProgramData%\SerialHop. The
-// SERIALHOP_DATA_DIR environment variable, if set, overrides this —
-// tests use t.Setenv("SERIALHOP_DATA_DIR", t.TempDir()) for isolation.
+// Three base directories, three distinct purposes:
 //
-// LocalDataDir resolves to %LOCALAPPDATA%\SerialHop — the per-user
-// equivalent, used for things the desktop user must be able to write
-// without elevation (notably the auto-update staging dir, since
-// %ProgramData% and the Program Files install dir aren't user-writable
-// in a default install). The SERIALHOP_LOCAL_DATA_DIR env var overrides.
+//   - InstallDir resolves to the directory of the running executable —
+//     the install dir on Windows (typically C:\Program Files\SerialHop).
+//     Shipped binaries the installer placed alongside SerialHop.exe
+//     (notably ffmpeg.exe) live here. Read-only at runtime by
+//     convention. The SERIALHOP_INSTALL_DIR env var overrides for
+//     tests.
+//
+//   - DataDir resolves to %ProgramData%\SerialHop. Operator/runtime
+//     data that must survive upgrades — config, logs,
+//     panel-endpoint.json, armed-cameras.json. The
+//     SERIALHOP_DATA_DIR environment variable, if set, overrides this
+//     — tests use t.Setenv("SERIALHOP_DATA_DIR", t.TempDir()) for
+//     isolation.
+//
+//   - LocalDataDir resolves to %LOCALAPPDATA%\SerialHop — the per-user
+//     equivalent, used for things the desktop user must be able to
+//     write without elevation (notably the auto-update staging dir,
+//     since %ProgramData% and the Program Files install dir aren't
+//     user-writable in a default install). The
+//     SERIALHOP_LOCAL_DATA_DIR env var overrides.
 //
 // All composed-path getters (ConfigPath, LogsDir, ServiceLogPath,
 // StderrLogPath, PanelErrorLogPath, PanelUpdateStagingDir, PanelLogPath,
@@ -171,11 +184,39 @@ const (
 	ArmedCamerasFileName  = "armed-cameras.json"
 )
 
-// FFmpegPath returns <DataDir>/ffmpeg.exe, or "" if DataDir is empty.
-// The binary is written by the installer (see Task 17) and read by
-// the panel when launching streaming sessions.
+// InstallDir returns the directory holding the running SerialHop.exe
+// — the install dir on Windows (typically `C:\Program Files\SerialHop`).
+// Derived from os.Executable() so it follows wherever the operator
+// chose to install. Returns "" if os.Executable() fails (this is a
+// hard error in practice; callers treat empty as "ffmpeg unavailable"
+// rather than crashing).
+//
+// The SERIALHOP_INSTALL_DIR environment variable overrides — tests use
+// t.Setenv("SERIALHOP_INSTALL_DIR", t.TempDir()) to keep filesystem
+// paths deterministic without spawning a binary at that path.
+func InstallDir() string {
+	if v := os.Getenv("SERIALHOP_INSTALL_DIR"); v != "" {
+		return v
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(exe)
+}
+
+// FFmpegPath returns <InstallDir>/ffmpeg.exe, or "" if InstallDir
+// returns "". The binary is written by the installer (which puts it
+// next to SerialHop.exe in the install dir) and read by the panel
+// when launching streaming sessions.
+//
+// Note: ffmpeg.exe lives in the install dir (Program Files), NOT in
+// %ProgramData% — it's a shipped binary, not a data file. The other
+// path helpers in this file are correctly DataDir-based because they
+// resolve runtime/operator data (config, logs, panel-endpoint.json,
+// armed-cameras.json).
 func FFmpegPath() string {
-	d := DataDir()
+	d := InstallDir()
 	if d == "" {
 		return ""
 	}
