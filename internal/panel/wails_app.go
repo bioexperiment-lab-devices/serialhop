@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/panellog"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
@@ -41,6 +42,7 @@ type App struct {
 	lastService   winsvc.ServiceState // last-known SCM state for stickiness
 	probeDedup    *probeDedup
 	panelLog      *panellog.Manager
+	streaming     *StreamingLifecycle
 }
 
 // SetPanelLog wires the panellog manager so SaveConfig can update the
@@ -131,6 +133,28 @@ func (a *App) startup(ctx context.Context) {
 		}
 	})
 	go a.scmPollLoop(ctx)
+
+	// Streaming subsystem is gated behind experimental.camera_streaming
+	// in the YAML config — defaults to false so the Cameras tab stays
+	// hidden and the localhost listener / panel-endpoint.json never
+	// gets created on lab machines that haven't opted in.
+	if cfg.Experimental.CameraStreaming {
+		a.streaming = NewStreamingLifecycle(
+			paths.PanelEndpointPath(),
+			paths.ArmedCamerasPath(),
+			paths.FFmpegPath(),
+			"-authorization",
+		)
+		if err := a.streaming.Start(ctx); err != nil {
+			slog.Error("streaming subsystem failed to start", "err", err)
+		}
+	} else {
+		// If a previous panel session left a stale endpoint file behind
+		// (e.g. the user toggled the flag off and crashed), clean it up
+		// so the service-side proxy doesn't spend 5 seconds per request
+		// trying to reach a dead port.
+		_ = bootstrap.DeletePanelEndpoint(paths.PanelEndpointPath())
+	}
 }
 
 func (a *App) updateRecheckLoop(ctx context.Context) {
@@ -146,9 +170,12 @@ func (a *App) updateRecheckLoop(ctx context.Context) {
 	}
 }
 
-func (a *App) shutdown(_ context.Context) {
+func (a *App) shutdown(ctx context.Context) {
 	if a.logTail != nil {
 		a.logTail.stop()
+	}
+	if a.streaming != nil {
+		_ = a.streaming.Stop(ctx)
 	}
 }
 

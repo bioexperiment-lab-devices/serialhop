@@ -257,3 +257,35 @@ func TestPanelLogPaths_Empty(t *testing.T) {
 		t.Errorf("PanelLogOffsetPath() = %q, want empty", got)
 	}
 }
+
+func TestFFmpegPath(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "/tmp/sh")
+	want := filepath.Join("/tmp/sh", "ffmpeg.exe")
+	if got := FFmpegPath(); got != want {
+		t.Fatalf("FFmpegPath = %q, want %q", got, want)
+	}
+}
+
+func TestFFmpegPath_NoDataDir(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	if got := FFmpegPath(); got != "" {
+		t.Fatalf("FFmpegPath should be empty when no data dir; got %q", got)
+	}
+}
+
+func TestPanelEndpointPath(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "/tmp/sh")
+	want := filepath.Join("/tmp/sh", "panel-endpoint.json")
+	if got := PanelEndpointPath(); got != want {
+		t.Fatalf("PanelEndpointPath = %q, want %q", got, want)
+	}
+}
+
+func TestArmedCamerasPath(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "/tmp/sh")
+	want := filepath.Join("/tmp/sh", "armed-cameras.json")
+	if got := ArmedCamerasPath(); got != want {
+		t.Fatalf("ArmedCamerasPath = %q, want %q", got, want)
+	}
+}

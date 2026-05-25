@@ -94,3 +94,26 @@ export function StopLogStream(): Promise<void> { return call("StopLogStream"); }
 export function RecordFrontendCrash(message: string, source: string, stack: string): Promise<void> {
   return call("RecordFrontendCrash", message, source, stack);
 }
+
+export interface CameraView {
+  id: string;
+  label: string;
+  armed: boolean;
+  connected: boolean;
+  live: boolean;
+  last_error_msg?: string;
+}
+export interface StreamingState {
+  cameras: CameraView[];
+  ffmpeg_ok: boolean;
+}
+
+export function ListCameras(): Promise<StreamingState> {
+  return call<StreamingState>("ListCameras");
+}
+export function SetCameraArmed(id: string, armed: boolean): Promise<void> {
+  return call<void>("SetCameraArmed", id, armed);
+}
+export function RefreshCameras(): Promise<void> {
+  return call<void>("RefreshCameras");
+}

@@ -28,6 +28,7 @@ type Server struct {
 	flasher          flasher.Flasher
 	flashingEnabled  bool
 	keepAwake        power.KeepAwake
+	translations     *TranslationsProxy
 }
 
 func New(
@@ -38,6 +39,7 @@ func New(
 	fl flasher.Flasher,
 	flashingEnabled bool,
 	keepAwake power.KeepAwake,
+	translations *TranslationsProxy,
 ) *Server {
 	return &Server{
 		reg:              reg,
@@ -47,6 +49,7 @@ func New(
 		flasher:          fl,
 		flashingEnabled:  flashingEnabled,
 		keepAwake:        keepAwake,
+		translations:     translations,
 	}
 }
 
@@ -64,6 +67,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)
 	mux.HandleFunc("POST /power/keep-awake/enable", s.handlePostKeepAwakeEnable)
 	mux.HandleFunc("POST /power/keep-awake/disable", s.handlePostKeepAwakeDisable)
+	if s.translations != nil {
+		s.translations.Mount(mux)
+	}
 	return logMiddleware(mux)
 }
 

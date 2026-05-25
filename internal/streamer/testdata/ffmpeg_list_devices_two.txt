@@ -1,0 +1,9 @@
+[dshow @ 000001a2b3c4d000] DirectShow video devices (some may be both video and audio devices)
+[dshow @ 000001a2b3c4d000] "Logitech HD Pro Webcam C920" (video)
+[dshow @ 000001a2b3c4d000]   Alternative name "@device:pnp:\\?\usb#vid_046d&pid_082d#001#{guid1}\global"
+[dshow @ 000001a2b3c4d000] "Microsoft Camera Front" (video)
+[dshow @ 000001a2b3c4d000]   Alternative name "@device:pnp:\\?\usb#vid_045e&pid_0779#002#{guid2}\global"
+[dshow @ 000001a2b3c4d000] DirectShow audio devices
+[dshow @ 000001a2b3c4d000] "Microphone Array" (audio)
+[dshow @ 000001a2b3c4d000]   Alternative name "@device:cm:{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{XYZ}"
+dummy: Immediate exit requested
