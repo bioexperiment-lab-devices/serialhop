@@ -60,7 +60,6 @@ func TestProbeFFmpeg_RunFailed(t *testing.T) {
 
 func TestBuildWHIPArgs(t *testing.T) {
 	args := BuildWHIPArgs(WHIPArgs{
-		BinaryPath:   "C:\\Program Files\\SerialHop\\ffmpeg.exe",
 		CameraLabel:  "Logitech HD Pro Webcam C920",
 		SessionID:    "01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 		WHIPURL:      "https://lab.example.com/streamer/whip/01HXYZ8K2NQM4R6V9P3T1W5Z7B",
@@ -73,8 +72,12 @@ func TestBuildWHIPArgs(t *testing.T) {
 		KeyframeIntv: 48,
 	})
 
+	// BuildWHIPArgs deliberately does NOT include the binary path — the
+	// caller passes it to the exec layer separately so the trust
+	// boundary stays explicit (binary path is server-controlled, args
+	// may contain externally-supplied values that we validate at the
+	// Manager boundary).
 	mustHave := []string{
-		"C:\\Program Files\\SerialHop\\ffmpeg.exe",
 		"-f", "dshow",
 		"-video_size", "1280x720",
 		"-framerate", "24",
@@ -121,7 +124,6 @@ func TestBuildWHIPArgs(t *testing.T) {
 
 func TestBuildWHIPArgs_TokenNotInOrderedLog(t *testing.T) {
 	args := BuildWHIPArgs(WHIPArgs{
-		BinaryPath:  "ffmpeg",
 		CameraLabel: "Cam",
 		SessionID:   "S",
 		WHIPURL:     "u",

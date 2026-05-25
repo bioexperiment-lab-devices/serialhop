@@ -83,8 +83,12 @@ func firstLine(s string) string {
 }
 
 // WHIPArgs is the per-session input that determines the ffmpeg argv.
+//
+// Note: the binary path is intentionally NOT a field here — it is
+// passed separately to the exec layer (SessionConfig.BinaryPath) so the
+// trust boundary stays clear: WHIPArgs values may originate from
+// external sources, BinaryPath never does.
 type WHIPArgs struct {
-	BinaryPath  string
 	CameraLabel string
 	SessionID   string
 	WHIPURL     string
@@ -103,7 +107,16 @@ type WHIPArgs struct {
 	KeyframeIntv int
 }
 
-// BuildWHIPArgs produces the full argv for a WHIP publish session.
+// BuildWHIPArgs produces the argument list (everything AFTER the binary
+// path) for a WHIP publish session. The caller passes BinaryPath
+// separately to the exec layer; keeping them apart makes the trust
+// boundary visible in the type system — BinaryPath is server-controlled,
+// the returned args may carry values originating from the lab-bridge
+// request body. Note: all externally-supplied values appear as VALUES
+// to fixed flags (`-metadata serialhop_session=<sid>`, `<bearer-flag>
+// "Bearer <tok>"`, `-i video=<label>`) or as the final positional URL.
+// They cannot be reinterpreted as flag names by ffmpeg in a non-shell
+// exec.
 func BuildWHIPArgs(in WHIPArgs) []string {
 	w := in.Width
 	if w == 0 {
@@ -126,7 +139,6 @@ func BuildWHIPArgs(in WHIPArgs) []string {
 		g = DefaultKeyframeInterval
 	}
 	return []string{
-		in.BinaryPath,
 		"-hide_banner",
 		"-loglevel", "error",
 		"-f", "dshow",

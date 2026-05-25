@@ -27,7 +27,8 @@ func buildFakeFFmpeg(t *testing.T) string {
 func TestSession_StartThenStop(t *testing.T) {
 	bin := buildFakeFFmpeg(t)
 	s, err := StartSession(context.Background(), SessionConfig{
-		Argv:           []string{bin, "--marker", "test-sid"},
+		BinaryPath:     bin,
+		Args:           []string{"--marker", "test-sid"},
 		GracefulPeriod: 2 * time.Second,
 	})
 	if err != nil {
@@ -50,7 +51,7 @@ func TestSession_StartThenStop(t *testing.T) {
 func TestSession_QuickExitSurfacesStderr(t *testing.T) {
 	bin := buildFakeFFmpeg(t)
 	s, err := StartSession(context.Background(), SessionConfig{
-		Argv:           []string{bin},
+		BinaryPath:     bin,
 		Env:            []string{"FAKE_FFMPEG_EXIT_FAST=1"},
 		GracefulPeriod: 2 * time.Second,
 	})
@@ -73,7 +74,7 @@ func TestSession_QuickExitSurfacesStderr(t *testing.T) {
 func TestSession_HardKillsAfterGracePeriod(t *testing.T) {
 	bin := buildFakeFFmpeg(t)
 	s, err := StartSession(context.Background(), SessionConfig{
-		Argv:           []string{bin},
+		BinaryPath:     bin,
 		Env:            []string{"FAKE_FFMPEG_IGNORE_SIGNALS=1"},
 		GracefulPeriod: 300 * time.Millisecond,
 	})
@@ -97,8 +98,8 @@ func TestSession_EnvInheritsAndExtends(t *testing.T) {
 	// env var; the child writes its env count to stderr (we expect both
 	// the inherited STREAMER_TEST_INHERITED and the explicit one).
 	s, err := StartSession(context.Background(), SessionConfig{
-		Argv: []string{bin},
-		Env:  []string{"STREAMER_TEST_EXPLICIT=yes", "FAKE_FFMPEG_DUMP_ENV=1", "FAKE_FFMPEG_EXIT_FAST=1"},
+		BinaryPath: bin,
+		Env:        []string{"STREAMER_TEST_EXPLICIT=yes", "FAKE_FFMPEG_DUMP_ENV=1", "FAKE_FFMPEG_EXIT_FAST=1"},
 	})
 	if err != nil {
 		t.Fatalf("StartSession: %v", err)

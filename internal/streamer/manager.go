@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -56,18 +58,25 @@ type sessionHandle interface {
 type SessionHandleForTest = sessionHandle
 
 // Spawner abstracts session creation so tests can substitute fakes.
-// Implementations return any handle that satisfies the sessionHandle
-// contract (Done, Stop, LastError, PID). The exported alias
-// SessionHandleForTest is provided for external test packages.
+//
+// The signature splits binaryPath (server-controlled, always
+// paths.FFmpegPath() in production) from args (values flowing to the
+// child). This keeps the trust boundary explicit at the spawner
+// interface, which is the single place where exec.CommandContext is
+// invoked.
 type Spawner interface {
-	Start(ctx context.Context, argv []string) (SessionHandleForTest, error)
+	Start(ctx context.Context, binaryPath string, args []string) (SessionHandleForTest, error)
 }
 
 // realSpawner spawns real ffmpeg processes via StartSession.
 type realSpawner struct{}
 
-func (realSpawner) Start(ctx context.Context, argv []string) (SessionHandleForTest, error) {
-	return StartSession(ctx, SessionConfig{Argv: argv, GracefulPeriod: DefaultGracefulStopGrace})
+func (realSpawner) Start(ctx context.Context, binaryPath string, args []string) (SessionHandleForTest, error) {
+	return StartSession(ctx, SessionConfig{
+		BinaryPath:     binaryPath,
+		Args:           args,
+		GracefulPeriod: DefaultGracefulStopGrace,
+	})
 }
 
 // Manager is the streamer subsystem's external surface.
@@ -252,6 +261,21 @@ func (m *manager) persistLocked() {
 }
 
 func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) StartOutcome {
+	// Input validation BEFORE any state mutation or process spawn.
+	// External callers (lab-bridge over the chisel tunnel) supply
+	// SessionID / WHIPURL / WHIPToken, all of which end up in the
+	// ffmpeg child's argv. Reject anything outside a tight allowlist so
+	// CodeQL's go/command-injection taint analysis has an explicit
+	// sanitization barrier and we get defense-in-depth even though Go's
+	// exec is non-shell. Camera ID is also user-supplied via the URL
+	// path — reject before lookup so a hostile path can't probe map
+	// internals.
+	if err := validateCameraID(cameraID); err != nil {
+		return StartOutcome{Status: http.StatusBadRequest, Body: map[string]string{"error": err.Error()}}
+	}
+	if err := validateStartRequest(in); err != nil {
+		return StartOutcome{Status: http.StatusBadRequest, Body: map[string]string{"error": err.Error()}}
+	}
 	if m.ffmpegReady != nil {
 		if err := m.ffmpegReady(); err != nil {
 			return StartOutcome{
@@ -290,15 +314,14 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 	label := c.Label
 	cameraIDLocked := c.ID
 	m.mu.Unlock()
-	argv := BuildWHIPArgs(WHIPArgs{
-		BinaryPath:  m.ffmpegPath,
+	args := BuildWHIPArgs(WHIPArgs{
 		CameraLabel: label,
 		SessionID:   in.SessionID,
 		WHIPURL:     in.WHIPURL,
 		BearerFlag:  m.bearerFlag,
 		BearerToken: in.WHIPToken,
 	})
-	h, err := m.spawner.Start(ctx, argv)
+	h, err := m.spawner.Start(ctx, m.ffmpegPath, args)
 	if err != nil {
 		m.mu.Lock()
 		c.LastError = err.Error()
@@ -379,3 +402,79 @@ func (m *manager) Shutdown(ctx context.Context) error {
 // ErrUnknownCamera is a sentinel for callers that want to distinguish
 // "armed-but-unknown" from truly-unknown.
 var ErrUnknownCamera = errors.New("streamer: unknown camera")
+
+// Input validation regexes used by Manager.Start.
+//
+// These exist as defense-in-depth against the go/command-injection
+// concern raised by CodeQL on internal/streamer/session.go: external
+// callers supply SessionID / WHIPURL / WHIPToken via the lab-bridge
+// `/start` request body, and those values end up in the ffmpeg child's
+// argv. Go's exec is non-shell, so quoting attacks can't escape into
+// other commands, but a bogus value can still be passed through to
+// ffmpeg verbatim. We reject anything outside a tight allowlist before
+// the values reach BuildWHIPArgs.
+//
+// The patterns are intentionally permissive (within reason):
+//   - sessionIDPattern matches ULIDs (Crockford Base32, 26 chars) AND
+//     any other A-Z/a-z/0-9/-/_ string up to 128 chars, so a minor
+//     protocol-versioning change in lab-bridge doesn't require a panel
+//     update.
+//   - tokenPattern matches base64url plus `.~+/=` to admit JWTs and a
+//     few other common bearer encodings.
+//   - URL validation uses net/url + an explicit `https` scheme check
+//     (HTTPS is the protocol's stated transport for WHIP) and refuses
+//     URLs whose first char is `-` so ffmpeg can't reinterpret the
+//     output positional as a flag.
+var (
+	cameraIDPattern  = regexp.MustCompile(`^[\x20-\x7e]{1,256}$`)
+	sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	tokenPattern     = regexp.MustCompile(`^[A-Za-z0-9._~+/=-]{1,512}$`)
+)
+
+func validateCameraID(id string) error {
+	if id == "" {
+		return errors.New("camera id is required")
+	}
+	if !cameraIDPattern.MatchString(id) {
+		return errors.New("camera id contains invalid characters")
+	}
+	return nil
+}
+
+func validateStartRequest(in StartRequest) error {
+	if !sessionIDPattern.MatchString(in.SessionID) {
+		return errors.New("session_id contains invalid characters or is empty")
+	}
+	if !tokenPattern.MatchString(in.WHIPToken) {
+		return errors.New("whip_token contains invalid characters or is empty")
+	}
+	if err := validateWHIPURL(in.WHIPURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateWHIPURL(raw string) error {
+	if raw == "" {
+		return errors.New("whip_url is required")
+	}
+	if len(raw) > 2048 {
+		return errors.New("whip_url is too long")
+	}
+	// Refuse a leading '-' so ffmpeg can't reinterpret the final
+	// positional as a flag.
+	if raw[0] == '-' {
+		return errors.New("whip_url may not start with '-'")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("whip_url is not a valid URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return errors.New("whip_url must use https scheme")
+	}
+	if u.Host == "" {
+		return errors.New("whip_url is missing host")
+	}
+	return nil
+}

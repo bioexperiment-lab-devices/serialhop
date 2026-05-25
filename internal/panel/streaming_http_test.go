@@ -41,7 +41,7 @@ func (fixedEnum) List(_ context.Context) ([]streamer.Camera, error) {
 
 type noopSpawner struct{}
 
-func (noopSpawner) Start(_ context.Context, _ []string) (streamer.SessionHandleForTest, error) {
+func (noopSpawner) Start(_ context.Context, _ string, _ []string) (streamer.SessionHandleForTest, error) {
 	ch := make(chan struct{})
 	return noopSessionHandle{done: ch}, nil
 }
@@ -80,7 +80,7 @@ func TestStreamingHTTP_StartUnknown_404(t *testing.T) {
 	m := setupManager(t)
 	srv := httptest.NewServer(streamingHandler(m))
 	defer srv.Close()
-	body := bytes.NewBufferString(`{"session_id":"S1","whip_url":"u","whip_token":"tk"}`)
+	body := bytes.NewBufferString(`{"session_id":"S1","whip_url":"https://lab.example.com/whip","whip_token":"tk"}`)
 	resp, err := http.Post(srv.URL+"/api/translations/nope/start", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestStreamingHTTP_Start_Then_Stop_RoundTrip(t *testing.T) {
 	m := setupManager(t)
 	srv := httptest.NewServer(streamingHandler(m))
 	defer srv.Close()
-	startBody := `{"session_id":"S1","whip_url":"u","whip_token":"tk"}`
+	startBody := `{"session_id":"S1","whip_url":"https://lab.example.com/whip","whip_token":"tk"}`
 	resp, err := http.Post(srv.URL+"/api/translations/cam-A/start", "application/json", bytes.NewBufferString(startBody))
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestStreamingHTTP_StaleStop_409(t *testing.T) {
 	defer srv.Close()
 	startResp, err := http.Post(srv.URL+"/api/translations/cam-A/start",
 		"application/json",
-		bytes.NewBufferString(`{"session_id":"REAL","whip_url":"u","whip_token":"tk"}`))
+		bytes.NewBufferString(`{"session_id":"REAL","whip_url":"https://lab.example.com/whip","whip_token":"tk"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

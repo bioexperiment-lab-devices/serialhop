@@ -12,8 +12,18 @@ import (
 )
 
 // SessionConfig is the input to StartSession.
+//
+// The trust boundary is split explicitly: BinaryPath is always
+// server-controlled (set by the Manager from paths.FFmpegPath()), while
+// Args carries flag values that may originate from external sources
+// (e.g. the lab-bridge `/start` request body). Args values become
+// individual argv strings to a non-shell exec, so they cannot be
+// interpreted as flag NAMES by ffmpeg — only the structurally-fixed
+// positional URL (last arg) needs URL-scheme validation, which Manager
+// performs before BuildWHIPArgs sees the values.
 type SessionConfig struct {
-	Argv           []string
+	BinaryPath     string
+	Args           []string
 	Env            []string // extra env passed alongside os.Environ()
 	GracefulPeriod time.Duration
 }
@@ -33,13 +43,17 @@ type Session struct {
 
 // StartSession launches the child.
 func StartSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
-	if len(cfg.Argv) == 0 {
-		return nil, fmt.Errorf("streamer: empty argv")
+	if cfg.BinaryPath == "" {
+		return nil, fmt.Errorf("streamer: empty BinaryPath")
 	}
 	if cfg.GracefulPeriod == 0 {
 		cfg.GracefulPeriod = DefaultGracefulStopGrace
 	}
-	cmd := exec.CommandContext(ctx, cfg.Argv[0], cfg.Argv[1:]...) //nolint:gosec // argv is constructed by trusted callers (Manager builds it from FFmpegResolver.Path + BuildWHIPArgs), not user input
+	// G204: BinaryPath is server-controlled (paths.FFmpegPath()); Args
+	// values are validated at the Manager boundary (validateStartRequest)
+	// and flow to a non-shell exec, so they cannot be reinterpreted as
+	// flag names.
+	cmd := exec.CommandContext(ctx, cfg.BinaryPath, cfg.Args...) //nolint:gosec // see SessionConfig godoc — trust boundary documented and validated at Manager.Start
 	cmd.Env = append(os.Environ(), cfg.Env...)
 	applyPlatformAttrs(cmd) // session_windows / session_other
 	stderr, err := cmd.StderrPipe()

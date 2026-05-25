@@ -15,9 +15,11 @@ type fakeSpawner struct {
 	killed atomic.Int32
 }
 
-func (f *fakeSpawner) Start(_ context.Context, argv []string) (sessionHandle, error) {
+func (f *fakeSpawner) Start(_ context.Context, binaryPath string, args []string) (sessionHandle, error) {
 	f.live.Add(1)
-	f.args = append(f.args, append([]string(nil), argv...))
+	// Record the full argv for backwards-compatible assertions.
+	full := append([]string{binaryPath}, args...)
+	f.args = append(f.args, full)
 	return &fakeSessionHandle{spawner: f, doneCh: make(chan struct{})}, nil
 }
 
@@ -78,7 +80,9 @@ func TestManager_SetArmed_GoesToTranslations(t *testing.T) {
 
 func TestManager_Start_UnknownID_404(t *testing.T) {
 	m, _ := newTestManager(t)
-	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1"})
+	out := m.Start(context.Background(), "cam-A", StartRequest{
+		SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk",
+	})
 	if out.Status != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", out.Status)
 	}
@@ -88,7 +92,7 @@ func TestManager_Start_Armed_202(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
 	out := m.Start(context.Background(), "cam-A", StartRequest{
-		SessionID: "S1", WHIPURL: "http://u", WHIPToken: "tk",
+		SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk",
 	})
 	if out.Status != http.StatusAccepted {
 		t.Fatalf("want 202, got %d", out.Status)
@@ -101,8 +105,8 @@ func TestManager_Start_Armed_202(t *testing.T) {
 func TestManager_Start_IdempotentSameSession(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	if got := sp.live.Load(); got != 1 {
 		t.Fatalf("want 1 live session (idempotent), got %d", got)
 	}
@@ -111,8 +115,8 @@ func TestManager_Start_IdempotentSameSession(t *testing.T) {
 func TestManager_Start_ReplaceOnConflict(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
-	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S2", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
+	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S2", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	if out.Status != http.StatusAccepted {
 		t.Fatalf("want 202 on replace, got %d", out.Status)
 	}
@@ -128,7 +132,9 @@ func TestManager_Start_FFmpegUnavailable_503(t *testing.T) {
 	m, _ := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
 	m.ffmpegReady = func() error { return ErrFFmpegUnavailable }
-	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1"})
+	out := m.Start(context.Background(), "cam-A", StartRequest{
+		SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk",
+	})
 	if out.Status != http.StatusServiceUnavailable {
 		t.Fatalf("want 503, got %d", out.Status)
 	}
@@ -137,7 +143,7 @@ func TestManager_Start_FFmpegUnavailable_503(t *testing.T) {
 func TestManager_Stop_Match_204(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	out := m.Stop("cam-A", "S1")
 	if out.Status != http.StatusNoContent {
 		t.Fatalf("want 204, got %d", out.Status)
@@ -150,7 +156,7 @@ func TestManager_Stop_Match_204(t *testing.T) {
 func TestManager_Stop_Mismatch_409(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	out := m.Stop("cam-A", "STALE")
 	if out.Status != http.StatusConflict {
 		t.Fatalf("want 409, got %d", out.Status)
@@ -179,7 +185,7 @@ func TestManager_Stop_NoActive_204(t *testing.T) {
 func TestManager_UnarmKillsActiveSession(t *testing.T) {
 	m, sp := newTestManager(t)
 	_ = m.SetArmed("cam-A", true)
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	if err := m.SetArmed("cam-A", false); err != nil {
 		t.Fatalf("SetArmed off: %v", err)
 	}
@@ -196,8 +202,8 @@ func TestManager_Shutdown_KillsAllSessions(t *testing.T) {
 	if err := m.SetArmed("cam-B", true); err != nil {
 		t.Fatalf("SetArmed cam-B: %v", err)
 	}
-	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "A1", WHIPURL: "u", WHIPToken: "tk"})
-	_ = m.Start(context.Background(), "cam-B", StartRequest{SessionID: "B1", WHIPURL: "u", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-A", StartRequest{SessionID: "A1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
+	_ = m.Start(context.Background(), "cam-B", StartRequest{SessionID: "B1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	if got := sp.live.Load(); got != 2 {
 		t.Fatalf("want 2 live before Shutdown, got %d", got)
 	}
@@ -263,7 +269,7 @@ func TestManager_Refresh_DisconnectThenReconnect(t *testing.T) {
 
 type errSpawner struct{ msg string }
 
-func (e errSpawner) Start(_ context.Context, _ []string) (sessionHandle, error) {
+func (e errSpawner) Start(_ context.Context, _ string, _ []string) (sessionHandle, error) {
 	return nil, fmt.Errorf("%s", e.msg)
 }
 
@@ -283,7 +289,7 @@ func TestManager_Start_SpawnerError_503AndLastError(t *testing.T) {
 	if err := m.SetArmed("cam-A", true); err != nil {
 		t.Fatalf("SetArmed: %v", err)
 	}
-	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "u", WHIPToken: "tk"})
+	out := m.Start(context.Background(), "cam-A", StartRequest{SessionID: "S1", WHIPURL: "https://lab.example.com/whip", WHIPToken: "tk"})
 	if out.Status != http.StatusServiceUnavailable {
 		t.Fatalf("want 503 on spawn error, got %d", out.Status)
 	}
@@ -296,4 +302,57 @@ func TestManager_Start_SpawnerError_503AndLastError(t *testing.T) {
 			break
 		}
 	}
+}
+
+// TestManager_Start_InputValidation exercises the defense-in-depth
+// allowlists that protect the ffmpeg argv from hostile lab-bridge
+// input. The check runs BEFORE camera lookup, so each rejection
+// surfaces as 400 regardless of whether the camera id is valid.
+func TestManager_Start_InputValidation(t *testing.T) {
+	m, _ := newTestManager(t)
+	_ = m.SetArmed("cam-A", true)
+
+	cases := []struct {
+		name string
+		in   StartRequest
+	}{
+		{"empty session_id", StartRequest{WHIPURL: "https://l.example/whip", WHIPToken: "tk"}},
+		{"bad session_id chars", StartRequest{SessionID: "bad sid", WHIPURL: "https://l.example/whip", WHIPToken: "tk"}},
+		{"session_id too long", StartRequest{SessionID: strings_repeat("a", 200), WHIPURL: "https://l.example/whip", WHIPToken: "tk"}},
+		{"empty url", StartRequest{SessionID: "S1", WHIPToken: "tk"}},
+		{"http url", StartRequest{SessionID: "S1", WHIPURL: "http://l.example/whip", WHIPToken: "tk"}},
+		{"url starts with dash", StartRequest{SessionID: "S1", WHIPURL: "-flag", WHIPToken: "tk"}},
+		{"url missing host", StartRequest{SessionID: "S1", WHIPURL: "https:///whip", WHIPToken: "tk"}},
+		{"empty token", StartRequest{SessionID: "S1", WHIPURL: "https://l.example/whip"}},
+		{"token bad chars", StartRequest{SessionID: "S1", WHIPURL: "https://l.example/whip", WHIPToken: "tk space"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := m.Start(context.Background(), "cam-A", tc.in)
+			if out.Status != http.StatusBadRequest {
+				t.Fatalf("want 400, got %d (%+v)", out.Status, out)
+			}
+		})
+	}
+}
+
+func TestManager_Start_CameraIDValidation(t *testing.T) {
+	m, _ := newTestManager(t)
+	good := StartRequest{SessionID: "S1", WHIPURL: "https://l.example/whip", WHIPToken: "tk"}
+	if out := m.Start(context.Background(), "", good); out.Status != http.StatusBadRequest {
+		t.Fatalf("empty camera id: want 400, got %d", out.Status)
+	}
+	// Newline / control char in the path segment is a no-go.
+	if out := m.Start(context.Background(), "cam-A\nINJECT", good); out.Status != http.StatusBadRequest {
+		t.Fatalf("control-char camera id: want 400, got %d", out.Status)
+	}
+}
+
+// strings_repeat avoids importing strings into this test file.
+func strings_repeat(s string, n int) string {
+	out := make([]byte, 0, len(s)*n)
+	for i := 0; i < n; i++ {
+		out = append(out, s...)
+	}
+	return string(out)
 }
