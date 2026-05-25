@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.30.0...v0.31.0) (2026-05-25)
+
+
+### Features
+
+* surface enumeration errors + add Cameras Diagnose button ([#153](https://github.com/bioexperiment-lab-devices/serialhop/issues/153)) ([a08e49a](https://github.com/bioexperiment-lab-devices/serialhop/commit/a08e49a8c313aefd395ff795c205380b3bd03b88))
+
 ## [0.30.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.29.0...v0.30.0) (2026-05-25)
 
 
