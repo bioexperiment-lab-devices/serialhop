@@ -91,12 +91,17 @@ func parseListDevices(raw []byte) ([]Camera, error) {
 		}
 
 		// Alternative name line for the most recent device (video only;
-		// pending is nil after an audio device).
+		// pending is nil after an audio device). We slugify it because
+		// the raw alternative name contains backslashes, hashes, and
+		// braces — none of which survive a round-trip through Go's
+		// net/http.ServeMux "{id}" pattern (see lab-bridge PR #163 for
+		// the diagnosis). The slug is what we announce on the wire;
+		// the friendly Label is what ffmpeg's `-i video=<label>` uses.
 		if pending != nil && strings.HasPrefix(s, altNamePrefix) {
 			rest := strings.TrimPrefix(s, altNamePrefix)
 			rest = strings.TrimSpace(rest)
 			rest = strings.TrimSuffix(strings.TrimPrefix(rest, `"`), `"`)
-			pending.ID = rest
+			pending.ID = SlugifyDeviceID(rest)
 			pending = nil
 		}
 	}

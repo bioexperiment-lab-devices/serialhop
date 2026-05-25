@@ -21,11 +21,20 @@ func TestParseListDevices_TwoCameras(t *testing.T) {
 	if got[0].Label != "Logitech HD Pro Webcam C920" {
 		t.Errorf("got[0].Label = %q", got[0].Label)
 	}
-	if got[0].ID == "" || !strings.Contains(got[0].ID, "vid_046d") {
-		t.Errorf("got[0].ID = %q (expected the Alternative name)", got[0].ID)
+	// IDs are now slugified — URL-safe `cam-<sha1_prefix>` instead of
+	// the raw DirectShow alternative name. The raw alt-name is fed
+	// into SlugifyDeviceID, so the slug is deterministic.
+	if !CameraIDPattern.MatchString(got[0].ID) {
+		t.Errorf("got[0].ID = %q is not URL-safe (must match %s)", got[0].ID, CameraIDPattern)
 	}
 	if got[1].Label != "Microsoft Camera Front" {
 		t.Errorf("got[1].Label = %q", got[1].Label)
+	}
+	if !CameraIDPattern.MatchString(got[1].ID) {
+		t.Errorf("got[1].ID = %q is not URL-safe", got[1].ID)
+	}
+	if got[0].ID == got[1].ID {
+		t.Errorf("two distinct cameras should have distinct slugs, both got %q", got[0].ID)
 	}
 }
 
