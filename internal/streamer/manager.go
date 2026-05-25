@@ -384,10 +384,21 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 // error, codec init failure, or dshow open failure.
 const initFailureWindow = 5 * time.Second
 
+// sessionHandleWithExit lets us read the child's exit code when the
+// concrete *Session is in use; tests inject fakes that don't implement
+// this and we just record -1.
+type sessionHandleWithExit interface {
+	ExitCode() int
+}
+
 func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle, spawnedAt time.Time) {
 	<-h.Done()
 	tail := h.StderrTail()
 	uptime := time.Since(spawnedAt)
+	exitCode := -1
+	if ec, ok := h.(sessionHandleWithExit); ok {
+		exitCode = ec.ExitCode()
+	}
 	m.mu.Lock()
 	if cur, ok := m.sessions[cameraID]; ok && cur.sessionID == sessionID {
 		delete(m.sessions, cameraID)
@@ -420,12 +431,14 @@ func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle, spaw
 			"camera_id", cameraID,
 			"session_id", sessionID,
 			"uptime", uptime.String(),
+			"exit_code", exitCode,
 			"stderr_tail", tail)
 	} else {
 		slog.Warn("streamer: session exited",
 			"camera_id", cameraID,
 			"session_id", sessionID,
 			"uptime", uptime.String(),
+			"exit_code", exitCode,
 			"stderr_tail", tail)
 	}
 	m.onChange()
