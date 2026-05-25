@@ -40,6 +40,13 @@ type Session struct {
 
 	cmd  *exec.Cmd
 	done chan struct{}
+	// drained closes when drainStderr has finished reading the child's
+	// stderr pipe. wait() blocks on it before closing `done`, so any
+	// consumer that reads StderrTail() after Done() sees the complete
+	// tail rather than racing with the drainer. Critical when ffmpeg
+	// dies fast — without this, a 10 ms init failure looked like
+	// "exited silently" even though the diagnostic was right there.
+	drained chan struct{}
 
 	mu         sync.Mutex
 	stderrTail []string // ring of the last ≤stderrTailCap lines, oldest first
@@ -70,9 +77,10 @@ func StartSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 		return nil, fmt.Errorf("streamer: start: %w", err)
 	}
 	s := &Session{
-		cfg:  cfg,
-		cmd:  cmd,
-		done: make(chan struct{}),
+		cfg:     cfg,
+		cmd:     cmd,
+		done:    make(chan struct{}),
+		drained: make(chan struct{}),
 	}
 	go s.drainStderr(stderr)
 	go s.wait()
@@ -80,6 +88,7 @@ func StartSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 }
 
 func (s *Session) drainStderr(r io.Reader) {
+	defer close(s.drained)
 	scan := bufio.NewScanner(r)
 	scan.Buffer(make([]byte, 16*1024), 64*1024)
 	for scan.Scan() {
@@ -96,6 +105,12 @@ func (s *Session) drainStderr(r io.Reader) {
 
 func (s *Session) wait() {
 	err := s.cmd.Wait()
+	// Block until the drainer has fully consumed the pipe before
+	// signalling Done. cmd.Wait closes the pipe when the child exits;
+	// the scanner then returns EOF, the drain loop exits, and `drained`
+	// closes. Consumers that read StderrTail after <-Done() are now
+	// guaranteed to see every line ffmpeg wrote.
+	<-s.drained
 	s.mu.Lock()
 	s.exitErr = err
 	if s.cmd.ProcessState != nil {
