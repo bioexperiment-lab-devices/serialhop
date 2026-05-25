@@ -33,14 +33,22 @@ export function App() {
   const [tab, setTab] = useState<TabId>("status");
   const [configDirty, setConfigDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<TabId | null>(null);
+  // cameraStreamingEnabled controls whether the Cameras tab is rendered
+  // at all. Sourced from the YAML config (experimental.camera_streaming);
+  // defaults to false so the tab is hidden until a user opts in.
+  const [cameraStreamingEnabled, setCameraStreamingEnabled] = useState(false);
   const { warn, footer, lamps, buttons, update, logState, keepAwake, setKeepAwake } = useGlobalUiState();
   const configRef = useRef<ConfigTabHandle | null>(null);
 
   useEffect(() => {
     GetVersion().then(setVersion);
     // First-launch: open on Config tab if creds are missing.
-    LoadConfigFromDisk().then((cfg: { lab_bridge?: { user?: string; pass?: string } }) => {
+    LoadConfigFromDisk().then((cfg: {
+      lab_bridge?: { user?: string; pass?: string };
+      experimental?: { camera_streaming?: boolean };
+    }) => {
       if (!cfg.lab_bridge?.user || !cfg.lab_bridge?.pass) setTab("config");
+      setCameraStreamingEnabled(!!cfg.experimental?.camera_streaming);
     });
     // Ask the Go side to re-emit network lamp state. The probe goroutines
     // run their initial probe within ~5 s of app startup; if their emit
@@ -52,6 +60,10 @@ export function App() {
     TriggerProbe("server");
     TriggerProbe("tunnel");
   }, []);
+
+  // Hide the Cameras tab when the experimental flag is off so unauthorized
+  // operators don't see partially-built UI.
+  const hiddenTabs: TabId[] = cameraStreamingEnabled ? [] : ["cameras"];
 
   const requestTab = (next: TabId) => {
     if (configDirty && tab === "config" && next !== "config") {
@@ -75,7 +87,7 @@ export function App() {
   return (
     <div className="shp-window">
       <TitleBar version={version} />
-      <TabBar active={tab} dirty={configDirty} onChange={requestTab} />
+      <TabBar active={tab} dirty={configDirty} onChange={requestTab} hiddenTabs={hiddenTabs} />
       <Warning message={warn} />
       <ErrorBoundary scope="app" version={version}>
         <div className="shp-content">
@@ -107,7 +119,7 @@ export function App() {
                 <PortsTab />
               </ErrorBoundary>
             )}
-            {tab === "cameras" && (
+            {tab === "cameras" && cameraStreamingEnabled && (
               <ErrorBoundary scope="tab:cameras" version={version}>
                 <CamerasTab />
               </ErrorBoundary>

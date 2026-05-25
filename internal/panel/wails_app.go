@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/panellog"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
@@ -133,14 +134,26 @@ func (a *App) startup(ctx context.Context) {
 	})
 	go a.scmPollLoop(ctx)
 
-	a.streaming = NewStreamingLifecycle(
-		paths.PanelEndpointPath(),
-		paths.ArmedCamerasPath(),
-		paths.FFmpegPath(),
-		"-authorization",
-	)
-	if err := a.streaming.Start(ctx); err != nil {
-		slog.Error("streaming subsystem failed to start", "err", err)
+	// Streaming subsystem is gated behind experimental.camera_streaming
+	// in the YAML config — defaults to false so the Cameras tab stays
+	// hidden and the localhost listener / panel-endpoint.json never
+	// gets created on lab machines that haven't opted in.
+	if cfg.Experimental.CameraStreaming {
+		a.streaming = NewStreamingLifecycle(
+			paths.PanelEndpointPath(),
+			paths.ArmedCamerasPath(),
+			paths.FFmpegPath(),
+			"-authorization",
+		)
+		if err := a.streaming.Start(ctx); err != nil {
+			slog.Error("streaming subsystem failed to start", "err", err)
+		}
+	} else {
+		// If a previous panel session left a stale endpoint file behind
+		// (e.g. the user toggled the flag off and crashed), clean it up
+		// so the service-side proxy doesn't spend 5 seconds per request
+		// trying to reach a dead port.
+		_ = bootstrap.DeletePanelEndpoint(paths.PanelEndpointPath())
 	}
 }
 
