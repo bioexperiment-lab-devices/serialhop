@@ -140,7 +140,15 @@ func BuildWHIPArgs(in WHIPArgs) []string {
 	}
 	return []string{
 		"-hide_banner",
-		"-loglevel", "error",
+		// Use info-level logging so dshow/codec/whip init messages
+		// reach the panel log even when the session succeeds. With
+		// `error` we get ONLY actual errors, which leaves zero
+		// context when ffmpeg fails before its error-emitting code
+		// path runs (e.g. argv parse failure on Windows when a
+		// muxer is missing from the build). info adds about 20
+		// lines of startup chatter — tolerable given the cap on
+		// stderr capture.
+		"-loglevel", "info",
 		"-f", "dshow",
 		"-rtbufsize", "256M",
 		"-framerate", strconv.Itoa(fps),
