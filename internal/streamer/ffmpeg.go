@@ -159,21 +159,28 @@ func BuildWHIPArgs(in WHIPArgs) []string {
 		"-keyint_min", strconv.Itoa(g),
 		"-metadata", "serialhop_session=" + in.SessionID,
 		"-f", "whip",
-		in.BearerFlag, "Bearer " + in.BearerToken,
+		// ffmpeg's WHIP muxer takes the RAW token here — it formats
+		// the full `Authorization: Bearer <token>` header itself.
+		// Verified against `ffmpeg -h muxer=whip` on both 7.1 and 8.x:
+		// the option doc reads "The optional Bearer token for WHIP
+		// Authorization". Passing "Bearer <token>" doubles the
+		// scheme on the wire and lab-bridge rejects the request.
+		in.BearerFlag, in.BearerToken,
 		in.WHIPURL,
 	}
 }
 
 // RedactedArgs returns a copy of argv suitable for logging — bearer
-// tokens replaced with `Bearer ****`. We mask values both by adjacency
-// to a known bearer flag and by `Bearer ` prefix, so a future change
-// to the WHIP-muxer flag name doesn't silently leak.
+// tokens replaced with `****`. We mask values both by adjacency to a
+// known bearer flag and by `Bearer ` prefix, so a future change to the
+// WHIP-muxer flag name (or a renderer that wraps with "Bearer ") still
+// gets redacted.
 func RedactedArgs(args []string) []string {
 	out := make([]string, len(args))
 	copy(out, args)
 	for i := 0; i < len(out); i++ {
 		if i < len(out)-1 && (out[i] == "-authorization" || out[i] == "-bearer_token") {
-			out[i+1] = "Bearer ****"
+			out[i+1] = "****"
 		}
 		if strings.HasPrefix(out[i], "Bearer ") {
 			out[i] = "Bearer ****"
