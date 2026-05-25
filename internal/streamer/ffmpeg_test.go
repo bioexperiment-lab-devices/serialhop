@@ -88,7 +88,9 @@ func TestBuildWHIPArgs(t *testing.T) {
 		"-g", "48",
 		"-metadata", "serialhop_session=01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 		"-f", "whip",
-		"-authorization", "Bearer test-token-value-123",
+		// ffmpeg's WHIP muxer wraps the value in "Authorization: Bearer ..."
+		// itself; the option takes the raw token.
+		"-authorization", "test-token-value-123",
 		"https://lab.example.com/streamer/whip/01HXYZ8K2NQM4R6V9P3T1W5Z7B",
 	}
 	for _, want := range mustHave {
@@ -109,16 +111,24 @@ func TestBuildWHIPArgs(t *testing.T) {
 		t.Errorf("URL must be last positional; last arg = %q", got)
 	}
 
-	// Bearer flag and "Bearer <token>" must be adjacent.
+	// Bearer flag and the raw token must be adjacent. The token slot
+	// must NOT start with "Bearer " — ffmpeg's WHIP muxer adds that
+	// prefix itself, and doubling the scheme is what was causing
+	// silent 401s from lab-bridge.
 	foundPair := false
 	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "-authorization" && args[i+1] == "Bearer test-token-value-123" {
+		if args[i] == "-authorization" && args[i+1] == "test-token-value-123" {
 			foundPair = true
 			break
 		}
 	}
 	if !foundPair {
-		t.Errorf("expected -authorization immediately followed by 'Bearer <token>', got argv: %q", args)
+		t.Errorf("expected -authorization immediately followed by raw token, got argv: %q", args)
+	}
+	for _, a := range args {
+		if strings.HasPrefix(a, "Bearer ") {
+			t.Errorf("argv must not contain a literal \"Bearer \" prefix — ffmpeg adds it itself; got %q", a)
+		}
 	}
 }
 
@@ -140,13 +150,13 @@ func TestBuildWHIPArgs_TokenNotInOrderedLog(t *testing.T) {
 
 	// Redaction must replace the token slot with the canonical mask.
 	foundMask := false
-	for _, a := range red {
-		if a == "Bearer ****" {
+	for i := 0; i < len(red)-1; i++ {
+		if red[i] == "-authorization" && red[i+1] == "****" {
 			foundMask = true
 			break
 		}
 	}
 	if !foundMask {
-		t.Errorf("expected 'Bearer ****' to appear in redacted args, got %q", red)
+		t.Errorf("expected '-authorization' followed by '****' in redacted args, got %q", red)
 	}
 }

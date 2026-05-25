@@ -48,6 +48,7 @@ type sessionHandle interface {
 	Done() <-chan struct{}
 	Stop(ctx context.Context) error
 	LastError() string
+	StderrTail() string
 	PID() int
 }
 
@@ -366,16 +367,33 @@ func (m *manager) Start(ctx context.Context, cameraID string, in StartRequest) S
 
 func (m *manager) watchSession(cameraID, sessionID string, h sessionHandle) {
 	<-h.Done()
+	tail := h.StderrTail()
 	m.mu.Lock()
 	if cur, ok := m.sessions[cameraID]; ok && cur.sessionID == sessionID {
 		delete(m.sessions, cameraID)
-		if errMsg := h.LastError(); errMsg != "" {
+		// Prefer the full tail when populated — the last line alone is
+		// often "Conversion failed!" with the actual diagnostic 5-10
+		// lines earlier (codec mismatch, dshow open failure, WHIP
+		// muxer rejection, etc.). Truncate at ~2 KB to fit in the
+		// Wails event payload without bloating it.
+		errMsg := tail
+		if errMsg == "" {
+			errMsg = h.LastError()
+		}
+		if len(errMsg) > 2048 {
+			errMsg = errMsg[:2048] + "\n... (truncated)"
+		}
+		if errMsg != "" {
 			if c, ok := m.cameras[cameraID]; ok {
 				c.LastError = errMsg
 			}
 		}
 	}
 	m.mu.Unlock()
+	// Permanent record in the panel log so the operator can grep
+	// `streamer: session exited` against StderrTail post-mortem,
+	// even if the UI was closed when the failure happened.
+	slog.Warn("streamer: session exited", "camera_id", cameraID, "session_id", sessionID, "stderr_tail", tail)
 	m.onChange()
 }
 

@@ -38,8 +38,9 @@ func (h *fakeSessionHandle) Stop(_ context.Context) error {
 	}
 	return nil
 }
-func (h *fakeSessionHandle) LastError() string { return "" }
-func (h *fakeSessionHandle) PID() int          { return 0 }
+func (h *fakeSessionHandle) LastError() string  { return "" }
+func (h *fakeSessionHandle) StderrTail() string { return "" }
+func (h *fakeSessionHandle) PID() int           { return 0 }
 
 func newTestManager(t *testing.T) (*manager, *fakeSpawner) {
 	t.Helper()

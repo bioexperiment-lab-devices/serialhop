@@ -51,6 +51,7 @@ type noopSessionHandle struct{ done chan struct{} }
 func (n noopSessionHandle) Done() <-chan struct{}        { return n.done }
 func (n noopSessionHandle) Stop(_ context.Context) error { close(n.done); return nil }
 func (n noopSessionHandle) LastError() string            { return "" }
+func (n noopSessionHandle) StderrTail() string           { return "" }
 func (n noopSessionHandle) PID() int                     { return 0 }
 
 func TestStreamingHTTP_GetTranslations(t *testing.T) {

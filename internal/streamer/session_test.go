@@ -126,3 +126,30 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestSession_StderrTailCapturesMultipleLines verifies the ring
+// buffer keeps more than the final line. Regression guard against the
+// previous "lastStderr string" implementation where a fast-exiting
+// ffmpeg with a useful diagnostic 5 lines back was reduced to the
+// useless final "Conversion failed!" message.
+func TestSession_StderrTailCapturesMultipleLines(t *testing.T) {
+	bin := buildFakeFFmpeg(t)
+	s, err := StartSession(context.Background(), SessionConfig{
+		BinaryPath: bin,
+		Env:        []string{"FAKE_FFMPEG_EXIT_FAST=1"},
+	})
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	<-s.Done()
+	tail := s.StderrTail()
+	if !contains(tail, "fake_ffmpeg: started") {
+		t.Errorf("StderrTail missing first line; got %q", tail)
+	}
+	if !contains(tail, "fake_ffmpeg: exiting fast") {
+		t.Errorf("StderrTail missing last line; got %q", tail)
+	}
+	if !contains(tail, "\n") {
+		t.Errorf("StderrTail must contain multiple lines separated by \\n; got %q", tail)
+	}
+}

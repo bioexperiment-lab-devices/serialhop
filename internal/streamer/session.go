@@ -28,6 +28,12 @@ type SessionConfig struct {
 	GracefulPeriod time.Duration
 }
 
+// stderrTailCap is the maximum number of stderr lines we keep per
+// session. ffmpeg's startup output is normally < 20 lines and a
+// failure log is usually short; 32 covers both cases without
+// unbounded memory if the child goes chatty.
+const stderrTailCap = 32
+
 // Session is a running ffmpeg child.
 type Session struct {
 	cfg SessionConfig
@@ -36,7 +42,7 @@ type Session struct {
 	done chan struct{}
 
 	mu         sync.Mutex
-	lastStderr string
+	stderrTail []string // ring of the last ≤stderrTailCap lines, oldest first
 	exitCode   int
 	exitErr    error
 }
@@ -77,8 +83,13 @@ func (s *Session) drainStderr(r io.Reader) {
 	scan := bufio.NewScanner(r)
 	scan.Buffer(make([]byte, 16*1024), 64*1024)
 	for scan.Scan() {
+		line := scan.Text()
 		s.mu.Lock()
-		s.lastStderr = scan.Text()
+		if len(s.stderrTail) >= stderrTailCap {
+			s.stderrTail = append(s.stderrTail[1:], line)
+		} else {
+			s.stderrTail = append(s.stderrTail, line)
+		}
 		s.mu.Unlock()
 	}
 }
@@ -104,12 +115,32 @@ func (s *Session) ExitCode() int {
 	return s.exitCode
 }
 
-// LastError returns the last stderr line (best-effort, not guaranteed to
-// be the most informative one).
+// LastError returns the last stderr line. Kept for backwards compat
+// with callers that surface a one-line indicator; for richer
+// debugging use StderrTail.
 func (s *Session) LastError() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.lastStderr
+	if len(s.stderrTail) == 0 {
+		return ""
+	}
+	return s.stderrTail[len(s.stderrTail)-1]
+}
+
+// StderrTail returns the recent stderr lines joined with newlines.
+// Capped to stderrTailCap lines; empty when nothing has been captured
+// (e.g. child exited before writing anything).
+func (s *Session) StderrTail() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.stderrTail) == 0 {
+		return ""
+	}
+	out := s.stderrTail[0]
+	for _, ln := range s.stderrTail[1:] {
+		out += "\n" + ln
+	}
+	return out
 }
 
 // PID returns the OS process id.
