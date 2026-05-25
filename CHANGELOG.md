@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.29.0...v0.30.0) (2026-05-25)
+
+
+### Features
+
+* add camera streaming (SerialHop protocol v1) ([#150](https://github.com/bioexperiment-lab-devices/serialhop/issues/150)) ([3a5f1f2](https://github.com/bioexperiment-lab-devices/serialhop/commit/3a5f1f269f75d7193c5bbefb701de7e56db266fe))
+
 ## [0.29.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.28.0...v0.29.0) (2026-05-19)
 
 
