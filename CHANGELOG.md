@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.4](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.3...v0.31.4) (2026-05-25)
+
+
+### Bug Fixes
+
+* **streamer:** log ffmpeg spawn with redacted argv and flag fast exits ([#163](https://github.com/bioexperiment-lab-devices/serialhop/issues/163)) ([c5e7397](https://github.com/bioexperiment-lab-devices/serialhop/commit/c5e7397f32babd30a79f1073f32f79e20f82948b))
+
 ## [0.31.3](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.2...v0.31.3) (2026-05-25)
 
 
