@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.2](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.1...v0.31.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* slugify DirectShow camera ids before announcing them ([#159](https://github.com/bioexperiment-lab-devices/serialhop/issues/159)) ([87600c8](https://github.com/bioexperiment-lab-devices/serialhop/commit/87600c860798954f7a66899cfb10a4317fb4dab5))
+
 ## [0.31.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.0...v0.31.1) (2026-05-25)
 
 
