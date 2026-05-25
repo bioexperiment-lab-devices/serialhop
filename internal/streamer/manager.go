@@ -83,6 +83,10 @@ func (realSpawner) Start(ctx context.Context, binaryPath string, args []string) 
 type Manager interface {
 	Refresh(ctx context.Context) ([]Camera, error)
 	Cameras() []CameraView
+	// LastEnumError returns the most recent enumeration error message,
+	// or "" when the last Refresh succeeded. The panel surfaces this in
+	// the Cameras tab so an empty list isn't ambiguous.
+	LastEnumError() string
 	SetArmed(cameraID string, armed bool) error
 	Translations() []Translation
 	Start(ctx context.Context, cameraID string, in StartRequest) StartOutcome
@@ -113,6 +117,12 @@ type manager struct {
 	mu       sync.Mutex
 	cameras  map[string]*managedCam // by id
 	sessions map[string]*activeSess // by camera id
+	// lastEnumErr is the most recent enumeration error (empty when the
+	// last Refresh succeeded). Exposed to the UI via StreamingState so
+	// users see *why* no cameras appear — without it the empty state
+	// reads as "no devices connected" even when the real cause is a
+	// missing ffmpeg.exe or DirectShow returning nothing.
+	lastEnumErr string
 }
 
 type managedCam struct {
@@ -165,10 +175,14 @@ func NewManager(cfg ManagerConfig) Manager {
 func (m *manager) Refresh(ctx context.Context) ([]Camera, error) {
 	cams, err := m.enum.List(ctx)
 	if err != nil {
+		m.mu.Lock()
+		m.lastEnumErr = err.Error()
+		m.mu.Unlock()
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.lastEnumErr = ""
 	// Mark all currently-known cameras as disconnected.
 	for _, c := range m.cameras {
 		c.Connected = false
@@ -187,6 +201,12 @@ func (m *manager) Refresh(ctx context.Context) ([]Camera, error) {
 	}
 	m.onChange()
 	return cams, nil
+}
+
+func (m *manager) LastEnumError() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastEnumErr
 }
 
 func (m *manager) Cameras() []CameraView {

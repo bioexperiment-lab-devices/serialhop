@@ -34,6 +34,24 @@ type StreamingState struct {
 	// FfmpegOK is false when the bundled ffmpeg.exe is missing or fails its
 	// version probe. The UI shows a red banner in that case.
 	FfmpegOK bool `json:"ffmpeg_ok"`
+	// LastEnumError carries the most recent enumeration failure message
+	// (empty when the last Refresh succeeded). Surfaced in the Cameras
+	// tab's empty state so the user sees *why* no cameras appear.
+	LastEnumError string `json:"last_enum_error,omitempty"`
+}
+
+// FFmpegDiagnostics is the result of DiagnoseCameras — a one-shot probe
+// the user can trigger from the Cameras tab to figure out why no
+// cameras are detected. Returned verbatim to the UI for display; never
+// parsed by the Go side, so we can include whatever ffmpeg emits without
+// committing to a wire format.
+type FFmpegDiagnostics struct {
+	FFmpegPath       string `json:"ffmpeg_path"`
+	BinaryExists     bool   `json:"binary_exists"`
+	VersionLine      string `json:"version_line,omitempty"`
+	VersionError     string `json:"version_error,omitempty"`
+	ListDevicesRaw   string `json:"list_devices_raw,omitempty"`
+	ListDevicesError string `json:"list_devices_error,omitempty"`
 }
 
 // CameraView is one row in the Cameras tab.

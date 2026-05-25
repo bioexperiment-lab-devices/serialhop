@@ -1,6 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { Button } from "../components/Button";
-import { ListCameras, SetCameraArmed, RefreshCameras, type CameraView, type StreamingState } from "../wails/go/main/App";
+import {
+  ListCameras,
+  SetCameraArmed,
+  RefreshCameras,
+  DiagnoseCameras,
+  type CameraView,
+  type StreamingState,
+  type FFmpegDiagnostics,
+} from "../wails/go/main/App";
 import { useWailsEvent } from "../wailsEvents";
 
 export function CamerasTab() {
@@ -8,12 +16,18 @@ export function CamerasTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<FFmpegDiagnostics | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
     try {
       const r = await ListCameras();
-      setState({ cameras: r.cameras ?? [], ffmpeg_ok: !!r.ffmpeg_ok });
+      setState({
+        cameras: r.cameras ?? [],
+        ffmpeg_ok: !!r.ffmpeg_ok,
+        last_enum_error: r.last_enum_error,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -27,6 +41,18 @@ export function CamerasTab() {
   const refresh = async () => {
     setRefreshing(true);
     try { await RefreshCameras(); await load(); } finally { setRefreshing(false); }
+  };
+
+  const diagnose = async () => {
+    setDiagnosing(true);
+    setDiagnostics(null);
+    try {
+      setDiagnostics(await DiagnoseCameras());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDiagnosing(false);
+    }
   };
 
   const setArmed = async (id: string, armed: boolean) => {
@@ -58,6 +84,7 @@ export function CamerasTab() {
         <div className="shp-spacer" />
         <span className="shp-meta">{armedCount}/{state.cameras.length} armed</span>
         <Button onClick={refresh} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh"}</Button>
+        <Button onClick={diagnose} disabled={diagnosing}>{diagnosing ? "Diagnosing…" : "Diagnose"}</Button>
       </div>
 
       {!state.ffmpeg_ok && (
@@ -73,9 +100,22 @@ export function CamerasTab() {
         </div>
       )}
 
+      {state.last_enum_error && (
+        <div className="shp-banner shp-banner--warning" role="alert">
+          Enumeration error: {state.last_enum_error}
+        </div>
+      )}
+
+      {diagnostics && <DiagnosticsPanel d={diagnostics} onDismiss={() => setDiagnostics(null)} />}
+
       {state.cameras.length === 0 ? (
         <div className="shp-empty">
-          No cameras detected. Connect a camera or check whether another application is using it.
+          No cameras detected. Possible causes:
+          <ul>
+            <li>The camera is in use by another application.</li>
+            <li>The camera is exposed via MediaFoundation only (newer integrated webcams). DirectShow can't see it.</li>
+            <li>The bundled ffmpeg.exe wasn't installed correctly — click <b>Diagnose</b> to check.</li>
+          </ul>
         </div>
       ) : (
         <div className="shp-cards">
@@ -129,4 +169,46 @@ function badgeFor(c: CameraView): { kind: string; label: string } {
   if (!c.connected) return { kind: "warn", label: "Disconnected" };
   if (c.armed) return { kind: "idle", label: "Armed" };
   return { kind: "muted", label: "Disarmed" };
+}
+
+interface DiagnosticsPanelProps {
+  d: FFmpegDiagnostics;
+  onDismiss: () => void;
+}
+
+function DiagnosticsPanel({ d, onDismiss }: DiagnosticsPanelProps) {
+  return (
+    <div className="shp-card" role="region" aria-label="Camera diagnostics">
+      <div className="shp-row">
+        <b>ffmpeg diagnostics</b>
+        <div className="shp-spacer" />
+        <Button onClick={onDismiss}>Dismiss</Button>
+      </div>
+      <div className="shp-card__id">Path: {d.ffmpeg_path || "(empty)"}</div>
+      <div className="shp-card__id">Binary present: {d.binary_exists ? "yes" : "no"}</div>
+      {d.version_line && <div className="shp-card__id">Version: {d.version_line}</div>}
+      {d.version_error && (
+        <div className="shp-card__error">Version probe failed: {d.version_error}</div>
+      )}
+      {d.list_devices_error && (
+        <div className="shp-card__error">list_devices: {d.list_devices_error}</div>
+      )}
+      {d.list_devices_raw && (
+        <>
+          <div style={{ marginTop: "0.5rem" }}>
+            <b>Raw output of <code>ffmpeg -list_devices true -f dshow -i dummy</code>:</b>
+          </div>
+          <pre style={{
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            background: "rgba(0,0,0,0.05)",
+            padding: "0.5rem",
+            fontSize: "0.85em",
+            maxHeight: "20rem",
+            overflow: "auto",
+          }}>{d.list_devices_raw}</pre>
+        </>
+      )}
+    </div>
+  );
 }

@@ -6,13 +6,14 @@ vi.mock("../wails/go/main/App", () => ({
   ListCameras: vi.fn(),
   SetCameraArmed: vi.fn(),
   RefreshCameras: vi.fn(),
+  DiagnoseCameras: vi.fn(),
 }));
 
 vi.mock("../wailsEvents", () => ({
   useWailsEvent: () => () => {},
 }));
 
-import { ListCameras, SetCameraArmed } from "../wails/go/main/App";
+import { ListCameras, SetCameraArmed, DiagnoseCameras } from "../wails/go/main/App";
 
 describe("CamerasTab", () => {
   beforeEach(() => {
@@ -54,5 +55,32 @@ describe("CamerasTab", () => {
     (ListCameras as any).mockResolvedValue({ cameras: [], ffmpeg_ok: false });
     render(<CamerasTab />);
     expect(await screen.findByText(/ffmpeg\.exe missing/i)).toBeInTheDocument();
+  });
+
+  it("surfaces last_enum_error in a warning banner", async () => {
+    (ListCameras as any).mockResolvedValue({
+      cameras: [],
+      ffmpeg_ok: true,
+      last_enum_error: "streamer: ffmpeg path unset",
+    });
+    render(<CamerasTab />);
+    expect(await screen.findByText(/Enumeration error/i)).toBeInTheDocument();
+    expect(await screen.findByText(/streamer: ffmpeg path unset/i)).toBeInTheDocument();
+  });
+
+  it("runs Diagnose and shows the raw output", async () => {
+    (ListCameras as any).mockResolvedValue({ cameras: [], ffmpeg_ok: true });
+    (DiagnoseCameras as any).mockResolvedValue({
+      ffmpeg_path: "C:\\\\SerialHop\\\\ffmpeg.exe",
+      binary_exists: true,
+      version_line: "ffmpeg version 7.1.1-essentials_build",
+      list_devices_raw: "[dshow @ 0x1] DirectShow video devices\n[dshow @ 0x1] (no devices listed)",
+    });
+    render(<CamerasTab />);
+    const diagnoseBtn = await screen.findByRole("button", { name: /diagnose/i });
+    fireEvent.click(diagnoseBtn);
+    await waitFor(() => expect(DiagnoseCameras).toHaveBeenCalled());
+    expect(await screen.findByText(/ffmpeg version 7\.1\.1/)).toBeInTheDocument();
+    expect(await screen.findByText(/DirectShow video devices/)).toBeInTheDocument();
   });
 });
