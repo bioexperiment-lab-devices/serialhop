@@ -6,7 +6,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0
 	github.com/jpillora/chisel v1.11.6
 	github.com/wailsapp/wails/v2 v2.12.0
-	go.bug.st/serial v1.7.0
+	go.bug.st/serial v1.7.1
 	golang.org/x/sys v0.45.0
 	golang.org/x/tools v0.45.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
