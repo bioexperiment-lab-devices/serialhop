@@ -131,7 +131,7 @@ func (d *Driver) planDispense(p dispenseParams) (*dispensePlan, *device.CmdError
 // launchMotion performs TRANSLATION §4 dispense steps 6–8 (and the
 // start_calibration analog): config frame, motion frame, job start.
 func (d *Driver) launchMotion(plan *dispensePlan) (device.Job, *device.CmdError) {
-	cfg := []byte{10, byte(plan.dropMult), plan.n3, plan.n4, plan.gradFlag}
+	cfg := []byte{10, byte(plan.dropMult), plan.n3, plan.n4, plan.gradFlag} // #nosec G115 -- dropMult clamped to [2,255] by quantizeSuckback
 	if _, err := d.s.Transact(cfg, 0, time.Second); err != nil {
 		return device.Job{}, device.ErrHardware("configuration frame: " + err.Error())
 	}

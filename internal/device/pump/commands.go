@@ -409,7 +409,7 @@ func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
 	d.mlPerStep, d.calSetAt, d.unverified = mlPerStep, now, false
 
 	// EEPROM mirror (human-paced only — EEPROM wear rules). Round, don't
-	// truncate: 0.0005 × 1e8 is 49999.999… in float64.
+	// truncate: variant-A divisions rarely land on integers in float64 (e.g. 10.0/13 steps × 1e8 has a fractional part that truncation would drop).
 	v := uint32(math.Round(mlPerStep * 1e8))
 	if v > 0xFFFFFF {
 		v = 0xFFFFFF
