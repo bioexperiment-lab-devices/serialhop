@@ -222,6 +222,10 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.rotateRaw(params)
 	case "dispense":
 		return d.dispense(params)
+	case "pause":
+		return d.pause()
+	case "resume":
+		return d.resume()
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}

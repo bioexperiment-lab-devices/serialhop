@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/pump"
 )
 
 func TestPingIdleUsesIdentifyFrameOnly(t *testing.T) {
@@ -185,5 +186,104 @@ func TestRotateRawValidatesPct(t *testing.T) {
 		if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
 			t.Fatalf("params %s: %+v", params, resp)
 		}
+	}
+}
+
+func countFrames(f *fixture, opcode byte) int {
+	n := 0
+	for _, fr := range f.frames() {
+		if fr[0] == opcode {
+			n++
+		}
+	}
+	return n
+}
+
+func TestPauseFreezesJobClock(t *testing.T) {
+	f := newCalibratedFixture(t)
+	id := startDispense(t, f, `{"direction":"reverse","volume_ml":1.0,"speed_ml_min":3.0}`)
+	f.clock.Advance(10 * time.Second) // halfway through the 20 s estimate
+
+	resp := f.exec("pause", "")
+	if resp.Status != "ok" {
+		t.Fatalf("pause: %+v", resp)
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "paused" || m["job_id"] != id {
+		t.Fatalf("pause result: %v", m)
+	}
+	if m["dispensed_ml"].(float64) < 0.45 || m["dispensed_ml"].(float64) > 0.55 {
+		t.Fatalf("dispensed estimate: %v", m)
+	}
+	if countFrames(f, 19) != 1 {
+		t.Fatalf("pause must send exactly one cmd-19 frame: %v", f.frames())
+	}
+
+	// while paused, elapsed and progress are frozen and the job survives
+	// well past its estimate
+	f.clock.Advance(time.Minute)
+	js := jobState(t, f, id)
+	if js["state"] != "paused" || js["elapsed_s"] != 10.0 {
+		t.Fatalf("paused job: %v", js)
+	}
+
+	// resume unfreezes; the timer path completes after the REMAINING time
+	resp = f.exec("resume", "")
+	if resp.Status != "ok" || f.resultMap(resp)["state"] != "dispensing" {
+		t.Fatalf("resume: %+v", resp)
+	}
+	if countFrames(f, 19) != 2 {
+		t.Fatalf("resume must send exactly one more cmd-19 frame")
+	}
+	f.port.Feed([]byte{10, 26, 25, 1}) // disarm ping reply
+	f.clock.Advance(10*time.Second + pump.TimerGrace)
+	waitFor(t, "job success after resume", func() bool {
+		return jobState(t, f, id)["state"] == "succeeded"
+	})
+}
+
+func TestPauseWhileRotating(t *testing.T) {
+	f := newCalibratedFixture(t)
+	f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	resp := f.exec("pause", "")
+	if resp.Status != "ok" || f.resultMap(resp)["state"] != "paused" {
+		t.Fatalf("pause while rotating: %+v", resp)
+	}
+	resp = f.exec("resume", "")
+	if resp.Status != "ok" || f.resultMap(resp)["state"] != "rotating" {
+		t.Fatalf("resume back to rotating: %+v", resp)
+	}
+}
+
+func TestPauseIdleIsBusy(t *testing.T) {
+	f := newCalibratedFixture(t)
+	resp := f.exec("pause", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("pause idle: %+v", resp)
+	}
+	m, _ := resp.Error.Details.(map[string]any)
+	if m["state"] != "idle" {
+		t.Fatalf("details: %#v", resp.Error.Details)
+	}
+}
+
+func TestPauseTwiceRejected(t *testing.T) {
+	f := newCalibratedFixture(t)
+	startDispense(t, f, `{"direction":"reverse","volume_ml":1.0,"speed_ml_min":3.0}`)
+	f.exec("pause", "")
+	resp := f.exec("pause", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("double pause would double-toggle cmd 19: %+v", resp)
+	}
+	if countFrames(f, 19) != 1 {
+		t.Fatal("second pause must not send a frame")
+	}
+	resp = f.exec("resume", "")
+	if resp.Status != "ok" {
+		t.Fatalf("resume: %+v", resp)
+	}
+	resp = f.exec("resume", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("double resume: %+v", resp)
 	}
 }

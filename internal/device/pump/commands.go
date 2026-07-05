@@ -239,3 +239,58 @@ func (d *Driver) rotateRaw(params json.RawMessage) (any, *device.CmdError) {
 	}
 	return rotateRawResult{State: "rotating", SpeedPct: p.SpeedPct}, nil
 }
+
+type pauseResult struct {
+	State       string   `json:"state"`
+	JobID       string   `json:"job_id,omitempty"`
+	DispensedMl *float64 `json:"dispensed_ml,omitempty"`
+}
+
+// pause / resume (TRANSLATION §4): cmd 19 is a blind toggle with no state
+// query, so the frame goes out via WriteFrame — single write, no retry — a
+// duplicate send would invert the toggle undetectably (PR-1 decision 4).
+// pauseAssumed tracks our belief; every cmd-10 frame (dispense/rotate/stop)
+// forces the firmware toggle to "running", so a desync from panel use never
+// survives past the current job.
+func (d *Driver) pause() (any, *device.CmdError) {
+	switch d.state {
+	case stateIdle:
+		return nil, device.ErrBusy("nothing to pause", map[string]any{"state": "idle"})
+	case statePaused:
+		return nil, device.ErrBusy("already paused", map[string]any{"state": "paused"})
+	}
+	if err := d.s.WriteFrame(pauseFrame); err != nil {
+		return nil, device.ErrHardware("pause: " + err.Error())
+	}
+	d.pauseAssumed = true
+	d.s.Jobs().Freeze()
+	d.pausedFrom = d.state
+	d.state = statePaused
+
+	res := pauseResult{State: "paused"}
+	if a := d.s.Jobs().Active(); a != nil {
+		res.JobID = a.ID
+		if d.job != nil && d.job.kind == "dispense" {
+			v := a.Progress * d.job.volumeML
+			res.DispensedMl = &v
+		}
+	}
+	return res, nil
+}
+
+func (d *Driver) resume() (any, *device.CmdError) {
+	if d.state != statePaused {
+		return nil, device.ErrBusy("not paused", map[string]any{"state": string(d.state)})
+	}
+	if err := d.s.WriteFrame(pauseFrame); err != nil {
+		return nil, device.ErrHardware("resume: " + err.Error())
+	}
+	d.pauseAssumed = false
+	d.s.Jobs().Unfreeze()
+	d.state = d.pausedFrom
+	res := pauseResult{State: string(d.state)}
+	if a := d.s.Jobs().Active(); a != nil {
+		res.JobID = a.ID
+	}
+	return res, nil
+}
