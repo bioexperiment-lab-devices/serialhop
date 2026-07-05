@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v1.0.0...v1.1.0) (2026-07-05)
+
+
+### Features
+
+* add device runtime core for JSON device protocol ([#177](https://github.com/bioexperiment-lab-devices/serialhop/issues/177)) ([ce43e81](https://github.com/bioexperiment-lab-devices/serialhop/commit/ce43e81a686ccba1eb4d025cd2a53804d6e02369))
+
 ## [1.0.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.6...v1.0.0) (2026-07-05)
 
 
