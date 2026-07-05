@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.6...v1.0.0) (2026-07-05)
+
+
+### Reverts
+
+* drop camera streamer ahead of v1.0.0 ([f25fb2e](https://github.com/bioexperiment-lab-devices/serialhop/commit/f25fb2e4e1317dbec961895b25eceb8d9c9cbb38))
+
 ## [0.31.6](https://github.com/bioexperiment-lab-devices/serialhop/compare/v0.31.5...v0.31.6) (2026-05-25)
 
 
