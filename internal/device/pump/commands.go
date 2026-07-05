@@ -2,6 +2,7 @@ package pump
 
 import (
 	"encoding/json"
+	"math"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
@@ -337,4 +338,94 @@ func (d *Driver) stop() (any, *device.CmdError) {
 		return nil, device.ErrHardware("post-stop verification: unexpected reply")
 	}
 	return res, nil
+}
+
+// setCalibration (TRANSLATION §4): variant A computes ml_per_step from a
+// succeeded calibration job; variant B restores a known value directly.
+// Either way the value is persisted serial-keyed, mirrored to the device's
+// 3 EEPROM calibration bytes (cmd 13 — survives translator-database loss),
+// and the mirror is read back for verification via the identify frame.
+func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		JobID            string  `json:"job_id"`
+		MeasuredVolumeMl float64 `json:"measured_volume_ml"`
+		MlPerStep        float64 `json:"ml_per_step"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+	}
+	if cerr := d.busyGuard(); cerr != nil {
+		return nil, cerr
+	}
+	if d.state != stateIdle {
+		return nil, device.ErrBusy("device is moving — stop first",
+			map[string]any{"state": string(d.state)})
+	}
+
+	var mlPerStep float64
+	switch {
+	case p.JobID != "" && p.MlPerStep != 0:
+		return nil, device.ErrInvalidParams("ml_per_step", p.MlPerStep,
+			"provide either job_id+measured_volume_ml or ml_per_step, not both")
+	case p.JobID != "":
+		if p.MeasuredVolumeMl <= 0 {
+			return nil, device.ErrInvalidParams("measured_volume_ml", p.MeasuredVolumeMl,
+				"measured_volume_ml must be positive")
+		}
+		job := d.s.Jobs().Get(p.JobID)
+		if job == nil || job.State != device.JobSucceeded || job.Kind != "calibration" {
+			return nil, device.ErrInvalidParams("job_id", p.JobID,
+				"job_id must reference a succeeded calibration job")
+		}
+		res, ok := job.Result.(calibrationRunResult)
+		if !ok || res.Steps <= 0 {
+			return nil, device.ErrInternal("calibration job has no step count")
+		}
+		mlPerStep = p.MeasuredVolumeMl / float64(res.Steps)
+	case p.MlPerStep != 0:
+		mlPerStep = p.MlPerStep
+	default:
+		return nil, device.ErrInvalidParams("ml_per_step", nil,
+			"provide job_id+measured_volume_ml or ml_per_step")
+	}
+	if mlPerStep < 1e-6 || mlPerStep > 0.1 {
+		return nil, device.ErrInvalidParams("ml_per_step", mlPerStep,
+			"ml_per_step out of sane range [1e-6, 0.1]")
+	}
+	if cerr := d.persistCalibration(mlPerStep); cerr != nil {
+		return nil, cerr
+	}
+	return map[string]any{"ml_per_step": mlPerStep}, nil
+}
+
+func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
+	now := d.s.Now()
+	err := d.store.Save(persistState{
+		SchemaVersion: schemaV, MlPerStep: mlPerStep, SetAt: now, Serial: d.serial,
+	})
+	if err != nil {
+		return device.ErrInternal("persist calibration: " + err.Error())
+	}
+	d.mlPerStep, d.calSetAt, d.unverified = mlPerStep, now, false
+
+	// EEPROM mirror (human-paced only — EEPROM wear rules). Round, don't
+	// truncate: 0.0005 × 1e8 is 49999.999… in float64.
+	v := uint32(math.Round(mlPerStep * 1e8))
+	if v > 0xFFFFFF {
+		v = 0xFFFFFF
+	}
+	frame := []byte{13, 0, byte(v >> 16), byte(v >> 8), byte(v)} // #nosec G115 -- bounded by the [1e-6, 0.1] sanity check
+	if _, err := d.s.Transact(frame, 0, time.Second); err != nil {
+		return device.ErrHardware("calibration mirror write: " + err.Error())
+	}
+	reply, err := d.s.Transact(identifyFrame, 4, replyTimeout)
+	if err != nil {
+		return device.ErrHardware("calibration mirror verify: " + err.Error())
+	}
+	got := uint32(reply[1])<<16 | uint32(reply[2])<<8 | uint32(reply[3])
+	if reply[0] != TypeCode || got != v {
+		return device.ErrHardware("calibration mirror verify: device echoed different bytes")
+	}
+	d.s.SetInfo(d.info()) // capabilities changed (speed limits, unverified flag)
+	return nil
 }

@@ -228,6 +228,10 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.resume()
 	case "stop":
 		return d.stop()
+	case "start_calibration":
+		return d.startCalibration(params)
+	case "set_calibration":
+		return d.setCalibration(params)
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}

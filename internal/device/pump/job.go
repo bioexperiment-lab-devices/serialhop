@@ -275,3 +275,45 @@ func (d *Driver) clearJob() {
 	d.state = stateIdle
 	d.jobGen++
 }
+
+// startCalibration (TRANSLATION §4): a fixed CalSteps forward run issued as
+// opcode 18, so the completion reply gives a measured duration. speed_pct
+// uses the calibration-independent rotate_raw mapping (default 50 %).
+func (d *Driver) startCalibration(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		SpeedPct int `json:"speed_pct"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+		}
+	}
+	if p.SpeedPct == 0 {
+		p.SpeedPct = 50
+	}
+	if p.SpeedPct < 1 || p.SpeedPct > 100 {
+		return nil, device.ErrInvalidParams("speed_pct", p.SpeedPct, "speed_pct must be 1..100")
+	}
+	if cerr := d.busyGuard(); cerr != nil {
+		return nil, cerr
+	}
+	if d.state == stateRotating {
+		return nil, device.ErrBusy("device is rotating — stop first",
+			map[string]any{"state": string(stateRotating)})
+	}
+	n3, n4, actualUs := factorDelTime(rawDelTimeUs(p.SpeedPct))
+	plan := &dispensePlan{
+		opcode: 18, n3: n3, n4: n4,
+		job: motionJob{
+			kind: "calibration", direction: "forward", steps: CalSteps,
+			delTimeUs: actualUs, estimate: plainEstimate(CalSteps, actualUs),
+		},
+	}
+	job, cerr := d.launchMotion(plan)
+	if cerr != nil {
+		return nil, cerr
+	}
+	d.state = stateCalibrating
+	d.startWatch(d.jobGen, plan.job.estimate)
+	return map[string]any{"job": job}, nil
+}
