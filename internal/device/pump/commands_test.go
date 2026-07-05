@@ -293,7 +293,24 @@ func TestStopCancelsWatcherJob(t *testing.T) {
 	id := startDispense(t, f, `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`)
 	f.clock.Advance(5 * time.Second) // a quarter through the 20 s estimate
 
-	f.port.Feed([]byte{10, 0, 0, 0}) // post-stop verification reply
+	// Feed the post-stop verification reply only after stop has abandoned
+	// the watcher — a live watcher would eat a pre-fed reply as its
+	// completion signal. Sync on the identify frame hitting the wire: stop
+	// writes it only after abandonWatch returns, and the feed then lands
+	// inside the verification read window. (A fixed sleep can straddle the
+	// shrunken PerByteTimeout, triggering the transact retry and breaking
+	// the frame-order assertion below with a second identify frame.)
+	preStop := len(f.frames())
+	go func() {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+				f.port.Feed([]byte{10, 0, 0, 0})
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
 	resp := f.exec("stop", "")
 	if resp.Status != "ok" {
 		t.Fatalf("stop: %+v", resp)
