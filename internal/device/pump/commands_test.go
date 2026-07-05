@@ -81,3 +81,109 @@ func TestGetCalibration(t *testing.T) {
 		t.Fatalf("uncalibrated get_calibration: %+v", resp)
 	}
 }
+
+func TestRotateSendsArmingThenMotionFrame(t *testing.T) {
+	f := newCalibratedFixture(t)
+	resp := f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	if resp.Status != "ok" {
+		t.Fatalf("rotate: %+v", resp)
+	}
+	fr := f.frames()
+	n := len(fr)
+	// TRANSLATION §4 rotate steps 4–5: cmd-10 arming frame (forces the pause
+	// toggle to "running"), then the 11/12 motion frame. 3 ml/min → [1 50].
+	if !frameEq(fr[n-2], 10, 0, 1, 50, 0) || !frameEq(fr[n-1], 11, 0, 1, 50, 0) {
+		t.Fatalf("frames: %v", fr[n-2:])
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "rotating" || m["direction"] != "forward" || m["speed_ml_min"] != 3.0 {
+		t.Fatalf("result: %v", m)
+	}
+	if st := f.resultMap(f.exec("status", "")); st["state"] != "rotating" {
+		t.Fatalf("status: %v", st)
+	}
+}
+
+func TestRotateEchoesQuantizedSpeed(t *testing.T) {
+	f := newCalibratedFixture(t)
+	m := f.resultMap(f.exec("rotate", `{"direction":"reverse","speed_ml_min":2.9}`))
+	// 2.9 → 5200 µs → actual = 15000/5200 ≈ 2.8846: echo ACTUAL, not requested
+	want := 30_000_000 * 0.0005 / 5200
+	if m["speed_ml_min"] != want {
+		t.Fatalf("speed_ml_min = %v, want %v", m["speed_ml_min"], want)
+	}
+	fr := f.frames()
+	if fr[len(fr)-1][0] != 12 {
+		t.Fatalf("reverse must use opcode 12: %v", fr[len(fr)-1])
+	}
+}
+
+func TestRotateRetargetsWhileRotating(t *testing.T) {
+	f := newCalibratedFixture(t)
+	f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	resp := f.exec("rotate", `{"direction":"reverse","speed_ml_min":3.0}`)
+	if resp.Status != "ok" {
+		t.Fatalf("retarget must be allowed while rotating: %+v", resp)
+	}
+}
+
+func TestRotateRequiresVerifiedCalibration(t *testing.T) {
+	f := newFixture(t)
+	resp := f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
+		t.Fatalf("uncalibrated rotate: %+v", resp)
+	}
+	fu := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // unverified mirror
+	resp = fu.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
+		t.Fatalf("unverified rotate: %+v", resp)
+	}
+	m, _ := resp.Error.Details.(map[string]any)
+	if m["reason"] != "unverified_mirror" {
+		t.Fatalf("details: %#v", resp.Error.Details)
+	}
+}
+
+func TestRotateInvalidParams(t *testing.T) {
+	f := newCalibratedFixture(t)
+	for _, params := range []string{
+		`{"direction":"sideways","speed_ml_min":3.0}`,
+		`{"direction":"forward","speed_ml_min":0}`,
+		`{"direction":"forward","speed_ml_min":40}`, // > 37.5 max at this calibration
+		`not json`,
+	} {
+		resp := f.exec("rotate", params)
+		if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+			t.Fatalf("params %s: %+v", params, resp)
+		}
+	}
+}
+
+func TestRotateRawBypassesCalibration(t *testing.T) {
+	f := newFixture(t) // uncalibrated
+	resp := f.exec("rotate_raw", `{"direction":"forward","speed_pct":50}`)
+	if resp.Status != "ok" {
+		t.Fatalf("rotate_raw: %+v", resp)
+	}
+	fr := f.frames()
+	n := len(fr)
+	// 50% → 200 µs clamped to 400 → P=4 → [1 4]
+	if !frameEq(fr[n-2], 10, 0, 1, 4, 0) || !frameEq(fr[n-1], 11, 0, 1, 4, 0) {
+		t.Fatalf("frames: %v", fr[n-2:])
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "rotating" || m["speed_pct"] != float64(50) {
+		t.Fatalf("result: %v", m)
+	}
+}
+
+func TestRotateRawValidatesPct(t *testing.T) {
+	f := newFixture(t)
+	for _, params := range []string{`{"direction":"forward","speed_pct":0}`,
+		`{"direction":"forward","speed_pct":101}`} {
+		resp := f.exec("rotate_raw", params)
+		if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+			t.Fatalf("params %s: %+v", params, resp)
+		}
+	}
+}

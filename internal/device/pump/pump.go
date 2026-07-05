@@ -216,6 +216,10 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.status()
 	case "get_calibration":
 		return d.getCalibration()
+	case "rotate":
+		return d.rotate(params)
+	case "rotate_raw":
+		return d.rotateRaw(params)
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}

@@ -1,6 +1,9 @@
 package pump
 
 import (
+	"encoding/json"
+	"time"
+
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
@@ -119,4 +122,120 @@ func (d *Driver) status() (any, *device.CmdError) {
 		}
 	}
 	return res, nil
+}
+
+// parseDirection maps the JSON direction to the run opcode. Polarity is
+// fixed forward=11 / reverse=12 (per-installation configurability deferred).
+func parseDirection(dir string) (opcode byte, cerr *device.CmdError) {
+	switch dir {
+	case "forward":
+		return 11, nil
+	case "reverse":
+		return 12, nil
+	default:
+		return 0, device.ErrInvalidParams("direction", dir, `direction must be "forward" or "reverse"`)
+	}
+}
+
+// busyGuard rejects motion-starting commands while a job is active or the
+// device is paused (a bare rotating state may be retargeted freely).
+func (d *Driver) busyGuard() *device.CmdError {
+	if j := d.s.Jobs().Active(); j != nil {
+		return device.ErrBusy("a job is running", map[string]any{"job_id": j.ID})
+	}
+	if d.state == statePaused {
+		return device.ErrBusy("device is paused — resume or stop first",
+			map[string]any{"state": string(statePaused)})
+	}
+	return nil
+}
+
+// startRotation sends the two-frame sequence (TRANSLATION §4 rotate steps
+// 4–5): the cmd-10 arming frame is REQUIRED — 11/12 do not touch the
+// firmware's pause toggle, and cmd 10 is the only command that forces it to
+// "running" (it also clears leftover gradient mode).
+func (d *Driver) startRotation(direction string, n3, n4 byte) *device.CmdError {
+	if _, err := d.s.Transact([]byte{10, 0, n3, n4, 0}, 0, time.Second); err != nil {
+		return device.ErrHardware("rotate arming frame: " + err.Error())
+	}
+	d.pauseAssumed = false
+	opcode, cerr := parseDirection(direction)
+	if cerr != nil {
+		return cerr
+	}
+	if _, err := d.s.Transact([]byte{opcode, 0, n3, n4, 0}, 0, time.Second); err != nil {
+		return device.ErrHardware("rotate motion frame: " + err.Error())
+	}
+	d.state = stateRotating
+	d.rotDirection = direction
+	return nil
+}
+
+type rotateResult struct {
+	State      string  `json:"state"`
+	Direction  string  `json:"direction"`
+	SpeedMlMin float64 `json:"speed_ml_min"`
+}
+
+func (d *Driver) rotate(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		Direction  string  `json:"direction"`
+		SpeedMlMin float64 `json:"speed_ml_min"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+	}
+	if cerr := d.busyGuard(); cerr != nil {
+		return nil, cerr
+	}
+	if cerr := d.requireCalibration(); cerr != nil {
+		return nil, cerr
+	}
+	if _, cerr := parseDirection(p.Direction); cerr != nil {
+		return nil, cerr
+	}
+	n3, n4, actualUs, cerr := speedToBytes(p.SpeedMlMin, d.mlPerStep)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if cerr := d.startRotation(p.Direction, n3, n4); cerr != nil {
+		return nil, cerr
+	}
+	d.rotSpeedML = actualSpeedMlMin(d.mlPerStep, actualUs)
+	d.rotSpeedPct = 0
+	return rotateResult{State: "rotating", Direction: p.Direction, SpeedMlMin: d.rotSpeedML}, nil
+}
+
+type rotateRawResult struct {
+	State    string `json:"state"`
+	SpeedPct int    `json:"speed_pct"`
+}
+
+func (d *Driver) rotateRaw(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		Direction string `json:"direction"`
+		SpeedPct  int    `json:"speed_pct"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+	}
+	if cerr := d.busyGuard(); cerr != nil {
+		return nil, cerr
+	}
+	if p.SpeedPct < 1 || p.SpeedPct > 100 {
+		return nil, device.ErrInvalidParams("speed_pct", p.SpeedPct, "speed_pct must be 1..100")
+	}
+	if _, cerr := parseDirection(p.Direction); cerr != nil {
+		return nil, cerr
+	}
+	n3, n4, actualUs := factorDelTime(rawDelTimeUs(p.SpeedPct))
+	if cerr := d.startRotation(p.Direction, n3, n4); cerr != nil {
+		return nil, cerr
+	}
+	d.rotSpeedPct = p.SpeedPct
+	d.rotSpeedML = 0
+	if d.mlPerStep > 0 && !d.unverified {
+		d.rotSpeedML = actualSpeedMlMin(d.mlPerStep, actualUs)
+	}
+	return rotateRawResult{State: "rotating", SpeedPct: p.SpeedPct}, nil
 }
