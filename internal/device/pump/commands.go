@@ -294,3 +294,47 @@ func (d *Driver) resume() (any, *device.CmdError) {
 	}
 	return res, nil
 }
+
+type stopResult struct {
+	State          string   `json:"state"`
+	CancelledJobID string   `json:"cancelled_job_id,omitempty"`
+	DispensedMl    *float64 `json:"dispensed_ml,omitempty"`
+}
+
+// stop (TRANSLATION §4): the cmd-10 frame clears the remaining step count
+// and takes effect within one step period. It also forces the firmware's
+// pause toggle to "running" — stop doubles as the pause-belief resync point.
+// An opcode-18 wait is abandoned (the firmware only replies if the run
+// finishes on its own). Post-stop, the identify frame verifies the device
+// is still responsive.
+func (d *Driver) stop() (any, *device.CmdError) {
+	if _, err := d.s.Transact(stopFrame, 0, time.Second); err != nil {
+		return nil, device.ErrHardware("stop: " + err.Error())
+	}
+	d.pauseAssumed = false
+	d.abandonWatch()
+
+	res := stopResult{State: "idle"}
+	if a := d.s.Jobs().Active(); a != nil {
+		cancelled := d.s.Jobs().Cancel()
+		res.CancelledJobID = cancelled.ID
+		if d.job != nil && d.job.kind == "dispense" {
+			v := cancelled.Progress * d.job.volumeML
+			res.DispensedMl = &v
+		}
+	}
+	d.job = nil
+	d.jobGen++ // invalidate any in-flight timer/watchdog callbacks
+	d.state = stateIdle
+	d.pausedFrom = ""
+	d.rotDirection, d.rotSpeedML, d.rotSpeedPct = "", 0, 0
+
+	reply, err := d.s.Transact(identifyFrame, 4, replyTimeout)
+	if err != nil {
+		return nil, device.ErrHardware("post-stop verification: " + err.Error())
+	}
+	if reply[0] != TypeCode {
+		return nil, device.ErrHardware("post-stop verification: unexpected reply")
+	}
+	return res, nil
+}

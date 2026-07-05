@@ -287,3 +287,89 @@ func TestPauseTwiceRejected(t *testing.T) {
 		t.Fatalf("double resume: %+v", resp)
 	}
 }
+
+func TestStopCancelsWatcherJob(t *testing.T) {
+	f := newCalibratedFixture(t)
+	id := startDispense(t, f, `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`)
+	f.clock.Advance(5 * time.Second) // a quarter through the 20 s estimate
+
+	f.port.Feed([]byte{10, 0, 0, 0}) // post-stop verification reply
+	resp := f.exec("stop", "")
+	if resp.Status != "ok" {
+		t.Fatalf("stop: %+v", resp)
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "idle" || m["cancelled_job_id"] != id {
+		t.Fatalf("stop result: %v", m)
+	}
+	if got := m["dispensed_ml"].(float64); got < 0.2 || got > 0.3 {
+		t.Fatalf("dispensed estimate: %v", got)
+	}
+	// frame order: ... [10 0 0 0 0] halt, then [1 2 3 0 0] verification
+	fr := f.frames()
+	n := len(fr)
+	if !frameEq(fr[n-2], 10, 0, 0, 0, 0) || !frameEq(fr[n-1], 1, 2, 3, 0, 0) {
+		t.Fatalf("stop frames: %v", fr[n-2:])
+	}
+	if js := jobState(t, f, id); js["state"] != "cancelled" {
+		t.Fatalf("job: %v", js)
+	}
+	// watcher fully torn down: a fresh dispense works and completes
+	id2 := startDispense(t, f, `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`)
+	f.port.Feed([]byte{0x01, 0x28, 0x0A, 0x40})
+	f.port.Feed([]byte{10, 26, 25, 1})
+	waitFor(t, "second dispense completes", func() bool {
+		return jobState(t, f, id2)["state"] == "succeeded"
+	})
+}
+
+func TestStopEndsRotation(t *testing.T) {
+	f := newCalibratedFixture(t)
+	f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	f.port.Feed([]byte{10, 0, 0, 0})
+	resp := f.exec("stop", "")
+	m := f.resultMap(resp)
+	if resp.Status != "ok" || m["state"] != "idle" {
+		t.Fatalf("stop: %+v", resp)
+	}
+	if _, has := m["cancelled_job_id"]; has {
+		t.Fatalf("no job to cancel when rotating: %v", m)
+	}
+	if f.resultMap(f.exec("status", ""))["state"] != "idle" {
+		t.Fatal("status must be idle")
+	}
+}
+
+func TestStopWhilePausedCancels(t *testing.T) {
+	f := newCalibratedFixture(t)
+	id := startDispense(t, f, `{"direction":"reverse","volume_ml":1.0,"speed_ml_min":3.0}`)
+	f.exec("pause", "")
+	f.port.Feed([]byte{10, 0, 0, 0})
+	resp := f.exec("stop", "")
+	if resp.Status != "ok" || f.resultMap(resp)["cancelled_job_id"] != id {
+		t.Fatalf("stop while paused: %+v", resp)
+	}
+	if js := jobState(t, f, id); js["state"] != "cancelled" {
+		t.Fatalf("job: %v", js)
+	}
+}
+
+func TestStopIdleSucceeds(t *testing.T) {
+	f := newCalibratedFixture(t)
+	f.port.Feed([]byte{10, 0, 0, 0})
+	resp := f.exec("stop", "")
+	if resp.Status != "ok" || f.resultMap(resp)["state"] != "idle" {
+		t.Fatalf("idle stop must succeed: %+v", resp)
+	}
+}
+
+func TestStopVerificationFailure(t *testing.T) {
+	f := newCalibratedFixture(t)
+	startDispense(t, f, `{"direction":"reverse","volume_ml":1.0,"speed_ml_min":3.0}`)
+	// no verification reply → hardware_error and unreachable
+	resp := f.exec("stop", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("stop without verification reply: %+v", resp)
+	}
+	waitFor(t, "unreachable", func() bool { return !f.s.Connected() })
+}
