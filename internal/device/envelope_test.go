@@ -59,3 +59,10 @@ func TestRequestDecode(t *testing.T) {
 		t.Errorf("bad decode: %+v", r)
 	}
 }
+
+func TestErrNotCalibrated(t *testing.T) {
+	e := ErrNotCalibrated("no volume calibration stored")
+	if e.Code != CodeNotCalibrated || e.Message != "no volume calibration stored" {
+		t.Fatalf("bad error: %+v", e)
+	}
+}
