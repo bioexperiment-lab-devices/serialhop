@@ -220,6 +220,8 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.rotate(params)
 	case "rotate_raw":
 		return d.rotateRaw(params)
+	case "dispense":
+		return d.dispense(params)
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
