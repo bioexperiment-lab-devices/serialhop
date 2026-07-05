@@ -117,8 +117,12 @@ func suckbackEstimate(steps int64, dropMult int, delUs float64) time.Duration {
 // gradientEstimate integrates the firmware's fixed quadratic ramp
 // half-period(k) = 1/sqrt(A + B·k), k = 1..2×steps, with endpoints
 // T(1) = 30000 µs and T(2×steps) = 300 µs. Closed form of the integral:
-// ∫ dk/sqrt(A+Bk) = 2·sqrt(A+Bk)/B, evaluated with a half-step midpoint
-// correction — O(1) and within a fraction of a percent of the exact sum.
+// ∫ dk/sqrt(A+Bk) = 2·sqrt(A+Bk)/B, evaluated at bounds k = 1.0 (lower)
+// to k = kmax+0.5 (upper). Lower bound is 1.0 because A is negative by
+// construction (for typical step counts); sqrt(A+B·k) has a domain singularity
+// just below k≈1. At k=1.0 exactly, A+B·1 = 1/TE², always positive and safe.
+// Absolute error stays a small fraction of the TimerGrace (0.5 s) across
+// realistic step counts.
 func gradientEstimate(steps int64) time.Duration {
 	kmax := float64(2 * steps)
 	if kmax < 2 {
