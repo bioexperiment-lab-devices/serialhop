@@ -100,6 +100,26 @@ func TestDispenseSuckbackInflatesSteps(t *testing.T) {
 	}
 }
 
+// TestDispensePlainForwardSelectsOpcode18: plain forward dispense (no
+// gradient, no suckback) must be issued as opcode 18 — the calibration-run
+// opcode whose end-of-run reply doubles as a hardware completion signal.
+// Completion handling for this path is exercised by the watcher tests.
+func TestDispensePlainForwardSelectsOpcode18(t *testing.T) {
+	f := newCalibratedFixture(t)
+	id := startDispense(t, f, `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`)
+	fr := f.frames()
+	n := len(fr)
+	if !frameEq(fr[n-2], 10, 0, 1, 50, 0) {
+		t.Fatalf("config frame: %v", fr[n-2])
+	}
+	if !frameEq(fr[n-1], 18, 0, 0, 7, 208) { // be32(2000) = 0 0 7 208
+		t.Fatalf("plain forward must use opcode 18: %v", fr[n-1])
+	}
+	if js := jobState(t, f, id); js["state"] != "running" {
+		t.Fatalf("job: %v", js)
+	}
+}
+
 func TestDispenseSuckbackCompletionEchoesActual(t *testing.T) {
 	f := newCalibratedFixture(t)
 	id := startDispense(t, f,
@@ -144,8 +164,11 @@ func TestDispenseGradient(t *testing.T) {
 
 func TestDispenseGradientDecreasingFlag(t *testing.T) {
 	f := newCalibratedFixture(t)
-	f.exec("dispense",
+	resp := f.exec("dispense",
 		`{"direction":"forward","volume_ml":1.0,"speed_profile":{"start_ml_min":5.0,"end_ml_min":0.5,"shape":"linear"}}`)
+	if resp.Status != "ok" {
+		t.Fatalf("gradient dispense: %+v", resp)
+	}
 	fr := f.frames()
 	if fr[len(fr)-2][4] != 21 {
 		t.Fatalf("decreasing profile must arm grad flag 21: %v", fr[len(fr)-2])
