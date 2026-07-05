@@ -210,6 +210,12 @@ func (d *Driver) requireCalibration() *device.CmdError {
 // Execute dispatches one JSON command (identify/get_job are session-served).
 func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage) (any, *device.CmdError) {
 	switch cmd {
+	case "ping":
+		return d.ping()
+	case "status":
+		return d.status()
+	case "get_calibration":
+		return d.getCalibration()
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
