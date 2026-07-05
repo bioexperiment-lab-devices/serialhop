@@ -7,10 +7,6 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
-// useWatcher gates the opcode-18 hardware-completion path; the watcher lands
-// in a follow-up task, until then plain forward dispenses run on the timer.
-const useWatcher = false
-
 type speedProfile struct {
 	StartMlMin float64 `json:"start_ml_min"`
 	EndMlMin   float64 `json:"end_ml_min"`
@@ -187,7 +183,7 @@ func (d *Driver) dispense(params json.RawMessage) (any, *device.CmdError) {
 	}
 	d.state = stateDispensing
 	gen := d.jobGen
-	if plan.opcode == 18 && useWatcher {
+	if plan.opcode == 18 {
 		d.startWatch(gen, plan.job.estimate)
 	} else {
 		d.armTimer(gen)
@@ -279,7 +275,3 @@ func (d *Driver) clearJob() {
 	d.state = stateIdle
 	d.jobGen++
 }
-
-// startWatch is implemented with the opcode-18 watcher (see watch.go, added
-// by a later task). The useWatcher gate keeps it unreachable until then.
-func (d *Driver) startWatch(gen int, estimate time.Duration) { d.armTimer(gen) }
