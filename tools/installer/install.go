@@ -2,14 +2,12 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
 	"time"
 
-	"github.com/bioexperiment-lab-devices/serialhop/internal/streamer"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/updater"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/winsvc"
 )
@@ -92,12 +90,7 @@ type Runner struct {
 	Launcher       launcher
 	DialSCM        scmDialer // may be nil; tests that don't exercise SCM leave it nil
 	BundledVersion string    // set by main from internal/version.Version
-	Payload        []byte    // set by main from the //go:embed payload (SerialHop.exe)
-	FFmpegPayload  []byte    // set by main from the //go:embed payload (ffmpeg.exe); may be empty in dev builds
-	// FFmpegSHA256 is the hex-encoded SHA-256 we expect FFmpegPayload to
-	// match. Production sets this to streamer.PinnedFFmpegBinarySHA256;
-	// tests set it to the SHA of their synthetic bytes.
-	FFmpegSHA256 string
+	Payload        []byte    // set by main from the //go:embed payload
 }
 
 // Result reports what happened so the UI (or stdout in silent mode) can
@@ -285,19 +278,6 @@ func (r *Runner) runInstallOrUpgrade(opts options, targetExe string, state State
 	}
 	slog.Info("install_or_upgrade_completed", "version", r.BundledVersion)
 
-	// Step 6.5: stage ffmpeg.exe next to SerialHop.exe with a SHA-256
-	// gate against streamer.PinnedFFmpegBinarySHA256. The bundled
-	// payload SHA must match; mismatch (e.g. someone replaced
-	// payload/ffmpeg.exe in the source tree) refuses the install. A
-	// missing payload (dev builds with -tags=production not used) is
-	// also refused so we never ship an installer that "succeeds" but
-	// leaves the panel with no ffmpeg.
-	if err := r.stageFFmpeg(opts.InstallDir); err != nil {
-		res.Err = err
-		res.ExitCode = 1
-		return res
-	}
-
 	// Steps 7-8: shortcut + launch (non-fatal on failure).
 	r.maybeShortcut(opts, targetExe, &res)
 	r.maybeLaunch(opts, targetExe, &res)
@@ -356,48 +336,4 @@ func (r *Runner) maybeLaunch(opts options, targetExe string, res *Result) {
 // extracted so tests can override it via the var if needed.
 func publicDesktopShortcutPath() string {
 	return `C:\Users\Public\Desktop\SerialHop.lnk`
-}
-
-// stageFFmpeg writes the bundled ffmpeg.exe to <installDir>/ffmpeg.exe
-// after verifying its SHA-256 matches the streamer package's pin.
-//
-// Failure modes:
-//   - Empty FFmpegPayload (dev build never set it): refuse.
-//   - SHA mismatch (payload was tampered with): refuse.
-//   - Filesystem error writing the file: refuse.
-//
-// We refuse rather than warn because shipping an installer that
-// "succeeds" without ffmpeg.exe leaves the operator with a panel that
-// silently can't stream — a worse failure mode than a hard refusal at
-// install time.
-func (r *Runner) stageFFmpeg(installDir string) error {
-	if len(r.FFmpegPayload) == 0 {
-		return errors.New("bundled ffmpeg.exe is empty; this installer was built without the streaming payload")
-	}
-	want := r.FFmpegSHA256
-	if want == "" {
-		want = streamer.PinnedFFmpegBinarySHA256
-	}
-	got := hex.EncodeToString(sha256Sum(r.FFmpegPayload))
-	if got != want {
-		return fmt.Errorf("bundled ffmpeg.exe SHA-256 mismatch:\n  got:  %s\n  want: %s", got, want)
-	}
-	dest := filepath.Join(installDir, "ffmpeg.exe")
-	if err := r.FS.WriteFile(dest, r.FFmpegPayload, 0o755); err != nil {
-		return fmt.Errorf("write ffmpeg.exe to %s: %w", dest, err)
-	}
-	slog.Info("ffmpeg_staged",
-		"path", dest,
-		"size", len(r.FFmpegPayload),
-		"build", streamer.PinnedFFmpegBuildLabel,
-		"sha256", got)
-	return nil
-}
-
-// sha256Sum is a tiny adapter so stageFFmpeg can use the same SHA helper
-// pattern as the SerialHop self-check above without re-importing the
-// crypto package locally.
-func sha256Sum(b []byte) []byte {
-	sum := sha256.Sum256(b)
-	return sum[:]
 }

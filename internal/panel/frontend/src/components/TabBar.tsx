@@ -1,13 +1,9 @@
-type TabId = "status" | "config" | "devices" | "ports" | "cameras" | "logs";
+type TabId = "status" | "config" | "devices" | "ports" | "logs";
 
 interface TabBarProps {
   active: TabId;
   dirty?: boolean;
   onChange: (id: TabId) => void;
-  // hiddenTabs filters tabs out of the rendered bar entirely. Used to
-  // gate experimental tabs (e.g. "cameras") behind YAML config flags so
-  // users on the stable feature set don't see them.
-  hiddenTabs?: TabId[];
 }
 
 const TABS: { id: TabId; label: string }[] = [
@@ -15,15 +11,13 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "config", label: "Config" },
   { id: "devices", label: "Devices" },
   { id: "ports", label: "Ports" },
-  { id: "cameras", label: "Cameras" },
   { id: "logs", label: "Logs" },
 ];
 
-export function TabBar({ active, dirty, onChange, hiddenTabs }: TabBarProps) {
-  const hidden = new Set(hiddenTabs ?? []);
+export function TabBar({ active, dirty, onChange }: TabBarProps) {
   return (
     <div className="shp-tabs">
-      {TABS.filter(t => !hidden.has(t.id)).map(t => (
+      {TABS.map(t => (
         <button
           key={t.id}
           className="shp-tab"

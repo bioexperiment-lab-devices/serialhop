@@ -32,7 +32,7 @@ func rawSrv(t *testing.T, reg *registry.Registry, opener serial.Opener, enabled 
 		t.Fatalf("power.New: %v", err)
 	}
 	t.Cleanup(func() { _ = ka.Close() })
-	return New(reg, fakeDiscoverFn(nil, nil), opener, enabled, nil, false, ka, nil).Handler()
+	return New(reg, fakeDiscoverFn(nil, nil), opener, enabled, nil, false, ka).Handler()
 }
 
 func TestGetSerialPorts_DisabledReturns403(t *testing.T) {
