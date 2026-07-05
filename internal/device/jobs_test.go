@@ -52,6 +52,29 @@ func TestJobsLifecycleWithPause(t *testing.T) {
 	}
 }
 
+func TestJobsTerminalSnapshotFrozenAfterCompletion(t *testing.T) {
+	c := NewFakeClock(time.Unix(0, 0))
+	j := NewJobs(c)
+	if _, cerr := j.Start("dispense", 100*time.Second); cerr != nil {
+		t.Fatal(cerr)
+	}
+	c.Advance(40 * time.Second)
+	done := j.Complete(map[string]any{"dispensed_ml": 10.0})
+	if done.ElapsedS != 40 || done.Progress != 1.0 {
+		t.Fatalf("complete: %+v", done)
+	}
+
+	c.Advance(60 * time.Second) // long after completion — must not keep counting
+
+	got := j.Get(done.ID)
+	if got == nil {
+		t.Fatal("completed job must remain in history")
+	}
+	if got.ElapsedS != 40 || got.Progress != 1.0 {
+		t.Fatalf("terminal snapshot must stay frozen: %+v", got)
+	}
+}
+
 func TestJobsProgressClampedBelowOneWhileRunning(t *testing.T) {
 	c := NewFakeClock(time.Unix(0, 0))
 	j := NewJobs(c)

@@ -1,4 +1,3 @@
-// internal/device/transact.go
 package device
 
 import (

@@ -1,4 +1,3 @@
-// internal/device/transact_test.go
 package device
 
 import (

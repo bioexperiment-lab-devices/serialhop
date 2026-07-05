@@ -1,4 +1,3 @@
-// internal/device/session_test.go
 package device_test
 
 import (
@@ -238,5 +237,19 @@ func TestSessionCloseDetachesDriver(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error.Message, "closed") {
 		t.Fatalf("message should say session closed: %+v", resp.Error)
+	}
+}
+
+func TestSessionCloseDetachesDriverEvenWhenUnreachable(t *testing.T) {
+	f := newFixture(t, func(cfg *device.SessionConfig, drv *stubDriver) {
+		drv.attachErr = context.DeadlineExceeded // attach never succeeds
+	})
+	waitFor(t, "first attach attempt", func() bool { return f.drv.attaches.Load() >= 1 })
+	if f.s.Connected() {
+		t.Fatal("must not report connected")
+	}
+	f.s.Close()
+	if !f.drv.detached.Load() {
+		t.Fatal("Detach must be called on Close even when the session never attached")
 	}
 }

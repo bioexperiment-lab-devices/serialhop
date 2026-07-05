@@ -1,4 +1,3 @@
-// internal/device/session.go
 package device
 
 import (
@@ -99,14 +98,21 @@ func (s *Session) Close() {
 
 func (s *Session) loop(ctx context.Context) {
 	defer close(s.done)
-	s.attach(s.cfg.ProbeReply)
+	// Arm the heartbeat timer before attach() so a test that advances the
+	// FakeClock immediately after Start can never race attach's publish of
+	// connected=true against the waiter's registration (a tick firing mid-
+	// attach is harmless: the connected guard below skips Tick).
 	heartbeat := s.cfg.Clock.After(HeartbeatInterval)
+	s.attach(s.cfg.ProbeReply)
 	for {
 		select {
 		case <-ctx.Done():
-			if s.connected.Load() {
-				s.driver.Detach()
-			}
+			// Detach unconditionally: even a session that never reached
+			// "connected" (or that went unreachable before shutdown) still
+			// needs its persistence hook run. Detach doing serial I/O on a
+			// dead port just fails harmlessly.
+			s.driver.Detach()
+			s.connected.Store(false)
 			if s.conn != nil {
 				_ = s.conn.Close()
 			}
@@ -145,7 +151,7 @@ func (s *Session) Execute(ctx context.Context, req Request) Response {
 	select {
 	case s.mail <- mailMsg{req: req, resp: resp}:
 	case <-s.done:
-		return Err(req.ID, &CmdError{Code: CodeDeviceUnreachable, Message: "device session closed"})
+		return Err(req.ID, errUnreachable("device session closed"))
 	case <-ctx.Done():
 		return Err(req.ID, ErrInternal("request cancelled"))
 	}
@@ -153,7 +159,7 @@ func (s *Session) Execute(ctx context.Context, req Request) Response {
 	case r := <-resp:
 		return r
 	case <-s.done:
-		return Err(req.ID, &CmdError{Code: CodeDeviceUnreachable, Message: "device session closed"})
+		return Err(req.ID, errUnreachable("device session closed"))
 	case <-ctx.Done():
 		return Err(req.ID, ErrInternal("request cancelled"))
 	}
@@ -161,7 +167,7 @@ func (s *Session) Execute(ctx context.Context, req Request) Response {
 
 func (s *Session) handle(ctx context.Context, req Request) Response {
 	if !s.connected.Load() {
-		return Err(req.ID, &CmdError{Code: CodeDeviceUnreachable, Message: "device is not responding"})
+		return Err(req.ID, errUnreachable("device is not responding"))
 	}
 	switch req.Cmd {
 	case "identify":
@@ -228,6 +234,14 @@ func (s *Session) Store(key string) *Store {
 func (s *Session) SetInfo(info Info) { s.info.Store(&info) }
 
 // Conn exposes the raw port for watcher-goroutine reads (pump opcode-18).
+//
+// Sound usage: call Conn() ON the session goroutine (e.g. right before
+// s.Go(...)) and hand the returned value into the watcher closure as a
+// captured variable — do not call Conn() from inside the watcher itself.
+// A reattach swaps s.conn for a new port and closes the old one first,
+// which unblocks any watcher still blocked reading the stale port with
+// ErrClosed; a watcher that called Conn() itself instead of using the
+// captured value could otherwise race that swap.
 func (s *Session) Conn() serial.Port { return s.conn }
 
 // HoldReader marks the port's read side as owned by a watcher goroutine;
@@ -237,6 +251,11 @@ func (s *Session) HoldReader()    { s.readerHeld = true }
 func (s *Session) ReleaseReader() { s.readerHeld = false }
 
 // Post schedules fn on the session goroutine. Thread-safe.
+//
+// The posts buffer is 64 deep; do not Post unboundedly from loop context —
+// once it fills, a Post blocks, and since the loop is the only reader that
+// drains it, a Post made from loop context (directly or via a callback the
+// loop invokes) deadlocks the loop against itself.
 func (s *Session) Post(fn func()) {
 	select {
 	case s.posts <- fn:
@@ -276,11 +295,30 @@ func (s *Session) Transact(frame []byte, replyLen int, timeout time.Duration) ([
 	if replyLen > 0 && s.readerHeld {
 		return nil, ErrReaderHeld
 	}
+	if replyLen == 0 && s.readerHeld {
+		// A watcher goroutine is blocked reading the port (e.g. pump
+		// opcode-18 completion reply) while we hold the reader for a
+		// write-only command. transact()'s Drain would steal the watcher's
+		// reply bytes and its SetReadTimeout would yank the watcher's
+		// timeout out from under it — so bypass the shared discipline
+		// entirely and write the frame directly.
+		if _, err := s.conn.Write(frame); err != nil {
+			s.markUnreachable(err)
+			return nil, err
+		}
+		return nil, nil
+	}
 	reply, err := transact(s.conn, frame, replyLen, timeout)
 	if err != nil {
 		s.markUnreachable(err)
 	}
 	return reply, err
+}
+
+// errUnreachable builds the device_unreachable CmdError used for every
+// session-level "can't talk to the device right now" response.
+func errUnreachable(msg string) *CmdError {
+	return &CmdError{Code: CodeDeviceUnreachable, Message: msg}
 }
 
 // markUnreachable transitions ready → unreachable. No-op when already

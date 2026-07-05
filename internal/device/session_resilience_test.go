@@ -1,7 +1,7 @@
-// internal/device/session_resilience_test.go
 package device_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -146,6 +146,58 @@ func TestHoldReaderBlocksReplyExpectingTransact(t *testing.T) {
 	}
 	if f.s.Connected() != true {
 		t.Fatal("ErrReaderHeld must not flip the session unreachable")
+	}
+}
+
+// TestTransactWriteOnlyWhileReaderHeldDoesNotDrainRX is the regression test
+// for the reader-held write path: a write-only Transact issued while a
+// watcher holds the reader must not touch RX (Drain) or the read timeout
+// (SetReadTimeout) — those belong to the watcher's in-flight read. DrainWindow
+// is set non-zero specifically so the bug (falling through to transact(),
+// which calls p.Drain) would be observable: it would wipe the 4 bytes below
+// before the confirmation read gets a chance to see them.
+func TestTransactWriteOnlyWhileReaderHeldDoesNotDrainRX(t *testing.T) {
+	oldPB, oldDW := device.PerByteTimeout, device.DrainWindow
+	device.PerByteTimeout = 10 * time.Millisecond
+	device.DrainWindow = 30 * time.Millisecond
+	t.Cleanup(func() { device.PerByteTimeout, device.DrainWindow = oldPB, oldDW })
+
+	preFed := []byte{9, 9, 9, 9} // stand-in for the watcher's pending reply
+	writeFrame := []byte{18, 0, 0, 0, 0}
+
+	f := newFixture(t, func(cfg *device.SessionConfig, drv *stubDriver) {
+		drv.exec = func(cmd string, params json.RawMessage) (any, *device.CmdError) {
+			drv.s.HoldReader()
+			_, err := drv.s.Transact(writeFrame, 0, time.Second)
+			drv.s.ReleaseReader()
+			if err != nil {
+				return nil, device.ErrInternal("write-only must pass: " + err.Error())
+			}
+			// Confirm RX survived by reading it back. Zero the drain window
+			// first: its only job above was to make a Drain call during the
+			// write-only transact observable, not to re-drain this
+			// now-uncontested read.
+			device.DrainWindow = 0
+			reply, err := drv.s.Transact([]byte{1, 2, 3, 0, 0}, 4, time.Second)
+			if err != nil {
+				return nil, device.ErrHardware(err.Error())
+			}
+			return reply, nil
+		}
+	})
+	waitFor(t, "attach", f.s.Connected)
+	f.port.Feed(preFed)
+
+	resp := f.s.Execute(context.Background(), device.Request{ID: "t", Cmd: "tx"})
+	if resp.Status != "ok" {
+		t.Fatalf("resp: %+v", resp)
+	}
+	got, ok := resp.Result.([]byte)
+	if !ok || !bytes.Equal(got, preFed) {
+		t.Fatalf("pre-fed bytes must survive the write-only transact while reader held: got %#v", resp.Result)
+	}
+	if !bytes.Contains(f.port.Written(), writeFrame) {
+		t.Fatalf("write frame missing from port.Written(): %v", f.port.Written())
 	}
 }
 

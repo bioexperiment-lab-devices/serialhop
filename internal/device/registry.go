@@ -22,6 +22,8 @@ type Driver interface {
 	// Tick runs ~1/s while attached: canaries, monitoring schedulers.
 	Tick(now time.Time)
 	// Detach persists state and drops watchers; the session closes the port.
+	// Called unconditionally on session close, even if the device was
+	// unreachable at shutdown — implementations must tolerate a dead port.
 	Detach()
 }
 
