@@ -14,6 +14,12 @@ import (
 // HeartbeatInterval is how often an attached driver's Tick runs.
 var HeartbeatInterval = time.Second
 
+// Reattach backoff bounds (doubling from base to max).
+var (
+	ReattachBase = 5 * time.Second
+	ReattachMax  = 60 * time.Second
+)
+
 // SessionConfig carries everything a Session needs at construction.
 type SessionConfig struct {
 	ID       string
@@ -263,5 +269,74 @@ func (s *Session) Go(fn func()) {
 	}()
 }
 
-// scheduleReattach and Transact are implemented in the resilience task.
-func (s *Session) scheduleReattach() {}
+// Transact runs one serial transaction with the shared discipline. A
+// double failure flips the session to unreachable, fails the active job,
+// and schedules a backoff reattach. Session-goroutine only.
+func (s *Session) Transact(frame []byte, replyLen int, timeout time.Duration) ([]byte, error) {
+	if replyLen > 0 && s.readerHeld {
+		return nil, ErrReaderHeld
+	}
+	reply, err := transact(s.conn, frame, replyLen, timeout)
+	if err != nil {
+		s.markUnreachable(err)
+	}
+	return reply, err
+}
+
+// markUnreachable transitions ready → unreachable. No-op when already
+// unreachable or still attaching: those paths own their own retries.
+func (s *Session) markUnreachable(cause error) {
+	if !s.connected.Load() {
+		return
+	}
+	slog.Warn("device unreachable", "device", s.cfg.ID, "port", s.cfg.PortName, "err", cause)
+	s.connected.Store(false)
+	s.readerHeld = false
+	if s.jobs.Active() != nil {
+		s.jobs.Fail(ErrHardware("device became unreachable mid-job"))
+	}
+	s.scheduleReattach()
+}
+
+func (s *Session) scheduleReattach() {
+	if s.backoff == 0 {
+		s.backoff = ReattachBase
+	} else {
+		s.backoff *= 2
+		if s.backoff > ReattachMax {
+			s.backoff = ReattachMax
+		}
+	}
+	s.After(s.backoff, s.tryReattach)
+}
+
+// tryReattach reopens the port, re-verifies device identity, and re-runs
+// driver.Attach. Loop-only (scheduled via After).
+func (s *Session) tryReattach() {
+	if s.connected.Load() {
+		return
+	}
+	if s.conn != nil {
+		_ = s.conn.Close()
+	}
+	conn, err := s.cfg.Opener.Open(s.cfg.PortName)
+	if err != nil {
+		slog.Warn("device reattach: open failed", "device", s.cfg.ID, "err", err)
+		s.scheduleReattach()
+		return
+	}
+	s.conn = conn
+	reply, err := s.cfg.Reprobe(conn)
+	if err != nil {
+		slog.Warn("device reattach: probe failed", "device", s.cfg.ID, "err", err)
+		s.scheduleReattach()
+		return
+	}
+	if len(reply) == 0 || reply[0] != s.cfg.TypeCode {
+		slog.Warn("device reattach: identity changed on port",
+			"device", s.cfg.ID, "port", s.cfg.PortName, "reply", reply)
+		s.scheduleReattach()
+		return
+	}
+	s.attach(reply)
+}
