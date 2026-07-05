@@ -57,13 +57,13 @@ func readCompletion(port serial.Port, stop <-chan struct{}) ([]byte, error) {
 	}
 }
 
-// watchEvent handles the watcher's report on the loop; its first act is
-// releasing the reader (decision 3: release happens on the loop, via the
-// watcher's Post). The release is guarded by watch identity: a stale event
-// from a watcher already torn down by stop/Detach must not release a
-// SUCCESSOR watcher's hold — abandonWatch released that stale watcher's
-// hold itself. Stale events and jobs already failed by an unreachable
-// transition (decision 2) are no-ops.
+// watchEvent handles the watcher's report on the loop; after the watch-identity
+// guard, its first act is releasing the reader (decision 3: release happens on
+// the loop, via the watcher's Post). The release is guarded by watch identity:
+// a stale event from a watcher already torn down by stop/Detach must not release
+// a SUCCESSOR watcher's hold — abandonWatch released that stale watcher's hold
+// itself. Stale events and jobs already failed by an unreachable transition
+// (decision 2) are no-ops.
 func (d *Driver) watchEvent(h *watchHandle, gen int, reply []byte, err error) {
 	if d.watch != h {
 		return // consumed by stop/Detach; abandonWatch/shutdown owned the release

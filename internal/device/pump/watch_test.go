@@ -3,6 +3,8 @@ package pump_test
 import (
 	"testing"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/pump"
 )
 
 // TestDispenseForwardUsesOpcode18AndMeasuredDuration: plain forward dispense
@@ -59,8 +61,8 @@ func TestWatcherServesPingFromMemoryMidJob(t *testing.T) {
 func TestWatchdogTimeoutFailsJob(t *testing.T) {
 	f := newCalibratedFixture(t)
 	id := startDispense(t, f, `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`)
-	f.clock.Advance(35 * time.Second) // 20 × 1.5 + 5
-	time.Sleep(20 * time.Millisecond)
+	f.clock.Advance(35 * time.Second)  // 20 × 1.5 + 5
+	time.Sleep(4 * pump.WatchPoll)     // give the watchdog→stop→watcher-exit chain time to finish (≥ one WatchPoll of watcher latency) before feeding the disarm reply — a live watcher would eat it as a completion reply
 	f.port.Feed([]byte{10, 26, 25, 1}) // the post-timeout disarm ping reply
 	waitFor(t, "watchdog failure", func() bool {
 		return jobState(t, f, id)["state"] == "failed"
