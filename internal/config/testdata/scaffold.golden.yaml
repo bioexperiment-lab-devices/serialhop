@@ -44,13 +44,3 @@ flashing:
   keep_n: 10                      # retain this many backups per COM port;
                                   # oldest pruned after each completed flash.
                                   # 0 = keep all.
-
-experimental:
-  # Opt-in feature flags. Not surfaced in the panel's Config tab; edit
-  # this file directly if you want to try them. Default off because
-  # these features may change shape between releases.
-  camera_streaming: false         # show the Cameras tab and enable the
-                                  # SerialHop side of the lab-bridge video
-                                  # streaming protocol. See
-                                  # docs/superpowers/specs/2026-05-24-camera-
-                                  # streaming-design.md.

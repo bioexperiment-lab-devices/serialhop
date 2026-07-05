@@ -6,14 +6,13 @@ import (
 )
 
 type Config struct {
-	LabBridge    LabBridgeConfig    `yaml:"lab_bridge" json:"lab_bridge"`
-	Rest         RestConfig         `yaml:"rest" json:"rest"`
-	Discovery    DiscoveryConfig    `yaml:"discovery" json:"discovery"`
-	Log          LogConfig          `yaml:"log" json:"log"`
-	RawSerial    RawSerialConfig    `yaml:"raw_serial" json:"raw_serial"`
-	AutoUpdate   AutoUpdateConfig   `yaml:"auto_update" json:"auto_update"`
-	Flashing     FlashingConfig     `yaml:"flashing" json:"flashing"`
-	Experimental ExperimentalConfig `yaml:"experimental" json:"experimental"`
+	LabBridge  LabBridgeConfig  `yaml:"lab_bridge" json:"lab_bridge"`
+	Rest       RestConfig       `yaml:"rest" json:"rest"`
+	Discovery  DiscoveryConfig  `yaml:"discovery" json:"discovery"`
+	Log        LogConfig        `yaml:"log" json:"log"`
+	RawSerial  RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
+	AutoUpdate AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
+	Flashing   FlashingConfig   `yaml:"flashing" json:"flashing"`
 }
 
 type LabBridgeConfig struct {
@@ -50,25 +49,6 @@ type FlashingConfig struct {
 	KeepN     int    `yaml:"keep_n" json:"keep_n"`
 }
 
-// ExperimentalConfig gates features that are not yet considered stable.
-// All fields default to false; users opt in by editing the YAML config
-// directly. These fields are intentionally NOT exposed in the panel's
-// Config tab — they're YAML-only by design so casual users don't toggle
-// them.
-type ExperimentalConfig struct {
-	// CameraStreaming enables the SerialHop side of the lab-bridge
-	// video streaming protocol. When true, the panel:
-	//   - shows the Cameras tab,
-	//   - starts the streamer subsystem (localhost listener, orphan
-	//     ffmpeg scan, panel-endpoint.json), and
-	//   - the service's /api/translations* proxy starts seeing the
-	//     panel and forwards requests.
-	// When false (default) the Cameras tab is hidden and the streamer
-	// subsystem never binds its listener, so the service-side proxy
-	// transparently reports "no translations".
-	CameraStreaming bool `yaml:"camera_streaming" json:"camera_streaming"`
-}
-
 func Default() Config {
 	return Config{
 		LabBridge: LabBridgeConfig{
@@ -82,11 +62,10 @@ func Default() Config {
 			Exclude:          []string{},
 			PostOpenSettleMs: 2000,
 		},
-		Log:          LogConfig{Level: "info"},
-		RawSerial:    RawSerialConfig{Enabled: false},
-		AutoUpdate:   AutoUpdateConfig{Enabled: true},
-		Flashing:     FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
-		Experimental: ExperimentalConfig{CameraStreaming: false},
+		Log:        LogConfig{Level: "info"},
+		RawSerial:  RawSerialConfig{Enabled: false},
+		AutoUpdate: AutoUpdateConfig{Enabled: true},
+		Flashing:   FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
 	}
 }
 
@@ -136,16 +115,6 @@ flashing:
   keep_n: 10                      # retain this many backups per COM port;
                                   # oldest pruned after each completed flash.
                                   # 0 = keep all.
-
-experimental:
-  # Opt-in feature flags. Not surfaced in the panel's Config tab; edit
-  # this file directly if you want to try them. Default off because
-  # these features may change shape between releases.
-  camera_streaming: false         # show the Cameras tab and enable the
-                                  # SerialHop side of the lab-bridge video
-                                  # streaming protocol. See
-                                  # docs/superpowers/specs/2026-05-24-camera-
-                                  # streaming-design.md.
 `
 
 func WriteScaffold(w io.Writer) error {

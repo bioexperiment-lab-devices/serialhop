@@ -1,3 +1,0 @@
-[dshow @ 000001a2b3c4d000] DirectShow video devices (some may be both video and audio devices)
-[dshow @ 000001a2b3c4d000] DirectShow audio devices
-dummy: Immediate exit requested

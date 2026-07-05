@@ -35,33 +35,6 @@ func TestDefaultConfig_RawSerialDisabled(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_ExperimentalDisabled(t *testing.T) {
-	c := Default()
-	if c.Experimental.CameraStreaming {
-		t.Errorf("experimental.camera_streaming: got true, want false (must default off)")
-	}
-}
-
-func TestLoad_ExperimentalCameraStreamingFromYAML(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	doc := []byte(`
-lab_bridge: { host: "1.2.3.4", user: "u", pass: "p" }
-experimental:
-  camera_streaming: true
-`)
-	if err := os.WriteFile(path, doc, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	c, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !c.Experimental.CameraStreaming {
-		t.Fatalf("experimental.camera_streaming did not round-trip from YAML; got %+v", c.Experimental)
-	}
-}
-
 func TestDefaultConfig_PostOpenSettle(t *testing.T) {
 	c := Default()
 	if c.Discovery.PostOpenSettleMs != 2000 {

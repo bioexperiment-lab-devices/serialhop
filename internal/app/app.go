@@ -82,8 +82,7 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		return fmt.Errorf("power.New: %w", err)
 	}
 	defer func() { _ = keepAwake.Close() }()
-	translationsProxy := api.NewTranslationsProxy(paths.PanelEndpointPath())
-	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, fl, flashingEnabled, keepAwake, translationsProxy)
+	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, fl, flashingEnabled, keepAwake)
 
 	chiselDone := make(chan error, 1)
 	go func() {

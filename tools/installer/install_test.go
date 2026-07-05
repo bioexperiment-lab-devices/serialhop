@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -148,7 +147,6 @@ func (f *fakeLauncher) Launch(path string) error {
 // fakeInstaller assembles a Runner with all fakes wired up. Helper for tests.
 func newTestRunner(t *testing.T) *Runner {
 	t.Helper()
-	ffmpegBytes := []byte("fake ffmpeg payload for tests")
 	return &Runner{
 		FS:             newFakeFS(),
 		VersionReader:  &fakeVersionReader{versions: map[string]string{}},
@@ -157,8 +155,6 @@ func newTestRunner(t *testing.T) *Runner {
 		// SCM and DialSCM are stubbed by tests that exercise the SCM path.
 		BundledVersion: "0.7.0",
 		Payload:        []byte("payload bytes v0.7.0"),
-		FFmpegPayload:  ffmpegBytes,
-		FFmpegSHA256:   hex.EncodeToString(sha256Sum(ffmpegBytes)),
 	}
 }
 
