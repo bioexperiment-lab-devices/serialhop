@@ -83,20 +83,23 @@ func (d *Driver) status() (any, *device.CmdError) {
 
 	switch d.state {
 	case stateRotating:
-		res.Direction = &d.rotDirection
+		dir := d.rotDirection
+		res.Direction = &dir
 		if d.rotSpeedML > 0 {
 			v := d.rotSpeedML
 			res.SpeedMlMin = &v
 		}
 	case stateDispensing, stateCalibrating, statePaused:
 		if d.job != nil {
-			res.Direction = &d.job.direction
+			dir := d.job.direction
+			res.Direction = &dir
 			if d.job.speedML > 0 {
 				v := d.job.speedML
 				res.SpeedMlMin = &v
 			}
 		} else if d.pausedFrom == stateRotating {
-			res.Direction = &d.rotDirection
+			dir := d.rotDirection
+			res.Direction = &dir
 			if d.rotSpeedML > 0 {
 				v := d.rotSpeedML
 				res.SpeedMlMin = &v
