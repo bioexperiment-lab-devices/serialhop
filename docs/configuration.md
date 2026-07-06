@@ -61,7 +61,7 @@ When SerialHop opens a serial port, many Arduino-class boards auto-reset on DTR 
 
 ### Turn on verbose logging for troubleshooting
 
-Change **log → Level** (`log.level`) from `info` to `debug`. Save & restart. The Logs tab will now show probe-by-probe details, request/response byte arrays for serial commands, and other low-level events. Set it back to `info` when you're done — `debug` is noisy.
+Change **log → Level** (`log.level`) from `info` to `debug`. Save & restart. The Logs tab will now show probe-by-probe details (including the raw byte arrays discovery sends/receives while identifying devices) and other low-level events. Set it back to `info` when you're done — `debug` is noisy.
 
 ### Enable firmware flashing
 
