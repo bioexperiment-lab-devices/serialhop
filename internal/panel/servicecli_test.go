@@ -36,8 +36,8 @@ func seedCache(t *testing.T, port int) string {
 
 func TestServiceCli_GetDevices_OK(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/devices" {
-			t.Errorf("path: got %s, want /devices", r.URL.Path)
+		if r.URL.Path != "/api/v1/devices" {
+			t.Errorf("path: got %s, want /api/v1/devices", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(api.DevicesResponse{
 			Devices: []api.DeviceDTO{{ID: "pump_1", Type: "pump", Port: "COM5"}},
@@ -95,7 +95,7 @@ func TestServiceCli_GetDevices_ConnectionRefusedReturnsServiceDown(t *testing.T)
 
 func TestServiceCli_Discover_PostsToDiscover(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/discover" {
+		if r.Method != "POST" || r.URL.Path != "/api/v1/discover" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(api.DevicesResponse{Devices: []api.DeviceDTO{}})

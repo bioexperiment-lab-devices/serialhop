@@ -31,9 +31,18 @@ export const defaultConfig: ConfigShape = {
 };
 
 export const fakeDevices = [
-  { id: "petri-A", type: "Petri Camera", type_code: 1, port: "COM3" },
-  { id: "incubator-B", type: "Incubator", type_code: 2, port: "COM4" },
-  { id: "balance-C", type: "Balance", type_code: 3, port: "COM7" },
+  {
+    id: "petri-A", type: "Petri Camera", port: "COM3", connected: true,
+    identify: { device_type: "petri_camera", model: "PetriCam v2", serial: "PC-1001", firmware_version: "1.4.0", protocol_version: "1.0", capabilities: {} },
+  },
+  {
+    id: "incubator-B", type: "Incubator", port: "COM4", connected: true,
+    identify: { device_type: "incubator", model: "IncuBox 3000", serial: "IB-2044", firmware_version: "2.1.3", protocol_version: "1.0", capabilities: {} },
+  },
+  {
+    id: "balance-C", type: "Balance", port: "COM7", connected: false,
+    identify: null,
+  },
 ];
 
 export const fakePorts = [
