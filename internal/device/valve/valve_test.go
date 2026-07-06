@@ -133,7 +133,7 @@ func (f *fixture) resultMap(resp device.Response) map[string]any {
 // readState decodes the port-keyed persistent state file.
 func readState(t *testing.T, dir string) map[string]any {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(dir, "valve-COM9.json"))
+	b, err := os.ReadFile(filepath.Join(dir, "valve-COM9.json")) // #nosec G304 -- dir is t.TempDir(), filename is a fixed literal
 	if err != nil {
 		t.Fatal(err)
 	}
