@@ -12,7 +12,7 @@
 //
 // All composed-path getters (ConfigPath, LogsDir, ServiceLogPath,
 // StderrLogPath, PanelErrorLogPath, PanelUpdateStagingDir, PanelLogPath,
-// StateDir, PanelLogOffsetPath) return "" when their base directory
+// StateDir, DeviceStateDir, PanelLogOffsetPath) return "" when their base directory
 // returns "" (i.e., the underlying env var is unset and no test override
 // is in effect). Callers can detect "no directory available" with a
 // single empty-string check.

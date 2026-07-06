@@ -137,7 +137,7 @@ Releases device sessions in the registry. Always available — no config gate.
 <details>
 <summary><b>Ports</b> — <code>GET /serial/ports/detailed</code></summary>
 
-Always available and is what the panel's Ports tab uses:
+Always available; this is what the panel's Ports tab uses:
 
 ```json
 {

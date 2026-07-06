@@ -46,7 +46,7 @@ func (r *Registry) Replace(sessions []*device.Session) {
 		r.byID[s.ID()] = s
 	}
 	if sessions != nil {
-		now := time.Now()
+		now := time.Now().UTC()
 		r.discoveredAt = &now
 	}
 	r.mu.Unlock()
