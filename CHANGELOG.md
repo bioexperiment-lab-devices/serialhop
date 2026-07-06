@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v1.2.0...v2.0.0) (2026-07-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* the raw-byte device API is removed. Deleted endpoints: `GET /devices`, `POST /discover`, `POST /devices/{id}/command` (raw bytes), `GET /serial/ports`, `POST /serial/ports/{port}/command`. The `raw_serial.enabled` config option is gone (stale keys in existing configs are ignored). Device control now goes through `POST /api/v1/devices/{id}/command` with the per-device JSON protocol; the device list moved to `GET /api/v1/devices` with a new entry shape (`connected`, `identify` added; `type_code` removed).
+
+### Features
+
+* replace raw-byte device API with per-device JSON protocol ([#184](https://github.com/bioexperiment-lab-devices/serialhop/issues/184)) ([fd802da](https://github.com/bioexperiment-lab-devices/serialhop/commit/fd802da26ab13161d452442e8024779a5e2be2ef))
+
 ## [1.2.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v1.1.0...v1.2.0) (2026-07-06)
 
 
