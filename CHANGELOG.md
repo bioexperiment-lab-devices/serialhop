@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v1.1.0...v1.2.0) (2026-07-06)
+
+
+### Features
+
+* add densitometer device driver ([#182](https://github.com/bioexperiment-lab-devices/serialhop/issues/182)) ([f31742d](https://github.com/bioexperiment-lab-devices/serialhop/commit/f31742d8e7d9c11501f64555bad2d5a0132ea6e2))
+* add distribution valve device driver ([#183](https://github.com/bioexperiment-lab-devices/serialhop/issues/183)) ([3d41bd2](https://github.com/bioexperiment-lab-devices/serialhop/commit/3d41bd202fb64d576e4892f562c7d344f4c9d8e6))
+* add pump device driver ([#179](https://github.com/bioexperiment-lab-devices/serialhop/issues/179)) ([af9ed16](https://github.com/bioexperiment-lab-devices/serialhop/commit/af9ed16e5041a05159404dd6814ddbc283a8beee))
+
 ## [1.1.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v1.0.0...v1.1.0) (2026-07-05)
 
 
