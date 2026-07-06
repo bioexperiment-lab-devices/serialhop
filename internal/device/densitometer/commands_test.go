@@ -1,0 +1,222 @@
+package densitometer_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/densitometer"
+)
+
+func TestPingReturnsUptime(t *testing.T) {
+	f := newFixture(t)
+	f.clock.Advance(3 * time.Second)
+	f.port.Feed([]byte{70, 5, 27, 45}) // 71 2 3 4 0 → 70 5 T_int T_frac
+	resp := f.exec("ping", "")
+	if resp.Status != "ok" {
+		t.Fatalf("ping: %+v", resp)
+	}
+	m := f.resultMap(resp)
+	if m["uptime_ms"].(float64) < 2900 || m["uptime_ms"].(float64) > 3100 {
+		t.Fatalf("uptime_ms = %v, want ~3000", m["uptime_ms"])
+	}
+	if !frameEq(f.frames()[len(f.frames())-1], 71, 2, 3, 4, 0) {
+		t.Fatalf("ping frame missing: %v", f.frames())
+	}
+}
+
+func TestStatusIdleReadsLiveTemperature(t *testing.T) {
+	f := newFixture(t)
+	f.port.Feed([]byte{5, 5, 36, 98}) // 76 0 → temperature 36.98
+	f.port.Feed([]byte{5, 5, 0, 0})   // 76 2 → thermostat set-point 0 (disabled, in sync)
+	m := f.resultMap(f.exec("status", ""))
+	if m["state"] != "idle" {
+		t.Fatalf("state: %v", m)
+	}
+	if m["temperature_c"].(float64) < 36.9 || m["temperature_c"].(float64) > 37.05 {
+		t.Fatalf("temperature_c = %v", m["temperature_c"])
+	}
+	th := m["thermostat"].(map[string]any)
+	if th["enabled"] != false || th["heating"] != nil || th["cooling"] != nil {
+		t.Fatalf("thermostat block: %v", th)
+	}
+	cal := m["calibration"].(map[string]any)
+	if cal["blank"] != nil || cal["tube_correction"] != 1.0 {
+		t.Fatalf("calibration block: %v", cal)
+	}
+	if m["last_measurement"] != nil {
+		t.Fatalf("last_measurement must be null before any measurement: %v", m["last_measurement"])
+	}
+}
+
+func TestStatusIdleServesCachedTemperatureWhenLiveReadFails(t *testing.T) {
+	f := newFixture(t)
+	f.port.Feed([]byte{5, 5, 30, 0}) // 76 0 → temperature 30.00 (primes cache)
+	f.port.Feed([]byte{5, 5, 0, 0})  // 76 2 → thermostat set-point 0 (disabled, in sync)
+	m := f.resultMap(f.exec("status", ""))
+	if m["temperature_c"].(float64) != 30.0 {
+		t.Fatalf("priming status temperature_c = %v, want 30.0", m["temperature_c"])
+	}
+
+	// No replies fed this time: both the temperature and thermostat reads
+	// fail, so the idle branch must fall back to the cached temperature
+	// rather than leaving temperature_c at its zero value.
+	resp := f.exec("status", "")
+	if resp.Status != "ok" {
+		t.Fatalf("status: %+v", resp)
+	}
+	m2 := f.resultMap(resp)
+	if m2["temperature_c"].(float64) != 30.0 {
+		t.Fatalf("temperature_c = %v, want cached 30.0", m2["temperature_c"])
+	}
+}
+
+func TestStatusThermostatEnabledMirror(t *testing.T) {
+	f := newFixture(t)
+	feedThermSet(f.port, 37)
+	if resp := f.exec("set_thermostat", `{"enabled":true,"target_c":37}`); resp.Status != "ok" {
+		t.Fatalf("set: %+v", resp)
+	}
+	f.port.Feed([]byte{5, 5, 36, 98}) // temperature
+	f.port.Feed([]byte{5, 5, 37, 0})  // thermostat set-point 37 (in sync)
+	th := f.resultMap(f.exec("status", ""))["thermostat"].(map[string]any)
+	if th["enabled"] != true || th["target_c"] != 37.0 {
+		t.Fatalf("enabled mirror: %v", th)
+	}
+}
+
+func TestPingLivenessTransactFails(t *testing.T) {
+	f := newFixture(t)
+	// No reply fed: the liveness Transact (71 2 3 4 0) fails outright.
+	resp := f.exec("ping", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("ping: %+v", resp)
+	}
+}
+
+func TestPingUnexpectedReplyTypeCode(t *testing.T) {
+	f := newFixture(t)
+	f.port.Feed([]byte{99, 5, 27, 45}) // first byte != TypeCode(70)
+	resp := f.exec("ping", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("ping: %+v", resp)
+	}
+}
+
+func TestSetTubeCorrection(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, withStateDir(dir))
+	m := f.resultMap(f.exec("set_tube_correction", `{"factor":1.03}`))
+	if m["tube_correction"] != 1.03 {
+		t.Fatalf("result: %v", m)
+	}
+	st := device.NewStore(dir, "densitometer-25-006")
+	var ps struct {
+		TubeCorrection float64 `json:"tube_correction"`
+	}
+	if _, err := st.Load(&ps); err != nil || ps.TubeCorrection != 1.03 {
+		t.Fatalf("tube correction not persisted: %v err=%v", ps.TubeCorrection, err)
+	}
+}
+
+func TestSetTubeCorrectionRange(t *testing.T) {
+	f := newFixture(t)
+	for _, p := range []string{`{"factor":0.4}`, `{"factor":2.1}`} {
+		resp := f.exec("set_tube_correction", p)
+		if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+			t.Fatalf("%s: %+v", p, resp)
+		}
+	}
+}
+
+func TestCalibrateTubeNoMeasurement(t *testing.T) {
+	f := newFixture(t)
+	resp := f.exec("calibrate_tube", `{"reference_absorbance":0.5}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
+		t.Fatalf("calibrate_tube without measurement: %+v", resp)
+	}
+}
+
+func TestCalibrateTubeFromLastMeasurement(t *testing.T) {
+	f := newFixture(t)
+	// measure gives absorbance ~0.30103 at tube 1.0; reference 0.60206 → factor 2.0
+	measureAfterBlank(t, f, "", 50, 27, 45)
+	m := f.resultMap(f.exec("calibrate_tube", `{"reference_absorbance":0.60206}`))
+	if m["tube_correction"].(float64) < 1.99 || m["tube_correction"].(float64) > 2.01 {
+		t.Fatalf("tube_correction = %v, want ~2.0", m["tube_correction"])
+	}
+	if m["based_on_seq"].(float64) != 1 {
+		t.Fatalf("based_on_seq = %v", m["based_on_seq"])
+	}
+}
+
+func TestCalibrateTubeRejectsOutOfRange(t *testing.T) {
+	f := newFixture(t)
+	measureAfterBlank(t, f, "", 50, 27, 45)
+	resp := f.exec("calibrate_tube", `{"reference_absorbance":3.0}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+		t.Fatalf("out-of-range calibrate_tube must be invalid_params: %+v", resp)
+	}
+}
+
+func TestSetLED(t *testing.T) {
+	f := newFixture(t)
+	m := f.resultMap(f.exec("set_led", `{"level":12}`))
+	if m["level"] != 12.0 {
+		t.Fatalf("result: %v", m)
+	}
+	if !frameEq(f.frames()[len(f.frames())-1], 75, 0, 12, 0, 0) {
+		t.Fatalf("led frame: %v", f.frames())
+	}
+}
+
+func TestSetLEDRange(t *testing.T) {
+	f := newFixture(t)
+	resp := f.exec("set_led", `{"level":21}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+		t.Fatalf("%+v", resp)
+	}
+}
+
+// TestSetLEDBusyMidSweep: set_led touches the port, so it fails fast with busy
+// during a sweep's busy window (the mid-sweep case deferred from Task 5, where
+// set_led was not yet wired into dispatch).
+func TestSetLEDBusyMidSweep(t *testing.T) {
+	f := newFixture(t)
+	startJob(t, f, "measure_blank", "")
+	resp := f.exec("set_led", `{"level":5}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("set_led mid-sweep must be busy: %+v", resp)
+	}
+}
+
+func TestStopCancelsSweep(t *testing.T) {
+	f := newFixture(t)
+	id := startJob(t, f, "measure_blank", "")
+	// stop mid-sweep: writes 70 (buffers), cancels the job bookkeeping now
+	f.port.Feed([]byte{}) // stop's 70 is write-only, no reply needed
+	resp := f.exec("stop", "")
+	if resp.Status != "ok" {
+		t.Fatalf("stop: %+v", resp)
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "idle" || m["cancelled_job_id"] != id {
+		t.Fatalf("stop result: %v", m)
+	}
+	if jobResult(t, f, id)["state"] != "cancelled" {
+		t.Fatalf("job must be cancelled")
+	}
+	// stop cancels bookkeeping but the firmware cannot abort a sweep — it
+	// physically finishes (~6 s). busy_until is deliberately NOT reset, so a
+	// serial-touching command must still fail fast with busy until the window
+	// elapses (TRANSLATION §stop). Guards against a future reset regression.
+	if resp := f.exec("set_led", `{"level":5}`); resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("serial command right after stop (device still sweeping) must be busy: %+v", resp)
+	}
+	// a stale completion callback must not resurrect the job
+	feedSweepCompletion(f, 100, 27, 45)
+	f.clock.Advance(densitometer.SweepWait + densitometer.LivenessSpacing)
+	if jobResult(t, f, id)["state"] != "cancelled" {
+		t.Fatalf("cancelled job must stay cancelled after the stale timer fires")
+	}
+}
