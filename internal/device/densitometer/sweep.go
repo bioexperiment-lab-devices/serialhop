@@ -214,6 +214,10 @@ func (d *Driver) measure(params json.RawMessage) (any, *device.CmdError) {
 			return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
 		}
 	}
+	if d.monitoring.enabled {
+		return nil, device.ErrBusy("monitoring is active — stop it before a one-off measure",
+			map[string]any{"state": "monitoring"})
+	}
 	if d.blank == nil {
 		return nil, device.ErrNotCalibrated("no blank measured — run measure_blank first")
 	}

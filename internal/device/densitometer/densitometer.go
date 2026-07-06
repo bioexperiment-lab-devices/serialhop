@@ -245,15 +245,14 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.stop()
 	case "stop_monitoring":
 		return d.stopMonitoring()
-	// handlers wired in later tasks:
-	// start_monitoring, get_readings
+	case "start_monitoring":
+		return d.startMonitoring(params)
+	case "get_readings":
+		return d.getReadings(params)
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
 }
-
-// Tick runs ~1/s while attached (filled in Task 8: idle canary + monitoring).
-func (d *Driver) Tick(now time.Time) {}
 
 // Detach persists current state; it performs no serial I/O (state is already
 // saved on every mutation, so this is belt-and-suspenders and safe on a dead
@@ -299,11 +298,3 @@ func (d *Driver) clearSweep() {
 	d.sweep = nil
 	d.sweepGen++
 }
-
-// TEMPORARY (replaced in Task 8): ring buffer stub.
-func newRingBuffer() *ringBuffer { return &ringBuffer{} }
-
-type ringBuffer struct{}
-
-// TEMPORARY (Task 8 replaces with the real ring): no-op push.
-func (rb *ringBuffer) push(reading) {}
