@@ -51,6 +51,10 @@ var CheckInterval = 30 * time.Second
 // Command frames (PROTOCOL.md §4).
 var queryPosFrame = []byte{33, 1, 0, 0, 0} // read the position counter
 
+// pingFrame is the side-effect-free liveness probe (31): the reply's last
+// byte is the position counter, fed opportunistically into CHECK_BELIEF.
+var pingFrame = []byte{31, 2, 3, 4, 5}
+
 // rotationFrame configures the rotation method (35 1 R): direct=1, wrap=2,
 // shortest=3.
 func rotationFrame(code byte) []byte { return []byte{35, 1, code, 0, 0} }
@@ -243,13 +247,24 @@ func (d *Driver) persistNow() error {
 // Execute dispatches one JSON command (identify/get_job are session-served).
 func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage) (any, *device.CmdError) {
 	switch cmd {
+	case "ping":
+		return d.ping()
+	case "status":
+		return d.status()
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
 }
 
-// Tick runs the idle CHECK_BELIEF; body lands with the belief logic.
-func (d *Driver) Tick(now time.Time) {}
+// Tick runs the idle CHECK_BELIEF (TRANSLATION.md §5): every CheckInterval
+// while no move is in flight, so silent reboots surface promptly. Never
+// during a move — mid-move replies reflect the target, not the rotor.
+func (d *Driver) Tick(now time.Time) {
+	if d.moveJob != nil || now.Sub(d.lastCheck) < CheckInterval {
+		return
+	}
+	_ = d.checkBelief() // a serial failure trips the session's unreachable handling
+}
 
 // Detach persists the final position knowledge — deliberately NO serial
 // I/O: the firmware needs no goodbye and the port may already be dead.
