@@ -8,10 +8,12 @@ import (
 )
 
 // stopAsync issues stop on a goroutine and advances the fake clock in
-// slices until it returns. The slices (200 ms) are far below the move
-// estimate, so the stop command reaches the loop and registers its
-// Sleep(remaining) long before the cumulative advance could overshoot the
-// estimate and let the completion timer settle the job first.
+// slices until it returns. waitFor's real 2 ms pause between iterations
+// gives the scheduler room to land the stop command on the loop within
+// the first few slices, and each slice is far below the move estimate —
+// so stop's Sleep(remaining) registers long before the cumulative
+// advance could overshoot the estimate and let the completion timer
+// settle the job first.
 func stopAsync(t *testing.T, f *fixture) device.Response {
 	t.Helper()
 	respCh := make(chan device.Response, 1)

@@ -112,3 +112,27 @@ func TestDetachMidMovePersistsSettledOutcome(t *testing.T) {
 		t.Fatalf("persisted: %v", ps)
 	}
 }
+
+// TestDetachMidMoveToDeviceZeroPersistsUnhomed: a move targeting
+// device-frame 0 is the one case where a restart cannot distinguish
+// "completed" (counter 0) from "valve power-cycled mid-move" (counter
+// reset to 0) — both pass the recovery check — so Detach persists
+// unhomed rather than an optimistic, possibly wrong position.
+func TestDetachMidMoveToDeviceZeroPersistsUnhomed(t *testing.T) {
+	f := newFixture(t, 2)            // attach: device counter 2
+	f.port.Feed([]byte{30, 1, 1, 2}) // home's belief resync
+	if resp := f.exec("home", `{"position":3}`); resp.Status != "ok" {
+		t.Fatalf("home: %+v", resp)
+	}
+	f.port.Feed([]byte{30, 1, 1, 2})  // pre-move CHECK_BELIEF
+	startMove(t, f, `{"position":1}`) // delta (1−3) mod 7 = 5 → device target (2+5) mod 7 = 0
+	fr := f.frames()
+	if !frameEq(fr[len(fr)-1], 36, 1, 0, 0, 0) {
+		t.Fatalf("move frame must target device 0: %v", fr)
+	}
+	f.s.Close()
+	ps := readState(t, f.dir)
+	if ps["physical_position"] != nil || ps["device_belief_at_shutdown"] != 0.0 {
+		t.Fatalf("device-frame-0 target must persist unhomed: %v", ps)
+	}
+}

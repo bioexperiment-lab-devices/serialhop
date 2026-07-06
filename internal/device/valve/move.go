@@ -156,7 +156,9 @@ func (d *Driver) moveComplete(gen int) {
 // readback. cancelled marks the job cancelled instead of succeeded (stop's
 // settle-and-report path). The readback proves the firmware is alive and
 // processed the move; it CANNOT prove the rotor physically arrived (no
-// encoder) — a stalled motor is undetectable. Inherent hardware gap.
+// encoder) — a stalled motor is undetectable. Likewise, a mid-move reboot
+// is invisible when the target is device-frame 0 — the reset counter
+// equals the target, so the readback passes. Inherent hardware gaps.
 func (d *Driver) verifyMove(cancelled bool) *device.CmdError {
 	mj := d.moveJob
 	d.moveJob = nil

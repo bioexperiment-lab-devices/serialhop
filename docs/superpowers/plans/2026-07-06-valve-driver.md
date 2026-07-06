@@ -32,6 +32,7 @@
 3. **`capabilities.seconds_per_position` = 0.92** (TRANSLATION.md's measured constant), not the JSON doc's illustrative `0.9`.
 4. `stop` is settle-and-report — already documented in TRANSLATION.md §4 and spec §8.4; JSON doc's MAY clause covers it.
 5. Two core additions: `device.ErrNotHomed(msg)` (constructor for the existing `CodeNotHomed`) and `Session.Sleep(d)` (loop-blocking wait on the injectable clock, used only by valve `stop`).
+6. **Post-review amendment:** `Detach` during an in-flight move persists the settled target **except** when the move targets device-frame 0 — a restart cannot distinguish "completed" (counter 0) from "valve power-cycled mid-move" (counter reset to 0), so Detach persists unhomed there (JSON_PROTOCOL.md §7's power-loss promise wins over convenience).
 
 ## File structure
 

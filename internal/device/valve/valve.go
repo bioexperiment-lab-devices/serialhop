@@ -172,6 +172,9 @@ func (d *Driver) Attach(ctx context.Context, probeReply []byte) (device.Info, er
 	if found && ps.SchemaVersion == schemaV {
 		if _, ok := rotationCode(ps.Config.DefaultRotation); ok {
 			d.config = ps.Config
+		} else {
+			slog.Warn("valve: persisted config invalid, using defaults",
+				"port", d.s.PortName(), "rotation", ps.Config.DefaultRotation)
 		}
 		// TRANSLATION §3 step 3: recover homed state only when the device's
 		// counter still matches the belief we persisted — proof the firmware
@@ -292,11 +295,19 @@ func (d *Driver) Detach() {
 	if d.moveJob != nil {
 		// An in-flight move finishes autonomously after we disconnect: the
 		// frame was already accepted (its Transact succeeded), so the rotor
-		// settles at the target. Persist that outcome; if the valve instead
-		// loses power mid-move, the belief check refuses recovery on the
-		// next attach — fail-safe either way.
-		d.physicalPos = d.moveJob.targetPhysical
-		d.deviceBelief = d.moveJob.targetDevice
+		// settles at the target — persist that outcome. For a nonzero
+		// device-frame target this is fail-safe: if the valve instead loses
+		// power mid-move, its counter resets to 0 ≠ the persisted belief and
+		// the next attach refuses recovery. A move to device-frame 0 is the
+		// exception — there a restart cannot distinguish "completed"
+		// (counter 0) from "power-cycled mid-move" (counter reset to 0), so
+		// persist unhomed and require an explicit home instead.
+		if d.moveJob.targetDevice == 0 {
+			d.homed = false
+		} else {
+			d.physicalPos = d.moveJob.targetPhysical
+			d.deviceBelief = d.moveJob.targetDevice
+		}
 	}
 	if err := d.persistNow(); err != nil {
 		slog.Warn("valve: detach persist failed", "port", d.s.PortName(), "err", err)
