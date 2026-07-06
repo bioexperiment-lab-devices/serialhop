@@ -1226,7 +1226,9 @@ git add -A
 git commit -m "feat: remove raw_serial config option"
 ```
 
----### Task 8: Panel bindings to `/api/v1`
+---
+
+### Task 8: Panel bindings to `/api/v1`
 
 **Files:**
 - Modify: `internal/panel/servicecli.go:98-110` (paths), comments
