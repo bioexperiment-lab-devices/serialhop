@@ -259,10 +259,17 @@ func (d *Driver) finishJob(gen int, dur time.Duration) {
 		result = calibrationRunResult{Steps: j.steps, DurationS: dur.Seconds()}
 	} else {
 		durS := dur.Seconds()
+		var meanSpeed float64
+		if durS > 0 {
+			// A garbage all-zero completion reply (durS = 0) must not poison
+			// the job record with +Inf: encoding/json refuses to marshal
+			// +Inf, which would break every later get_job/status embedding.
+			meanSpeed = j.volumeML / durS * 60
+		}
 		result = dispenseJobResult{
 			DispensedMl:    j.volumeML,
 			DurationS:      durS,
-			MeanSpeedMlMin: j.volumeML / durS * 60,
+			MeanSpeedMlMin: meanSpeed,
 			SuckbackMl:     j.suckbackML,
 		}
 	}
@@ -270,6 +277,12 @@ func (d *Driver) finishJob(gen int, dur time.Duration) {
 	d.clearJob()
 }
 
+// clearJob resets driver state to idle. Note: a completion that lands while
+// paused (the run finished during the pause grace window) returns d.state to
+// idle here, but the firmware's blind cmd-19 toggle stays "paused" until the
+// next cmd-10 arming frame resyncs it (pauseAssumed follows suit) — inherent
+// to the toggle having no state query, and self-healing on the next motion
+// command.
 func (d *Driver) clearJob() {
 	d.job = nil
 	d.state = stateIdle

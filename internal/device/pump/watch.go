@@ -115,7 +115,17 @@ func (d *Driver) watchdogFire(gen int, budget time.Duration) {
 		return
 	}
 	d.watch.timedOut = true
-	close(d.watch.stop) // the watcher exits and posts the timeout event
+	d.watch.closeStop() // the watcher exits and posts the timeout event
+}
+
+// closeStop closes h.stop exactly once. Loop-only: watchdogFire, abandonWatch,
+// and Detach can each race to be the closer within one WatchPoll window.
+func (h *watchHandle) closeStop() {
+	if h.stopClosed {
+		return
+	}
+	h.stopClosed = true
+	close(h.stop)
 }
 
 // abandonWatch synchronously tears down a pending watch (used by stop: the
@@ -132,7 +142,7 @@ func (d *Driver) abandonWatch() {
 	}
 	h := d.watch
 	d.watch = nil
-	close(h.stop)
+	h.closeStop()
 	<-h.done
 	d.s.ReleaseReader()
 }

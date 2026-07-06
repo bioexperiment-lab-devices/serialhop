@@ -143,3 +143,48 @@ func TestWatcherToleratesPortDeathMidJob(t *testing.T) {
 		t.Fatalf("driver must return to idle after watcher death: %v", st)
 	}
 }
+
+// TestStopAfterWatchdogFiredDoesNotPanic: the watchdog closes the watcher's
+// stop channel but leaves the watch installed so its posted event can still
+// release the reader; a stop command landing in that window (the operator's
+// natural reaction to a stalled job) must not close the channel a second
+// time. WatchPoll is widened so the watcher provably cannot drain the event
+// before stop runs.
+func TestStopAfterWatchdogFiredDoesNotPanic(t *testing.T) {
+	f := newCalibratedFixture(t)
+	old := pump.WatchPoll
+	pump.WatchPoll = 300 * time.Millisecond // watcher stays blind past the stop below
+	t.Cleanup(func() { pump.WatchPoll = old })
+
+	id := startDispense(t, f, `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`)
+	f.clock.Advance(35 * time.Second) // 20×1.5+5: watchdog budget
+	time.Sleep(10 * time.Millisecond) // let the After post deliver watchdogFire first
+
+	// stop's post-stop verification reply, fed only once the identify frame
+	// is on the wire (a live watcher would eat a pre-fed reply) — same
+	// feed-sync pattern as TestStopCancelsWatcherJob.
+	preStop := len(f.frames())
+	go func() {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+				f.port.Feed([]byte{10, 0, 0, 0})
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	resp := f.exec("stop", "")
+	if resp.Status != "ok" {
+		t.Fatalf("stop after watchdog fired: %+v", resp)
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "idle" || m["cancelled_job_id"] != id {
+		t.Fatalf("result: %v", m)
+	}
+	// session must remain alive and functional
+	f.port.Feed([]byte{10, 0, 0, 0})
+	if resp := f.exec("ping", ""); resp.Status != "ok" {
+		t.Fatalf("ping after stop: %+v", resp)
+	}
+}

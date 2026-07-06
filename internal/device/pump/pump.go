@@ -77,11 +77,17 @@ type motionJob struct {
 // watchHandle wires the loop to one opcode-18 watcher goroutine.
 // stop: loop → watcher abandon signal. done: watcher → loop exit signal
 // (closed before the watcher's final Post so the loop may safely block on
-// it). timedOut is loop-owned bookkeeping set by the watchdog.
+// it). timedOut and stopClosed are loop-owned bookkeeping: timedOut is set
+// by the watchdog; stopClosed guards stop against a double close (see
+// closeStop in watch.go) — watchdogFire, abandonWatch, and Detach can each
+// race to be the closer within one WatchPoll window (a stop command landing
+// right after the watchdog fires but before the watcher's posted event
+// drains and clears d.watch).
 type watchHandle struct {
-	stop     chan struct{}
-	done     chan struct{}
-	timedOut bool
+	stop       chan struct{}
+	done       chan struct{}
+	timedOut   bool
+	stopClosed bool
 }
 
 // Driver implements device.Driver for the peristaltic pump. All fields are
@@ -98,7 +104,13 @@ type Driver struct {
 	connectedSince time.Time
 	state          pumpState
 	pausedFrom     pumpState // state resume returns to
-	pauseAssumed   bool      // belief about the firmware's blind cmd-19 toggle
+	// pauseAssumed is deliberate belief-documentation of the firmware's blind
+	// cmd-19 toggle (TRANSLATION §1 translator state): cmd 19 has no state
+	// query, so this is our best guess at which way the toggle currently
+	// sits. It is written at every toggle/resync point (pause, resume, stop,
+	// every cmd-10 arming frame, Attach's volatile reset) so the invariant
+	// stays auditable, even though no code branches on it today.
+	pauseAssumed bool
 
 	rotDirection string
 	rotSpeedML   float64 // actual quantized; 0 when unknown (raw/uncalibrated)
@@ -247,7 +259,7 @@ func (d *Driver) Tick(now time.Time) {}
 // the unreachable machinery mid-shutdown).
 func (d *Driver) Detach() {
 	if d.watch != nil {
-		close(d.watch.stop)
+		d.watch.closeStop()
 		d.watch = nil
 	}
 	switch d.state {
