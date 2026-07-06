@@ -45,13 +45,15 @@ func shrinkTimeouts(t *testing.T) {
 	})
 }
 
-// attachReplies feeds the three reply-bearing frames of first-contact Attach:
-// serial number, channel-1 descriptor, thermostat readback (defaults to 10.00,
-// a fresh-boot value that first-contact ignores).
+// attachReplies feeds the reply-bearing frames of first-contact Attach: serial
+// number, channel-1 descriptor, thermostat readback (defaults to 10.00, a
+// fresh-boot value that first-contact ignores), then the disable-verify
+// readback (0.00) that pushThermostat reads back after first-contact disable.
 func feedAttach(port *serial.FakePort, thermReadback byte) {
 	port.Feed([]byte{5, 7, 25, 6})            // 71 0 0 5 → serial 25-006
 	port.Feed([]byte{1, 2, 6, 0})             // 71 0 0 1 → wavelength 600
 	port.Feed([]byte{5, 5, thermReadback, 0}) // 76 2     → device set-point
+	port.Feed([]byte{5, 5, 0, 0})             // 76 2     → disable-verify readback
 }
 
 func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
@@ -80,6 +82,42 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	s.Start(context.Background())
 	t.Cleanup(s.Close)
 	f := &fixture{t: t, s: s, clock: clock, port: port, dir: cfg.StateDir}
+	waitFor(t, "attach", s.Connected)
+	return f
+}
+
+func timeUnix1000() time.Time { return time.Unix(1000, 0) }
+
+func newPort(name string) *serial.FakePort { return serial.NewFakePort(name) }
+
+func newOpener(p *serial.FakePort) *serial.FakeOpener {
+	o := serial.NewFakeOpener()
+	o.Add(p)
+	return o
+}
+
+func mustOpen(t *testing.T, o *serial.FakeOpener, name string) serial.Port {
+	t.Helper()
+	c, err := o.Open(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func startFixture(t *testing.T, clock *device.FakeClock, port *serial.FakePort, opener *serial.FakeOpener, dir string) *fixture {
+	t.Helper()
+	cfg := device.SessionConfig{
+		ID: "densitometer_1", Type: "densitometer", TypeCode: densitometer.TypeCode,
+		PortName: port.Name(), Conn: mustOpen(t, opener, port.Name()), Opener: opener,
+		Clock: clock, StateDir: dir, Factory: densitometer.New,
+		ProbeReply: []byte{70, 0, 0, 2},
+		Reprobe:    func(p serial.Port) ([]byte, error) { return []byte{70, 0, 0, 2}, nil },
+	}
+	s := device.NewSession(cfg)
+	s.Start(context.Background())
+	t.Cleanup(s.Close)
+	f := &fixture{t: t, s: s, clock: clock, port: port, dir: dir}
 	waitFor(t, "attach", s.Connected)
 	return f
 }

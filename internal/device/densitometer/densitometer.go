@@ -222,8 +222,10 @@ func (d *Driver) info() device.Info {
 // Execute dispatches one JSON command. identify/get_job are session-served.
 func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage) (any, *device.CmdError) {
 	switch cmd {
+	case "set_thermostat":
+		return d.setThermostat(params)
 	// handlers wired in later tasks:
-	// ping, status, stop, stop_monitoring, set_thermostat, set_tube_correction,
+	// ping, status, stop, stop_monitoring, set_tube_correction,
 	// calibrate_tube, set_led, measure, measure_blank, read_raw,
 	// start_monitoring, get_readings
 	default:
@@ -273,16 +275,10 @@ func (d *Driver) busyGuard() *device.CmdError {
 	return nil
 }
 
-// TEMPORARY (replaced in Task 3): first-contact disable only.
-func (d *Driver) syncThermostat(hasMirror bool) error {
-	if _, err := d.s.Transact(thermReadFrame, 4, replyTimeout); err != nil {
-		return fmt.Errorf("densitometer: thermostat read: %w", err)
-	}
-	if _, err := d.s.Transact([]byte{75, 2, 0, 0, 0}, 0, replyTimeout); err != nil {
-		return fmt.Errorf("densitometer: thermostat disable: %w", err)
-	}
-	d.thermo = thermostatMirror{Enabled: false, TargetC: 0}
-	return d.persist()
+// clearSweep resets sweep bookkeeping to idle and invalidates pending timers.
+func (d *Driver) clearSweep() {
+	d.sweep = nil
+	d.sweepGen++
 }
 
 // TEMPORARY (replaced in Task 8): ring buffer stub.
