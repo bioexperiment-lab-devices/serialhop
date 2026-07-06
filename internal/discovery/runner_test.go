@@ -82,6 +82,30 @@ func TestRun_EmptyPortList(t *testing.T) {
 	}
 }
 
+func TestRunMatchesCapturesProbeReply(t *testing.T) {
+	o := newOpener(t, map[string][]byte{
+		"COM3": {10, 1, 2, 3},
+	})
+	matches, err := RunMatches(context.Background(), o, []string{"COM3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("matches: %+v", matches)
+	}
+	m := matches[0]
+	if m.ID != "pump_1" || m.Type != "pump" || m.TypeCode != 10 || m.Port != "COM3" {
+		t.Fatalf("match fields: %+v", m)
+	}
+	if len(m.Reply) < 4 || m.Reply[0] != 10 {
+		t.Fatalf("probe reply must be captured for SessionConfig.ProbeReply: %v", m.Reply)
+	}
+	if m.Conn == nil {
+		t.Fatal("matched port must stay open")
+	}
+	_ = m.Conn.Close()
+}
+
 func TestFilterPorts_Include(t *testing.T) {
 	enumerated := []string{"COM1", "COM3", "COM4"}
 	got := FilterPorts(enumerated, []string{"COM3", "COM5"}, nil)

@@ -64,12 +64,25 @@ type probeOutcome struct {
 	port   string
 	conn   serial.Port
 	result *ProbeResult
+	reply  []byte
+}
+
+// Match is one successfully classified port: a device type was recognized
+// from its probe reply, and the reply bytes are preserved for callers that
+// need them (e.g. device.SessionConfig.ProbeReply).
+type Match struct {
+	ID       string // ordinal per (type code, port): "pump_1"
+	Type     string // classification name: "pump" | "valve" | "densitometer"
+	TypeCode byte
+	Port     string
+	Conn     serial.Port
+	Reply    []byte // the identify reply the probe consumed (≥4 bytes)
 }
 
 // bytesToInts widens a byte slice for slog: the default JSON handler base64-
 // encodes []byte, which makes probe traces unreadable. Returning []int gets
 // the values rendered as a number array — matching the convention used by
-// /devices/{id}/command response logging.
+// command response logging.
 func bytesToInts(b []byte) []int {
 	out := make([]int, len(b))
 	for i, v := range b {
@@ -78,12 +91,12 @@ func bytesToInts(b []byte) []int {
 	return out
 }
 
-// Run probes every port in candidates concurrently (no cap), classifies the
-// replies, and returns a slice of *registry.Device with sequential per-type
-// IDs ("pump_1", "pump_2", ...). Ports that do not match a known device are
-// closed; ports that match keep their connections open inside the returned
-// devices.
-func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*registry.Device, error) {
+// RunMatches probes every port in candidates concurrently (no cap),
+// classifies the replies, and returns a slice of Match with sequential
+// per-type IDs ("pump_1", "pump_2", ...) and the captured probe reply bytes.
+// Ports that do not match a known device are closed; ports that match keep
+// their connections open inside the returned matches.
+func RunMatches(ctx context.Context, opener serial.Opener, candidates []string) ([]Match, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -130,7 +143,7 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*reg
 				"type", res.Type,
 				"type_code", int(res.TypeCode))
 			mu.Lock()
-			matches = append(matches, probeOutcome{port: portName, conn: conn, result: res})
+			matches = append(matches, probeOutcome{port: portName, conn: conn, result: res, reply: reply})
 			mu.Unlock()
 		}(name)
 	}
@@ -145,19 +158,36 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*reg
 	})
 
 	counts := map[byte]int{}
-	devs := make([]*registry.Device, 0, len(matches))
+	out := make([]Match, 0, len(matches))
 	for _, m := range matches {
 		counts[m.result.TypeCode]++
 		id := fmt.Sprintf("%s_%d", m.result.Type, counts[m.result.TypeCode])
-		devs = append(devs, &registry.Device{
+		out = append(out, Match{
 			ID:       id,
 			Type:     m.result.Type,
 			TypeCode: m.result.TypeCode,
 			Port:     m.port,
 			Conn:     m.conn,
-			Opener:   opener,
+			Reply:    m.reply,
 		})
 	}
-	slog.Info("discovery: completed", "candidates", len(candidates), "matched", len(devs))
+	slog.Info("discovery: completed", "candidates", len(candidates), "matched", len(out))
+	return out, nil
+}
+
+// Run adapts RunMatches to the legacy registry shape. Deleted in the v2
+// API cutover once nothing consumes *registry.Device.
+func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*registry.Device, error) {
+	matches, err := RunMatches(ctx, opener, candidates)
+	if err != nil {
+		return nil, err
+	}
+	devs := make([]*registry.Device, 0, len(matches))
+	for _, m := range matches {
+		devs = append(devs, &registry.Device{
+			ID: m.ID, Type: m.Type, TypeCode: m.TypeCode, Port: m.Port,
+			Conn: m.Conn, Opener: opener,
+		})
+	}
 	return devs, nil
 }
