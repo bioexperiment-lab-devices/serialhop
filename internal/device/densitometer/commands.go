@@ -108,6 +108,8 @@ func (d *Driver) status() (any, *device.CmdError) {
 	if tReply, err := d.s.Transact(tempFrame, 4, replyTimeout); err == nil {
 		res.TemperatureC = decodeFixedPoint(tReply)
 		d.cachedTemp, d.cachedTempAt, d.haveCachTemp = res.TemperatureC, d.s.Now(), true
+	} else if d.haveCachTemp {
+		res.TemperatureC = d.cachedTemp
 	}
 	if thReply, err := d.s.Transact(thermReadFrame, 4, replyTimeout); err == nil {
 		d.applyThermostatReadback(decodeFixedPoint(thReply), true)

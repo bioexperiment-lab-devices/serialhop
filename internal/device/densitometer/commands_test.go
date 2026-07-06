@@ -3,6 +3,8 @@ package densitometer_test
 import (
 	"testing"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
 func TestPingReturnsUptime(t *testing.T) {
@@ -46,6 +48,28 @@ func TestStatusIdleReadsLiveTemperature(t *testing.T) {
 	}
 }
 
+func TestStatusIdleServesCachedTemperatureWhenLiveReadFails(t *testing.T) {
+	f := newFixture(t)
+	f.port.Feed([]byte{5, 5, 30, 0}) // 76 0 → temperature 30.00 (primes cache)
+	f.port.Feed([]byte{5, 5, 0, 0})  // 76 2 → thermostat set-point 0 (disabled, in sync)
+	m := f.resultMap(f.exec("status", ""))
+	if m["temperature_c"].(float64) != 30.0 {
+		t.Fatalf("priming status temperature_c = %v, want 30.0", m["temperature_c"])
+	}
+
+	// No replies fed this time: both the temperature and thermostat reads
+	// fail, so the idle branch must fall back to the cached temperature
+	// rather than leaving temperature_c at its zero value.
+	resp := f.exec("status", "")
+	if resp.Status != "ok" {
+		t.Fatalf("status: %+v", resp)
+	}
+	m2 := f.resultMap(resp)
+	if m2["temperature_c"].(float64) != 30.0 {
+		t.Fatalf("temperature_c = %v, want cached 30.0", m2["temperature_c"])
+	}
+}
+
 func TestStatusThermostatEnabledMirror(t *testing.T) {
 	f := newFixture(t)
 	feedThermSet(f.port, 37)
@@ -57,5 +81,23 @@ func TestStatusThermostatEnabledMirror(t *testing.T) {
 	th := f.resultMap(f.exec("status", ""))["thermostat"].(map[string]any)
 	if th["enabled"] != true || th["target_c"] != 37.0 {
 		t.Fatalf("enabled mirror: %v", th)
+	}
+}
+
+func TestPingLivenessTransactFails(t *testing.T) {
+	f := newFixture(t)
+	// No reply fed: the liveness Transact (71 2 3 4 0) fails outright.
+	resp := f.exec("ping", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("ping: %+v", resp)
+	}
+}
+
+func TestPingUnexpectedReplyTypeCode(t *testing.T) {
+	f := newFixture(t)
+	f.port.Feed([]byte{99, 5, 27, 45}) // first byte != TypeCode(70)
+	resp := f.exec("ping", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("ping: %+v", resp)
 	}
 }
