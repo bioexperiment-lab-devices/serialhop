@@ -1,6 +1,9 @@
 package valve
 
 import (
+	"encoding/json"
+	"time"
+
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
@@ -88,4 +91,48 @@ func (d *Driver) status() (any, *device.CmdError) {
 	}
 	res.Job = d.statusJob()
 	return res, nil
+}
+
+// configure (TRANSLATION.md §4): push the provided fields to the firmware
+// and persist the mirror. The JSON contract's "settings persist across
+// power cycles" promise is honored by the TRANSLATOR (persisted mirror +
+// re-push at attach and on every reboot detection), not by the device — the
+// firmware keeps its config in RAM only and offers no readback.
+func (d *Driver) configure(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		DefaultRotation *string `json:"default_rotation"`
+		HoldTorque      *bool   `json:"hold_torque"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+		}
+	}
+	if j := d.s.Jobs().Active(); j != nil {
+		return nil, device.ErrBusy("a move is in progress", map[string]any{"job_id": j.ID})
+	}
+	if p.DefaultRotation != nil {
+		code, ok := rotationCode(*p.DefaultRotation)
+		if !ok {
+			return nil, device.ErrInvalidParams("default_rotation", *p.DefaultRotation,
+				`default_rotation must be "shortest", "direct" or "wrap"`)
+		}
+		if _, err := d.s.Transact(rotationFrame(code), 0, time.Second); err != nil {
+			return nil, device.ErrHardware("rotation config frame: " + err.Error())
+		}
+		d.config.DefaultRotation = *p.DefaultRotation
+		d.lastPushed = *p.DefaultRotation
+	}
+	if p.HoldTorque != nil {
+		if _, err := d.s.Transact(holdFrame(*p.HoldTorque), 0, time.Second); err != nil {
+			return nil, device.ErrHardware("hold config frame: " + err.Error())
+		}
+		d.config.HoldTorque = *p.HoldTorque
+	}
+	if p.DefaultRotation != nil || p.HoldTorque != nil {
+		if err := d.persistNow(); err != nil {
+			return nil, device.ErrInternal("persist config: " + err.Error())
+		}
+	}
+	return d.config, nil
 }
