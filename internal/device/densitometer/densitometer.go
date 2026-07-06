@@ -229,9 +229,11 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.ping()
 	case "status":
 		return d.status()
+	case "measure_blank":
+		return d.measureBlank()
 	// handlers wired in later tasks:
 	// stop, stop_monitoring, set_tube_correction,
-	// calibrate_tube, set_led, measure, measure_blank, read_raw,
+	// calibrate_tube, set_led, measure, read_raw,
 	// start_monitoring, get_readings
 	default:
 		return nil, device.ErrUnknownCommand(cmd)

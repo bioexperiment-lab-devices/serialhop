@@ -1,0 +1,130 @@
+package densitometer_test
+
+import (
+	"testing"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/densitometer"
+)
+
+// buildArrayBytes renders a 20-record intensity array (test-side mirror of the
+// package helper) for feeding the port.
+func buildArrayBytes(fn func(i int) int) []byte {
+	buf := make([]byte, 0, 80)
+	for i := 1; i <= 20; i++ {
+		v := fn(i)
+		buf = append(buf, 105, byte(i), byte(v%256), byte(v/256))
+	}
+	return buf
+}
+
+// feedSweepCompletion feeds the completion chain: liveness reply, 80-byte
+// array, temperature reply — in read order.
+func feedSweepCompletion(f *fixture, slopePerLevel int, tInt, tFrac byte) {
+	f.port.Feed([]byte{70, 5, tInt, tFrac})                                    // liveness (71 2 3 4)
+	f.port.Feed(buildArrayBytes(func(i int) int { return slopePerLevel * i })) // 79 1 0
+	f.port.Feed([]byte{5, 5, tInt, tFrac})                                     // temperature (76 0)
+}
+
+func jobResult(t *testing.T, f *fixture, id string) map[string]any {
+	t.Helper()
+	resp := f.exec("get_job", `{"job_id":"`+id+`"}`)
+	if resp.Status != "ok" {
+		t.Fatalf("get_job: %+v", resp)
+	}
+	return f.resultMap(resp)
+}
+
+func startJob(t *testing.T, f *fixture, cmd, params string) string {
+	t.Helper()
+	resp := f.exec(cmd, params)
+	if resp.Status != "ok" {
+		t.Fatalf("%s: %+v", cmd, resp)
+	}
+	job := f.resultMap(resp)["job"].(map[string]any)
+	return job["job_id"].(string)
+}
+
+func TestMeasureBlankHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, withStateDir(dir))
+	id := startJob(t, f, "measure_blank", "")
+	// trigger frame 78 3 0 0 0 must have fired
+	if !frameEq(f.frames()[len(f.frames())-1], 78, 3, 0, 0, 0) {
+		t.Fatalf("blank trigger: %v", f.frames())
+	}
+	feedSweepCompletion(f, 100, 27, 45) // slope 100, 27.45 °C
+	f.clock.Advance(densitometer.SweepWait)
+	waitFor(t, "blank success", func() bool {
+		return jobResult(t, f, id)["state"] == "succeeded"
+	})
+	res := jobResult(t, f, id)["result"].(map[string]any)
+	if res["slope"].(float64) < 99 || res["slope"].(float64) > 101 {
+		t.Fatalf("slope = %v, want ~100", res["slope"])
+	}
+	if res["temperature_c"].(float64) < 27.4 || res["temperature_c"].(float64) > 27.5 {
+		t.Fatalf("temperature_c = %v", res["temperature_c"])
+	}
+	if sweep, ok := res["sweep"].([]any); !ok || len(sweep) != 20 {
+		t.Fatalf("blank result must include the 20-point sweep: %v", res["sweep"])
+	}
+	// blank persisted
+	st := device.NewStore(dir, "densitometer-25-006")
+	var ps struct {
+		Blank *struct {
+			Slope float64 `json:"slope"`
+		} `json:"blank"`
+	}
+	if _, err := st.Load(&ps); err != nil || ps.Blank == nil {
+		t.Fatalf("blank not persisted: %+v err=%v", ps, err)
+	}
+}
+
+func TestSweepBusyFailFast(t *testing.T) {
+	f := newFixture(t)
+	startJob(t, f, "measure_blank", "")
+	// mid-sweep (busy_until in the future): a serial-touching command fails fast.
+	// ping is gated by serialGate; set_led's mid-sweep busy path is covered in
+	// Task 7, where set_led is wired into dispatch.
+	if resp := f.exec("ping", ""); resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("ping mid-sweep must be busy: %+v", resp)
+	}
+	// a second sweep is rejected by the active-job guard
+	if resp := f.exec("measure_blank", ""); resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("second blank must be busy: %+v", resp)
+	}
+}
+
+func TestSweepLivenessRetry(t *testing.T) {
+	f := newFixture(t)
+	id := startJob(t, f, "measure_blank", "")
+	// No liveness reply yet: first soft attempt fails, schedules a retry.
+	f.clock.Advance(densitometer.SweepWait)
+	// still running (device "finishing")
+	if jobResult(t, f, id)["state"] != "running" {
+		t.Fatalf("job must still be running after failed liveness")
+	}
+	// now the device answers; the retry succeeds and the sweep completes
+	feedSweepCompletion(f, 100, 27, 45)
+	f.clock.Advance(densitometer.LivenessSpacing)
+	waitFor(t, "blank success after retry", func() bool {
+		return jobResult(t, f, id)["state"] == "succeeded"
+	})
+}
+
+func TestSweepUnusableDetectorFailsJob(t *testing.T) {
+	f := newFixture(t)
+	id := startJob(t, f, "measure_blank", "")
+	// liveness ok, array all-zero (dark), temperature ok → slope error
+	f.port.Feed([]byte{70, 5, 27, 45})
+	f.port.Feed(buildArrayBytes(func(i int) int { return 0 }))
+	f.port.Feed([]byte{5, 5, 27, 45})
+	f.clock.Advance(densitometer.SweepWait)
+	waitFor(t, "blank failed", func() bool {
+		return jobResult(t, f, id)["state"] == "failed"
+	})
+	js := jobResult(t, f, id)
+	if js["error"].(map[string]any)["code"] != "hardware_error" {
+		t.Fatalf("unusable sweep must fail with hardware_error: %v", js["error"])
+	}
+}
