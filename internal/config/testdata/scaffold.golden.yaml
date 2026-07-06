@@ -24,21 +24,15 @@ discovery:
 log:
   level: "info"            # debug | info | warn | error
 
-raw_serial:
-  enabled: false           # set true to allow GET /serial/ports and
-                           # POST /serial/ports/{port}/command. bypasses
-                           # device classification — leave off unless diagnosing.
-
 auto_update:
   enabled: true            # check GitHub Releases for newer versions
                            # and offer to install them from the panel.
                            # set to false on air-gapped lab boxes.
 
 flashing:
-  enabled: false                  # allow POST /flash/{port}. higher risk than
-                                  # raw_serial — a bad .hex bricks the board
-                                  # (ISP recovery required). independent of
-                                  # raw_serial.enabled.
+  enabled: false                  # allow POST /flash/{port}. a bad .hex bricks
+                                  # the board (ISP recovery required) — leave
+                                  # off unless you're actively flashing.
   backup_dir: ""                  # absolute path for pre-flash backups.
                                   # empty -> %ProgramData%\SerialHop\backups
   keep_n: 10                      # retain this many backups per COM port;

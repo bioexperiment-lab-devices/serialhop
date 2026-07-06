@@ -17,7 +17,6 @@ export interface ConfigShape {
   rest: { port: number };
   discovery: { include: string[]; exclude: string[]; post_open_settle_ms: number };
   log: { level: string };
-  raw_serial: { enabled: boolean };
   auto_update: { enabled: boolean };
   flashing: { enabled: boolean; backup_dir: string; keep_n: number };
 }
@@ -27,7 +26,6 @@ export const defaultConfig: ConfigShape = {
   rest: { port: 0 },
   discovery: { include: [], exclude: [], post_open_settle_ms: 2000 },
   log: { level: "info" },
-  raw_serial: { enabled: false },
   auto_update: { enabled: true },
   flashing: { enabled: false, backup_dir: "", keep_n: 10 },
 };

@@ -20,7 +20,6 @@ const seedCfg = () => ({
   rest: { port: 0 },
   discovery: { include: [], exclude: [], post_open_settle_ms: 2000 },
   log: { level: "info" },
-  raw_serial: { enabled: false },
   auto_update: { enabled: true },
   flashing: { enabled: false, backup_dir: "", keep_n: 10 },
 });

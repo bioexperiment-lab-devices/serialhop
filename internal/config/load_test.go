@@ -189,30 +189,6 @@ log:
 	}
 }
 
-func TestLoad_RawSerialEnabled(t *testing.T) {
-	dir := t.TempDir()
-	body := `
-lab_bridge:
-  host: "10.0.0.1"
-  user: "u"
-  pass: "p"
-rest:
-  port: 0
-log:
-  level: "info"
-raw_serial:
-  enabled: true
-`
-	p := writeFile(t, dir, "cfg.yaml", body)
-	c, err := Load(p)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !c.RawSerial.Enabled {
-		t.Errorf("raw_serial.enabled: got false, want true")
-	}
-}
-
 func TestLoadPartial_MissingFile(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "nope.yaml")
 	cfg, err := LoadPartial(p)

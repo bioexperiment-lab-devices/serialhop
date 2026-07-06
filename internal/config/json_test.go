@@ -28,7 +28,6 @@ func TestConfig_JSONUsesSnakeCaseTags(t *testing.T) {
 		`"post_open_settle_ms"`,
 		`"log"`,
 		`"level"`,
-		`"raw_serial"`,
 		`"auto_update"`,
 		`"flashing"`,
 		`"enabled"`,
@@ -62,7 +61,6 @@ func TestConfig_JSONRoundTripPreservesAllFields(t *testing.T) {
 	in.Discovery.Include = []string{"COM5", "COM6"}
 	in.Discovery.PostOpenSettleMs = 1500
 	in.Log.Level = "debug"
-	in.RawSerial.Enabled = true
 	in.AutoUpdate.Enabled = false
 	in.Flashing.Enabled = true
 	in.Flashing.BackupDir = `C:\Backups`
@@ -82,7 +80,7 @@ func TestConfig_JSONRoundTripPreservesAllFields(t *testing.T) {
 	if out.Rest != in.Rest {
 		t.Errorf("Rest: got %+v, want %+v", out.Rest, in.Rest)
 	}
-	if out.Log != in.Log || out.RawSerial != in.RawSerial || out.AutoUpdate != in.AutoUpdate || out.Flashing != in.Flashing {
+	if out.Log != in.Log || out.AutoUpdate != in.AutoUpdate || out.Flashing != in.Flashing {
 		t.Errorf("non-LabBridge fields: got %+v, want %+v", out, in)
 	}
 	// Slice equality:
