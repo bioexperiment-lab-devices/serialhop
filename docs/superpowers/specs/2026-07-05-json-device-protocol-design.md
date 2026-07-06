@@ -178,6 +178,14 @@ mutated only there. Drivers contain no mutexes.
   immediately; the session re-probes with backoff (5 s doubling to 60 s, indefinitely)
   and re-runs `Attach` on success — which is where each TRANSLATION doc's reboot
   recovery already lives. The device list shows `connected: false` meanwhile.
+  Exception — memory-served commands (amended 2026-07-06): `identify` is served
+  from the cached `Info` whenever a successful `Attach` has ever populated it
+  (HTTP 200, envelope `ok`); if `Attach` has never succeeded it returns
+  `device_unreachable`. `get_job` is always served from the jobs engine —
+  including the job the unreachable transition just failed with
+  `hardware_error` "device became unreachable mid-job"; unknown `job_id`
+  remains `invalid_params`. Every other command, including `status`
+  (driver-served), fails fast with `device_unreachable`.
 
 ## 4. HTTP API surface
 
@@ -213,8 +221,10 @@ mirror:
   `not_homed`, `hardware_error`, `unknown_command`, `internal_error`): **HTTP 200**
   with the envelope.
 - Hub-level failures, still envelope-shaped: unknown device id → **404**
-  `unknown_device`; session unreachable → **503** `device_unreachable`; malformed
-  JSON / missing `cmd` or `id` → **400** `invalid_request`.
+  `unknown_device`; session unreachable → **503** `device_unreachable` — except
+  `identify` (with cached info) and `get_job`, which stay memory-served at
+  **200** per §3; malformed JSON / missing `cmd` or `id` → **400**
+  `invalid_request`.
 - `POST /api/v1/discover` while any session has an active job → **409** (uniform
   `{"error","detail"}` body as other infra routes); consumers `stop` jobs first.
 

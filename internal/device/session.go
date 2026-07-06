@@ -168,14 +168,21 @@ func (s *Session) Execute(ctx context.Context, req Request) Response {
 }
 
 func (s *Session) handle(ctx context.Context, req Request) Response {
-	if !s.connected.Load() {
-		return Err(req.ID, errUnreachable("device is not responding"))
-	}
+	// identify and get_job are memory-served (spec §3): they keep answering
+	// while the device is unreachable so a client whose job just died can
+	// read why without waiting for a reattach.
 	switch req.Cmd {
 	case "identify":
-		return OK(req.ID, *s.info.Load())
+		if p := s.info.Load(); p != nil {
+			return OK(req.ID, *p)
+		}
+		// No successful Attach has ever populated the cache — nothing to serve.
+		return Err(req.ID, errUnreachable("device is not responding"))
 	case "get_job":
 		return s.handleGetJob(req)
+	}
+	if !s.connected.Load() {
+		return Err(req.ID, errUnreachable("device is not responding"))
 	}
 	result, cerr := s.driver.Execute(ctx, req.Cmd, req.Params)
 	if cerr != nil {

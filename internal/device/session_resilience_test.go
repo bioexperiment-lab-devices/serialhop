@@ -38,9 +38,12 @@ func TestTransactDoubleFailureFlipsUnreachableAndFailsJob(t *testing.T) {
 	})
 	waitFor(t, "attach", f.s.Connected)
 
-	if resp := f.s.Execute(context.Background(), device.Request{ID: "j", Cmd: "job"}); resp.Status != "ok" {
-		t.Fatalf("job start: %+v", resp)
+	startResp := f.s.Execute(context.Background(), device.Request{ID: "j", Cmd: "job"})
+	if startResp.Status != "ok" {
+		t.Fatalf("job start: %+v", startResp)
 	}
+	jobID := startResp.Result.(device.Job).ID
+
 	// nothing fed to the port → both transaction attempts time out
 	resp := f.s.Execute(context.Background(), device.Request{ID: "t", Cmd: "tx"})
 	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
@@ -48,10 +51,24 @@ func TestTransactDoubleFailureFlipsUnreachableAndFailsJob(t *testing.T) {
 	}
 	waitFor(t, "unreachable", func() bool { return !f.s.Connected() })
 
-	// active job must have been failed by the transition
-	resp = f.s.Execute(context.Background(), device.Request{ID: "g", Cmd: "get_job"})
+	// get_job stays memory-served while unreachable (spec §3): it reports
+	// exactly why the job died without waiting for a reattach.
+	resp = f.s.Execute(context.Background(), device.Request{
+		ID: "g", Cmd: "get_job", Params: json.RawMessage(`{"job_id":"` + jobID + `"}`)})
+	if resp.Status != "ok" {
+		t.Fatalf("get_job while unreachable must be memory-served: %+v", resp)
+	}
+	job := resp.Result.(device.Job)
+	if job.State != device.JobFailed || job.Error == nil ||
+		job.Error.Code != device.CodeHardwareError ||
+		job.Error.Message != "device became unreachable mid-job" {
+		t.Fatalf("failed job snapshot: %+v", job)
+	}
+
+	// driver-served commands still fail fast
+	resp = f.s.Execute(context.Background(), device.Request{ID: "p", Cmd: "ping"})
 	if resp.Status != "error" || resp.Error.Code != device.CodeDeviceUnreachable {
-		t.Fatalf("commands while unreachable must fail fast: %+v", resp)
+		t.Fatalf("driver commands while unreachable must fail fast: %+v", resp)
 	}
 }
 
