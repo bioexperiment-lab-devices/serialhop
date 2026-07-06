@@ -3,6 +3,7 @@ package device_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -11,6 +12,10 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
+
+// errAttachBoom is a shared attach failure for tests that need to force
+// Session.attach down its error path.
+var errAttachBoom = errors.New("attach boom")
 
 // stubDriver is a scriptable Driver for session tests.
 type stubDriver struct {
@@ -255,5 +260,45 @@ func TestSessionCloseDetachesDriverEvenWhenUnreachable(t *testing.T) {
 	f.s.Close()
 	if !f.drv.detached.Load() {
 		t.Fatal("Detach must be called on Close even when the session never attached")
+	}
+}
+
+func TestWaitFirstAttachSuccess(t *testing.T) {
+	f := newFixture(t, nil)
+	f.s.WaitFirstAttach(context.Background()) // must not hang
+	if !f.s.Connected() {
+		t.Fatal("attach outcome must be published before WaitFirstAttach returns")
+	}
+}
+
+func TestWaitFirstAttachFailure(t *testing.T) {
+	f := newFixture(t, func(cfg *device.SessionConfig, drv *stubDriver) {
+		drv.attachErr = errAttachBoom
+	})
+	f.s.WaitFirstAttach(context.Background()) // must not hang on failure either
+	if f.s.Connected() {
+		t.Fatal("attach failed")
+	}
+}
+
+func TestHasActiveJobViaSession(t *testing.T) {
+	f := newFixture(t, func(cfg *device.SessionConfig, drv *stubDriver) {
+		drv.exec = func(cmd string, params json.RawMessage) (any, *device.CmdError) {
+			job, cerr := drv.s.Jobs().Start("work", time.Minute)
+			if cerr != nil {
+				return nil, cerr
+			}
+			return job, nil
+		}
+	})
+	waitFor(t, "attach", f.s.Connected)
+	if f.s.HasActiveJob() {
+		t.Fatal("no job yet")
+	}
+	if resp := f.s.Execute(context.Background(), device.Request{ID: "j", Cmd: "start"}); resp.Status != "ok" {
+		t.Fatalf("start: %+v", resp)
+	}
+	if !f.s.HasActiveJob() {
+		t.Fatal("job is active")
 	}
 }

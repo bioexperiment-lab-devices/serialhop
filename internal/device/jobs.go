@@ -2,6 +2,7 @@ package device
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -56,6 +57,10 @@ type Jobs struct {
 	seq     int
 	active  *jobRec
 	history []*jobRec // newest first
+
+	// hasActive mirrors active != nil for cross-goroutine reads (the API's
+	// discover-conflict check); every other method stays loop-only.
+	hasActive atomic.Bool
 }
 
 func NewJobs(c Clock) *Jobs { return &Jobs{clock: c} }
@@ -74,6 +79,7 @@ func (j *Jobs) Start(kind string, estimate time.Duration) (Job, *CmdError) {
 		estimate:     estimate,
 		runningSince: j.clock.Now(),
 	}
+	j.hasActive.Store(true)
 	return j.snapshot(j.active), nil
 }
 
@@ -84,6 +90,10 @@ func (j *Jobs) Active() *Job {
 	job := j.snapshot(j.active)
 	return &job
 }
+
+// HasActive reports whether a job is running or paused. Unlike every other
+// Jobs method it is safe to call from any goroutine.
+func (j *Jobs) HasActive() bool { return j.hasActive.Load() }
 
 func (j *Jobs) ActiveKind() string {
 	if j.active == nil {
@@ -150,6 +160,7 @@ func (j *Jobs) finish(state JobState, result any, e *CmdError, progress float64)
 	r.err = e
 	r.finalProgress = progress
 	j.active = nil
+	j.hasActive.Store(false)
 	j.history = append([]*jobRec{r}, j.history...)
 	if len(j.history) > historyLimit {
 		j.history = j.history[:historyLimit]

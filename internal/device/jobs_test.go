@@ -112,6 +112,35 @@ func TestJobsFailAndCancelKeepProgress(t *testing.T) {
 	}
 }
 
+func TestHasActiveIsThreadSafeMirror(t *testing.T) {
+	j := NewJobs(NewFakeClock(time.Unix(0, 0)))
+	if j.HasActive() {
+		t.Fatal("no job yet")
+	}
+	if _, cerr := j.Start("work", time.Minute); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if !j.HasActive() {
+		t.Fatal("job started")
+	}
+	j.Freeze()
+	if !j.HasActive() {
+		t.Fatal("paused is still active")
+	}
+	j.Unfreeze()
+	j.Complete(nil)
+	if j.HasActive() {
+		t.Fatal("completed")
+	}
+	if _, cerr := j.Start("work", time.Minute); cerr != nil {
+		t.Fatal(cerr)
+	}
+	j.Fail(ErrHardware("x"))
+	if j.HasActive() {
+		t.Fatal("failed")
+	}
+}
+
 func TestJobsHistoryRingKeepsEight(t *testing.T) {
 	c := NewFakeClock(time.Unix(0, 0))
 	j := NewJobs(c)

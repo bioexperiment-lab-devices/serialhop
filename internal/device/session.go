@@ -49,10 +49,11 @@ type Session struct {
 	jobs   *Jobs
 	driver Driver
 
-	mail   chan mailMsg
-	posts  chan func()
-	done   chan struct{}
-	cancel context.CancelFunc
+	mail        chan mailMsg
+	posts       chan func()
+	done        chan struct{}
+	firstAttach chan struct{}
+	cancel      context.CancelFunc
 
 	// cross-goroutine mirrors for API reads
 	connected atomic.Bool
@@ -70,12 +71,13 @@ func NewSession(cfg SessionConfig) *Session {
 		cfg.Clock = SystemClock()
 	}
 	return &Session{
-		cfg:   cfg,
-		jobs:  NewJobs(cfg.Clock),
-		mail:  make(chan mailMsg),
-		posts: make(chan func(), 64),
-		done:  make(chan struct{}),
-		conn:  cfg.Conn,
+		cfg:         cfg,
+		jobs:        NewJobs(cfg.Clock),
+		mail:        make(chan mailMsg),
+		posts:       make(chan func(), 64),
+		done:        make(chan struct{}),
+		firstAttach: make(chan struct{}),
+		conn:        cfg.Conn,
 	}
 }
 
@@ -104,6 +106,7 @@ func (s *Session) loop(ctx context.Context) {
 	// attach is harmless: the connected guard below skips Tick).
 	heartbeat := s.cfg.Clock.After(HeartbeatInterval)
 	s.attach(s.cfg.ProbeReply)
+	close(s.firstAttach)
 	for {
 		select {
 		case <-ctx.Done():
@@ -224,6 +227,22 @@ func (s *Session) CachedInfo() (Info, bool) {
 		return Info{}, false
 	}
 	return *p, true
+}
+
+// HasActiveJob reports whether the session has a running or paused job.
+// Thread-safe; the API's discover-conflict check uses it.
+func (s *Session) HasActiveJob() bool { return s.jobs.HasActive() }
+
+// WaitFirstAttach blocks until the initial attach attempt completes
+// (success or failure), ctx is cancelled, or the session shuts down.
+// Discover uses it so the device list it returns reflects real attach
+// outcomes instead of a transient connected=false.
+func (s *Session) WaitFirstAttach(ctx context.Context) {
+	select {
+	case <-s.firstAttach:
+	case <-s.done:
+	case <-ctx.Done():
+	}
 }
 
 // --- driver services ---
