@@ -1,6 +1,9 @@
 package densitometer
 
 import (
+	"encoding/json"
+	"math"
+
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
@@ -130,4 +133,57 @@ func (d *Driver) stateName() string {
 	default:
 		return "idle"
 	}
+}
+
+func (d *Driver) setTubeCorrection(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		Factor float64 `json:"factor"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+	}
+	if p.Factor < 0.5 || p.Factor > 2.0 {
+		return nil, device.ErrInvalidParams("factor", p.Factor, "factor must be between 0.5 and 2.0")
+	}
+	d.tubeCorrection = p.Factor
+	if err := d.persist(); err != nil {
+		return nil, device.ErrInternal("persist tube correction: " + err.Error())
+	}
+	return map[string]any{"tube_correction": p.Factor}, nil
+}
+
+func (d *Driver) calibrateTube(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		ReferenceAbsorbance float64 `json:"reference_absorbance"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+	}
+	if d.lastReading == nil {
+		return nil, device.ErrNotCalibrated("no measurement to calibrate from")
+	}
+	if p.ReferenceAbsorbance <= 0 {
+		return nil, device.ErrInvalidParams("reference_absorbance", p.ReferenceAbsorbance,
+			"reference_absorbance must be positive")
+	}
+	uncorrected := d.lastReading.absorbance / d.lastReading.tubeCorrectionAt
+	if uncorrected == 0 {
+		return nil, device.ErrInvalidParams("reference_absorbance", p.ReferenceAbsorbance,
+			"last measurement absorbance is zero — cannot calibrate")
+	}
+	factor := p.ReferenceAbsorbance / uncorrected
+	factor = math.Max(0.5, math.Min(2.0, factor))
+	d.tubeCorrection = factor
+	if err := d.persist(); err != nil {
+		return nil, device.ErrInternal("persist tube correction: " + err.Error())
+	}
+	return map[string]any{"tube_correction": factor, "based_on_seq": d.lastReading.seq}, nil
+}
+
+// appendReading records the newest measurement. Task 8 also pushes it to the
+// readings ring buffer.
+func (d *Driver) appendReading(r reading) {
+	rr := r
+	d.lastReading = &rr
+	d.ring.push(rr)
 }

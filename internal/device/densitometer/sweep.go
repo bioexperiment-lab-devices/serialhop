@@ -1,12 +1,16 @@
 package densitometer
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
-var blankTrigger = []byte{78, 3, 0, 0, 0}
+var (
+	blankTrigger   = []byte{78, 3, 0, 0, 0}
+	measureTrigger = []byte{78, 4, 0, 0, 0}
+)
 
 // runSweep implements TRANSLATION §4 RUN_SWEEP: start a job, fire the trigger
 // fire-and-forget (the firmware never acks), open the busy_until window, and
@@ -127,7 +131,9 @@ func (d *Driver) readSweepAndFinish(gen int) {
 	switch d.sweep.kind {
 	case "blank":
 		d.finishBlank(gen, intensities, tempC)
-	// "measure", "monitor", "read_raw" wired in Tasks 6/7
+	case "measure", "monitor":
+		d.finishMeasure(gen, intensities, tempC)
+	// "read_raw" wired in Task 7
 	default:
 		d.s.Jobs().Fail(device.ErrInternal("unknown sweep kind: " + d.sweep.kind))
 		d.clearSweep()
@@ -196,4 +202,69 @@ func (d *Driver) measureBlank() (any, *device.CmdError) {
 		return nil, cerr
 	}
 	return map[string]any{"job": job}, nil
+}
+
+func (d *Driver) measure(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		IncludeRaw bool `json:"include_raw"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+		}
+	}
+	if d.blank == nil {
+		return nil, device.ErrNotCalibrated("no blank measured — run measure_blank first")
+	}
+	job, cerr := d.runSweep("measure", measureTrigger, SweepWait, sweep{includeRaw: p.IncludeRaw})
+	if cerr != nil {
+		return nil, cerr
+	}
+	return map[string]any{"job": job}, nil
+}
+
+type measureJobResult struct {
+	Absorbance     float64 `json:"absorbance"`
+	AbsorbanceRaw  float64 `json:"absorbance_raw"`
+	Slope          float64 `json:"slope"`
+	BlankSlope     float64 `json:"blank_slope"`
+	TemperatureC   float64 `json:"temperature_c"`
+	TubeCorrection float64 `json:"tube_correction"`
+	Seq            int64   `json:"seq"`
+	Raw            []int   `json:"raw"`
+}
+
+// finishMeasure computes absorbance, records the reading, and completes the
+// job. Shared by the measure command and the monitoring scheduler (kind
+// "measure" and "monitor" both land here).
+func (d *Driver) finishMeasure(gen int, intensities [20]int, tempC float64) {
+	if d.stale(gen) {
+		return
+	}
+	slope, cerr := leastSquaresSlope(intensities)
+	if cerr != nil {
+		d.s.Jobs().Fail(cerr)
+		d.clearSweep()
+		return
+	}
+	final, raw := absorbance(d.blank.Slope, slope, tempC, d.blank.TemperatureC, d.tubeCorrection)
+	now := d.s.Now()
+	d.seqCounter++
+	r := reading{
+		seq: d.seqCounter, measuredAt: now,
+		uptimeMs:   now.Sub(d.connectedSince).Milliseconds(),
+		absorbance: final, temperatureC: tempC, tubeCorrectionAt: d.tubeCorrection,
+	}
+	d.appendReading(r)
+
+	var rawSweep []int
+	if d.sweep.includeRaw {
+		rawSweep = sliceOf(intensities)
+	}
+	d.s.Jobs().Complete(measureJobResult{
+		Absorbance: final, AbsorbanceRaw: raw, Slope: slope,
+		BlankSlope: d.blank.Slope, TemperatureC: tempC,
+		TubeCorrection: d.tubeCorrection, Seq: r.seq, Raw: rawSweep,
+	})
+	d.clearSweep()
 }

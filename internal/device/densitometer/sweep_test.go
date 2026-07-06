@@ -128,3 +128,68 @@ func TestSweepUnusableDetectorFailsJob(t *testing.T) {
 		t.Fatalf("unusable sweep must fail with hardware_error: %v", js["error"])
 	}
 }
+
+func TestMeasureRequiresBlank(t *testing.T) {
+	f := newFixture(t)
+	resp := f.exec("measure", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
+		t.Fatalf("measure without blank must be not_calibrated: %+v", resp)
+	}
+}
+
+// measureAfterBlank runs a blank (slope 100 @ 27.45) then a measure, returning
+// the completed measure job result.
+func measureAfterBlank(t *testing.T, f *fixture, params string, sampleSlope int, tInt, tFrac byte) map[string]any {
+	t.Helper()
+	bid := startJob(t, f, "measure_blank", "")
+	feedSweepCompletion(f, 100, 27, 45)
+	f.clock.Advance(densitometer.SweepWait)
+	waitFor(t, "blank done", func() bool { return jobResult(t, f, bid)["state"] == "succeeded" })
+
+	mid := startJob(t, f, "measure", params)
+	if !frameEq(f.frames()[len(f.frames())-1], 78, 4, 0, 0, 0) {
+		t.Fatalf("measure trigger 78 4: %v", f.frames())
+	}
+	feedSweepCompletion(f, sampleSlope, tInt, tFrac)
+	f.clock.Advance(densitometer.SweepWait)
+	waitFor(t, "measure done", func() bool { return jobResult(t, f, mid)["state"] == "succeeded" })
+	return jobResult(t, f, mid)["result"].(map[string]any)
+}
+
+func TestMeasureAbsorbance(t *testing.T) {
+	f := newFixture(t)
+	// sample slope 50 vs blank 100, same temp → |log10(2)| ≈ 0.30103, tube 1.0
+	res := measureAfterBlank(t, f, `{"include_raw":false}`, 50, 27, 45)
+	if res["absorbance"].(float64) < 0.30 || res["absorbance"].(float64) > 0.302 {
+		t.Fatalf("absorbance = %v, want ~0.30103", res["absorbance"])
+	}
+	if res["blank_slope"].(float64) < 99 || res["blank_slope"].(float64) > 101 {
+		t.Fatalf("blank_slope = %v", res["blank_slope"])
+	}
+	if res["slope"].(float64) < 49 || res["slope"].(float64) > 51 {
+		t.Fatalf("slope = %v", res["slope"])
+	}
+	if res["seq"].(float64) != 1 {
+		t.Fatalf("seq = %v, want 1", res["seq"])
+	}
+	if res["raw"] != nil {
+		t.Fatalf("raw must be null when include_raw=false: %v", res["raw"])
+	}
+}
+
+func TestMeasureIncludeRaw(t *testing.T) {
+	f := newFixture(t)
+	res := measureAfterBlank(t, f, `{"include_raw":true}`, 50, 27, 45)
+	if sw, ok := res["raw"].([]any); !ok || len(sw) != 20 {
+		t.Fatalf("include_raw must attach the 20-point sweep: %v", res["raw"])
+	}
+}
+
+func TestMeasureTemperatureCompensation(t *testing.T) {
+	f := newFixture(t)
+	// sample temp 37.45 vs blank 27.45 → +10 °C → +0.022 over raw
+	res := measureAfterBlank(t, f, "", 50, 37, 45)
+	if res["absorbance"].(float64) < 0.322 || res["absorbance"].(float64) > 0.324 {
+		t.Fatalf("temperature-compensated absorbance = %v, want ~0.32303", res["absorbance"])
+	}
+}

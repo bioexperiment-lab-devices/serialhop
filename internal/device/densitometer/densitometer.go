@@ -231,9 +231,14 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.status()
 	case "measure_blank":
 		return d.measureBlank()
+	case "measure":
+		return d.measure(params)
+	case "set_tube_correction":
+		return d.setTubeCorrection(params)
+	case "calibrate_tube":
+		return d.calibrateTube(params)
 	// handlers wired in later tasks:
-	// stop, stop_monitoring, set_tube_correction,
-	// calibrate_tube, set_led, measure, read_raw,
+	// stop, stop_monitoring, set_led, read_raw,
 	// start_monitoring, get_readings
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
@@ -292,3 +297,6 @@ func (d *Driver) clearSweep() {
 func newRingBuffer() *ringBuffer { return &ringBuffer{} }
 
 type ringBuffer struct{}
+
+// TEMPORARY (Task 8 replaces with the real ring): no-op push.
+func (rb *ringBuffer) push(reading) {}
