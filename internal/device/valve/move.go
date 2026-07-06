@@ -198,3 +198,33 @@ func (d *Driver) verifyMove(cancelled bool) *device.CmdError {
 	}
 	return nil
 }
+
+// stop implements the documented spec deviation (TRANSLATION.md §4 stop;
+// JSON_PROTOCOL.md §3 stop's MAY clause; spec §8.4): the firmware has NO
+// abort command — motion always runs to completion (worst case
+// ≈ N × SlotDuration ≈ 5.5 s). stop therefore WAITS OUT the remaining
+// motion, deliberately blocking this session's loop (accepted per spec §3;
+// queued commands stall behind it, within single-client semantics), then
+// runs the usual post-motion verification. Position knowledge is preserved;
+// the job is marked cancelled to record intent even though the motion
+// physically completed. Callers must treat stop as "settle and report",
+// latency ≤ ~6 s.
+func (d *Driver) stop() (any, *device.CmdError) {
+	if d.moveJob == nil {
+		return map[string]any{"state": d.stateName()}, nil
+	}
+	id := d.moveJob.id
+	if a := d.s.Jobs().Active(); a != nil {
+		if remaining := d.moveJob.estimate - elapsedOf(a); remaining > 0 {
+			d.s.Sleep(remaining)
+		}
+	}
+	if cerr := d.verifyMove(true); cerr != nil {
+		return nil, cerr
+	}
+	return map[string]any{"state": d.stateName(), "cancelled_job_id": id}, nil
+}
+
+func elapsedOf(j *device.Job) time.Duration {
+	return time.Duration(j.ElapsedS * float64(time.Second))
+}

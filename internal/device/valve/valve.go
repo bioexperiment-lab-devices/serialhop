@@ -264,6 +264,8 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.home(params)
 	case "set_position":
 		return d.setPosition(params)
+	case "stop":
+		return d.stop()
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
