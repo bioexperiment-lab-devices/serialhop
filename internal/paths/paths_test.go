@@ -80,7 +80,7 @@ func TestEnsureDirsCreatesBothLevels(t *testing.T) {
 	if err := EnsureDirs(); err != nil {
 		t.Fatalf("EnsureDirs: %v", err)
 	}
-	for _, p := range []string{root, filepath.Join(root, "logs"), filepath.Join(root, "state")} {
+	for _, p := range []string{root, filepath.Join(root, "logs"), filepath.Join(root, "state"), filepath.Join(root, "devicestate")} {
 		info, err := os.Stat(p)
 		if err != nil {
 			t.Errorf("stat %q: %v", p, err)
@@ -255,5 +255,21 @@ func TestPanelLogPaths_Empty(t *testing.T) {
 	}
 	if got := PanelLogOffsetPath(); got != "" {
 		t.Errorf("PanelLogOffsetPath() = %q, want empty", got)
+	}
+}
+
+func TestDeviceStateDir(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", filepath.Join("some", "root"))
+	want := filepath.Join("some", "root", "devicestate")
+	if got := DeviceStateDir(); got != want {
+		t.Errorf("DeviceStateDir() = %q, want %q", got, want)
+	}
+}
+
+func TestDeviceStateDir_Empty(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	if got := DeviceStateDir(); got != "" {
+		t.Errorf("DeviceStateDir() = %q, want empty", got)
 	}
 }
