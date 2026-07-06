@@ -109,10 +109,12 @@ func (s *Session) loop(ctx context.Context) {
 		case <-ctx.Done():
 			// Detach unconditionally: even a session that never reached
 			// "connected" (or that went unreachable before shutdown) still
-			// needs its persistence hook run. Detach doing serial I/O on a
-			// dead port just fails harmlessly.
-			s.driver.Detach()
+			// needs its persistence hook run. connected=false is published
+			// FIRST so a Detach that does serial I/O on a dead port (pump's
+			// safety stop) no-ops in markUnreachable instead of failing jobs
+			// and scheduling a reattach mid-shutdown.
 			s.connected.Store(false)
+			s.driver.Detach()
 			if s.conn != nil {
 				_ = s.conn.Close()
 			}
@@ -313,6 +315,20 @@ func (s *Session) Transact(frame []byte, replyLen int, timeout time.Duration) ([
 		s.markUnreachable(err)
 	}
 	return reply, err
+}
+
+// WriteFrame writes one frame with no drain, no read, and no retry.
+// For blind-toggle commands (pump cmd 19 pause/resume) where a duplicate
+// send inverts device state: transact()'s whole-transaction retry could
+// double-send a frame whose first attempt partially reached the device.
+// A write failure still flips the session unreachable — recovery resets
+// the toggle belief. Session-goroutine only.
+func (s *Session) WriteFrame(frame []byte) error {
+	if _, err := s.conn.Write(frame); err != nil {
+		s.markUnreachable(err)
+		return err
+	}
+	return nil
 }
 
 // errUnreachable builds the device_unreachable CmdError used for every

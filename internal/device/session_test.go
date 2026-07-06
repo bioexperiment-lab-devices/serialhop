@@ -14,12 +14,13 @@ import (
 
 // stubDriver is a scriptable Driver for session tests.
 type stubDriver struct {
-	s         *device.Session
-	attachErr error
-	attaches  atomic.Int32
-	ticks     atomic.Int32
-	detached  atomic.Bool
-	exec      func(cmd string, params json.RawMessage) (any, *device.CmdError)
+	s            *device.Session
+	attachErr    error
+	attaches     atomic.Int32
+	ticks        atomic.Int32
+	detached     atomic.Bool
+	connAtDetach atomic.Bool
+	exec         func(cmd string, params json.RawMessage) (any, *device.CmdError)
 }
 
 func (d *stubDriver) Attach(ctx context.Context, probeReply []byte) (device.Info, error) {
@@ -39,7 +40,10 @@ func (d *stubDriver) Execute(ctx context.Context, cmd string, params json.RawMes
 }
 
 func (d *stubDriver) Tick(now time.Time) { d.ticks.Add(1) }
-func (d *stubDriver) Detach()            { d.detached.Store(true) }
+func (d *stubDriver) Detach() {
+	d.connAtDetach.Store(d.s.Connected())
+	d.detached.Store(true)
+}
 
 type sessionFixture struct {
 	s      *device.Session

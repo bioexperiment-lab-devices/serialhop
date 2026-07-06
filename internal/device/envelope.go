@@ -74,3 +74,7 @@ func ErrHardware(msg string) *CmdError {
 func ErrInternal(msg string) *CmdError {
 	return &CmdError{Code: CodeInternalError, Message: msg}
 }
+
+func ErrNotCalibrated(msg string) *CmdError {
+	return &CmdError{Code: CodeNotCalibrated, Message: msg}
+}
