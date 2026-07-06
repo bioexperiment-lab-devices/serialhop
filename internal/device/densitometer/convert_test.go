@@ -26,7 +26,7 @@ func buildArray(fn func(i int) int) []byte {
 	buf := make([]byte, 0, 80)
 	for i := 1; i <= 20; i++ {
 		v := fn(i)
-		buf = append(buf, 105, byte(i), byte(v%256), byte(v/256))
+		buf = append(buf, 105, byte(i), byte(v%256), byte(v/256)) // #nosec G115 -- test data; i and derived low/high bytes are bounded to 0..255 by construction
 	}
 	return buf
 }

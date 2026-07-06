@@ -25,13 +25,6 @@ func withStateDir(dir string) fixtureOpt {
 	return func(cfg *device.SessionConfig) { cfg.StateDir = dir }
 }
 
-func withProbeReply(r []byte) fixtureOpt {
-	return func(cfg *device.SessionConfig) {
-		cfg.ProbeReply = r
-		cfg.Reprobe = func(p serial.Port) ([]byte, error) { return r, nil }
-	}
-}
-
 // shrinkTimeouts collapses every real-time and clock knob so tests run fast.
 func shrinkTimeouts(t *testing.T) {
 	t.Helper()
