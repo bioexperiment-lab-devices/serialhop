@@ -119,6 +119,7 @@ type Driver struct {
 	seqCounter   int64
 	monitoring   monitoringState
 	nextCanaryAt time.Time
+	lastJobID    string // most recent completed job (Task 5+); statusJob() falls back to it
 
 	// cached for the busy-window status path
 	cachedTemp   float64
@@ -224,8 +225,12 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 	switch cmd {
 	case "set_thermostat":
 		return d.setThermostat(params)
+	case "ping":
+		return d.ping()
+	case "status":
+		return d.status()
 	// handlers wired in later tasks:
-	// ping, status, stop, stop_monitoring, set_tube_correction,
+	// stop, stop_monitoring, set_tube_correction,
 	// calibrate_tube, set_led, measure, measure_blank, read_raw,
 	// start_monitoring, get_readings
 	default:
