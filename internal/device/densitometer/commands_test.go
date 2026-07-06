@@ -206,6 +206,13 @@ func TestStopCancelsSweep(t *testing.T) {
 	if jobResult(t, f, id)["state"] != "cancelled" {
 		t.Fatalf("job must be cancelled")
 	}
+	// stop cancels bookkeeping but the firmware cannot abort a sweep — it
+	// physically finishes (~6 s). busy_until is deliberately NOT reset, so a
+	// serial-touching command must still fail fast with busy until the window
+	// elapses (TRANSLATION §stop). Guards against a future reset regression.
+	if resp := f.exec("set_led", `{"level":5}`); resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("serial command right after stop (device still sweeping) must be busy: %+v", resp)
+	}
 	// a stale completion callback must not resurrect the job
 	feedSweepCompletion(f, 100, 27, 45)
 	f.clock.Advance(densitometer.SweepWait + densitometer.LivenessSpacing)
