@@ -331,6 +331,23 @@ func (s *Session) WriteFrame(frame []byte) error {
 	return nil
 }
 
+// Sleep blocks the calling goroutine for d via the injectable clock.
+// Calling it ON the session goroutine deliberately stalls the loop — that
+// is reserved for the valve's documented stop deviation (spec §3: the
+// firmware cannot abort a move, so stop waits it out, ≤ ~6 s). Session
+// shutdown wakes the sleeper early so Close never waits the full duration.
+func (s *Session) Sleep(d time.Duration) {
+	var ctxDone <-chan struct{}
+	if s.loopCtx != nil {
+		ctxDone = s.loopCtx.Done()
+	}
+	select {
+	case <-s.cfg.Clock.After(d):
+	case <-ctxDone:
+	case <-s.done:
+	}
+}
+
 // errUnreachable builds the device_unreachable CmdError used for every
 // session-level "can't talk to the device right now" response.
 func errUnreachable(msg string) *CmdError {
