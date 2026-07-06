@@ -237,8 +237,15 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.setTubeCorrection(params)
 	case "calibrate_tube":
 		return d.calibrateTube(params)
+	case "read_raw":
+		return d.readRaw(params)
+	case "set_led":
+		return d.setLED(params)
+	case "stop":
+		return d.stop()
+	case "stop_monitoring":
+		return d.stopMonitoring()
 	// handlers wired in later tasks:
-	// stop, stop_monitoring, set_led, read_raw,
 	// start_monitoring, get_readings
 	default:
 		return nil, device.ErrUnknownCommand(cmd)

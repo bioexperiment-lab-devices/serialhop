@@ -133,7 +133,8 @@ func (d *Driver) readSweepAndFinish(gen int) {
 		d.finishBlank(gen, intensities, tempC)
 	case "measure", "monitor":
 		d.finishMeasure(gen, intensities, tempC)
-	// "read_raw" wired in Task 7
+	case "read_raw":
+		d.finishReadRaw(gen, intensities, tempC)
 	default:
 		d.s.Jobs().Fail(device.ErrInternal("unknown sweep kind: " + d.sweep.kind))
 		d.clearSweep()
@@ -266,5 +267,72 @@ func (d *Driver) finishMeasure(gen int, intensities [20]int, tempC float64) {
 		BlankSlope: d.blank.Slope, TemperatureC: tempC,
 		TubeCorrection: d.tubeCorrection, Seq: r.seq, Raw: rawSweep,
 	})
+	d.clearSweep()
+}
+
+// readRaw (TRANSLATION §4 read_raw): level==null sweeps all 20 brightness
+// levels (78 4, same trigger as measure); level==n (1..20) triggers a single
+// brightness (75 1 n) and the firmware fills all 20 array slots at that one
+// level.
+func (d *Driver) readRaw(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		Level *int `json:"level"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+		}
+	}
+	if p.Level == nil {
+		job, cerr := d.runSweep("read_raw", measureTrigger, SweepWait, sweep{level: 0})
+		if cerr != nil {
+			return nil, cerr
+		}
+		return map[string]any{"job": job}, nil
+	}
+	n := *p.Level
+	if n < 1 || n > 20 {
+		return nil, device.ErrInvalidParams("level", n, "level must be 1..20 or null")
+	}
+	trigger := []byte{75, 1, byte(n), 0, 0} // #nosec G115 -- n is validated 1..20 above
+	job, cerr := d.runSweep("read_raw", trigger, SingleLevelWait, sweep{level: n})
+	if cerr != nil {
+		return nil, cerr
+	}
+	return map[string]any{"job": job}, nil
+}
+
+type readRawResult struct {
+	Intensities  []int   `json:"intensities"`
+	Levels       []int   `json:"levels"`
+	TemperatureC float64 `json:"temperature_c"`
+}
+
+// finishReadRaw (TRANSLATION §4 read_raw): level 0 (full sweep) returns all 20
+// intensities against levels 1..20; a single-level read fills all 20 array
+// slots at the one brightness, so it returns their mean as a single-element
+// array (reconciling TRANSLATION "or its mean" with the JSON single-element
+// array shape).
+func (d *Driver) finishReadRaw(gen int, intensities [20]int, tempC float64) {
+	if d.stale(gen) {
+		return
+	}
+	var res readRawResult
+	res.TemperatureC = tempC
+	if d.sweep.level == 0 {
+		res.Intensities = sliceOf(intensities)
+		res.Levels = make([]int, 20)
+		for i := range res.Levels {
+			res.Levels[i] = i + 1
+		}
+	} else {
+		sum := 0
+		for _, v := range intensities {
+			sum += v
+		}
+		res.Intensities = []int{sum / 20}
+		res.Levels = []int{d.sweep.level}
+	}
+	d.s.Jobs().Complete(res)
 	d.clearSweep()
 }

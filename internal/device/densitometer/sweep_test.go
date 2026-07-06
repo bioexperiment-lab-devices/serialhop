@@ -193,3 +193,46 @@ func TestMeasureTemperatureCompensation(t *testing.T) {
 		t.Fatalf("temperature-compensated absorbance = %v, want ~0.32303", res["absorbance"])
 	}
 }
+
+func TestReadRawFullSweep(t *testing.T) {
+	f := newFixture(t)
+	id := startJob(t, f, "read_raw", `{"level":null}`)
+	if !frameEq(f.frames()[len(f.frames())-1], 78, 4, 0, 0, 0) {
+		t.Fatalf("full read_raw must trigger 78 4: %v", f.frames())
+	}
+	feedSweepCompletion(f, 100, 27, 45)
+	f.clock.Advance(densitometer.SweepWait)
+	waitFor(t, "read_raw done", func() bool { return jobResult(t, f, id)["state"] == "succeeded" })
+	res := jobResult(t, f, id)["result"].(map[string]any)
+	if len(res["intensities"].([]any)) != 20 || len(res["levels"].([]any)) != 20 {
+		t.Fatalf("full sweep must return 20 intensities+levels: %v", res)
+	}
+}
+
+func TestReadRawSingleLevel(t *testing.T) {
+	f := newFixture(t)
+	id := startJob(t, f, "read_raw", `{"level":7}`)
+	if !frameEq(f.frames()[len(f.frames())-1], 75, 1, 7, 0, 0) {
+		t.Fatalf("single-level read_raw must trigger 75 1 7: %v", f.frames())
+	}
+	// firmware fills all 20 slots at brightness 7; feed a flat array of 500
+	f.port.Feed([]byte{70, 5, 27, 45})
+	f.port.Feed(buildArrayBytes(func(i int) int { return 500 }))
+	f.port.Feed([]byte{5, 5, 27, 45})
+	f.clock.Advance(densitometer.SingleLevelWait)
+	waitFor(t, "single-level done", func() bool { return jobResult(t, f, id)["state"] == "succeeded" })
+	res := jobResult(t, f, id)["result"].(map[string]any)
+	ints := res["intensities"].([]any)
+	levels := res["levels"].([]any)
+	if len(ints) != 1 || ints[0].(float64) != 500 || len(levels) != 1 || levels[0].(float64) != 7 {
+		t.Fatalf("single-level result: %v", res)
+	}
+}
+
+func TestReadRawInvalidLevel(t *testing.T) {
+	f := newFixture(t)
+	resp := f.exec("read_raw", `{"level":21}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+		t.Fatalf("level 21: %+v", resp)
+	}
+}

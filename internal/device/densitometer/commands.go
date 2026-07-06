@@ -195,3 +195,61 @@ func (d *Driver) appendReading(r reading) {
 	d.lastReading = &rr
 	d.ring.push(rr)
 }
+
+// setLED (TRANSLATION §4): drives the LED brightness directly, independent of
+// a sweep. Gated by serialGate (mid-sweep this would collide with the sweep's
+// own traffic); the firmware never acks a brightness set, so the result is
+// optimistic.
+func (d *Driver) setLED(params json.RawMessage) (any, *device.CmdError) {
+	var p struct {
+		Level int `json:"level"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, device.ErrInvalidParams("params", nil, "params is not valid JSON")
+	}
+	if cerr := d.serialGate(); cerr != nil {
+		return nil, cerr
+	}
+	if p.Level < 0 || p.Level > 20 {
+		return nil, device.ErrInvalidParams("level", p.Level, "level must be 0..20")
+	}
+	if _, err := d.s.Transact([]byte{75, 0, byte(p.Level), 0, 0}, 0, replyTimeout); err != nil { // #nosec G115 -- p.Level validated 0..20 above
+		return nil, device.ErrHardware("set_led: " + err.Error())
+	}
+	return map[string]any{"level": p.Level}, nil // GAP: no readback, optimistic
+}
+
+type stopResult struct {
+	State          string `json:"state"`
+	CancelledJobID string `json:"cancelled_job_id,omitempty"`
+}
+
+// stop (TRANSLATION §4): sends 70 (LED off / stop continuous mode) — during a
+// sweep this buffers in the device RX and runs when the sweep ends — then
+// cancels the job bookkeeping immediately and disables monitoring. Exempt from
+// serialGate: the 70 frame is write-only and safe to buffer. Deliberately does
+// NOT touch busyUntil: the firmware cannot abort a sweep in flight, so the
+// device is still physically busy until the original window elapses.
+func (d *Driver) stop() (any, *device.CmdError) {
+	if _, err := d.s.Transact(stopFrame, 0, replyTimeout); err != nil {
+		return nil, device.ErrHardware("stop: " + err.Error())
+	}
+	res := stopResult{State: "idle"}
+	if a := d.s.Jobs().Active(); a != nil {
+		cancelled := d.s.Jobs().Cancel()
+		res.CancelledJobID = cancelled.ID
+	}
+	d.monitoring = monitoringState{}
+	d.clearSweep() // bumps sweepGen → pending completion callbacks no-op
+	return res, nil
+}
+
+type stopMonitoringResult struct {
+	State string `json:"state"`
+}
+
+// stopMonitoring disables the scheduler (bookkeeping only). Also invoked by stop.
+func (d *Driver) stopMonitoring() (any, *device.CmdError) {
+	d.monitoring = monitoringState{}
+	return stopMonitoringResult{State: d.stateName()}, nil
+}

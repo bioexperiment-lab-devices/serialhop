@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/densitometer"
 )
 
 func TestPingReturnsUptime(t *testing.T) {
@@ -155,5 +156,60 @@ func TestCalibrateTubeRejectsOutOfRange(t *testing.T) {
 	resp := f.exec("calibrate_tube", `{"reference_absorbance":3.0}`)
 	if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
 		t.Fatalf("out-of-range calibrate_tube must be invalid_params: %+v", resp)
+	}
+}
+
+func TestSetLED(t *testing.T) {
+	f := newFixture(t)
+	m := f.resultMap(f.exec("set_led", `{"level":12}`))
+	if m["level"] != 12.0 {
+		t.Fatalf("result: %v", m)
+	}
+	if !frameEq(f.frames()[len(f.frames())-1], 75, 0, 12, 0, 0) {
+		t.Fatalf("led frame: %v", f.frames())
+	}
+}
+
+func TestSetLEDRange(t *testing.T) {
+	f := newFixture(t)
+	resp := f.exec("set_led", `{"level":21}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+		t.Fatalf("%+v", resp)
+	}
+}
+
+// TestSetLEDBusyMidSweep: set_led touches the port, so it fails fast with busy
+// during a sweep's busy window (the mid-sweep case deferred from Task 5, where
+// set_led was not yet wired into dispatch).
+func TestSetLEDBusyMidSweep(t *testing.T) {
+	f := newFixture(t)
+	startJob(t, f, "measure_blank", "")
+	resp := f.exec("set_led", `{"level":5}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
+		t.Fatalf("set_led mid-sweep must be busy: %+v", resp)
+	}
+}
+
+func TestStopCancelsSweep(t *testing.T) {
+	f := newFixture(t)
+	id := startJob(t, f, "measure_blank", "")
+	// stop mid-sweep: writes 70 (buffers), cancels the job bookkeeping now
+	f.port.Feed([]byte{}) // stop's 70 is write-only, no reply needed
+	resp := f.exec("stop", "")
+	if resp.Status != "ok" {
+		t.Fatalf("stop: %+v", resp)
+	}
+	m := f.resultMap(resp)
+	if m["state"] != "idle" || m["cancelled_job_id"] != id {
+		t.Fatalf("stop result: %v", m)
+	}
+	if jobResult(t, f, id)["state"] != "cancelled" {
+		t.Fatalf("job must be cancelled")
+	}
+	// a stale completion callback must not resurrect the job
+	feedSweepCompletion(f, 100, 27, 45)
+	f.clock.Advance(densitometer.SweepWait + densitometer.LivenessSpacing)
+	if jobResult(t, f, id)["state"] != "cancelled" {
+		t.Fatalf("cancelled job must stay cancelled after the stale timer fires")
 	}
 }
