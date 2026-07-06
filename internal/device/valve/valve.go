@@ -251,6 +251,8 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.ping()
 	case "status":
 		return d.status()
+	case "home":
+		return d.home(params)
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
