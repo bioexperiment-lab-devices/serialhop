@@ -78,3 +78,7 @@ func ErrInternal(msg string) *CmdError {
 func ErrNotCalibrated(msg string) *CmdError {
 	return &CmdError{Code: CodeNotCalibrated, Message: msg}
 }
+
+func ErrNotHomed(msg string) *CmdError {
+	return &CmdError{Code: CodeNotHomed, Message: msg}
+}

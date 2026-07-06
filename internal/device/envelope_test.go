@@ -66,3 +66,10 @@ func TestErrNotCalibrated(t *testing.T) {
 		t.Fatalf("bad error: %+v", e)
 	}
 }
+
+func TestErrNotHomed(t *testing.T) {
+	e := ErrNotHomed("valve is unhomed")
+	if e.Code != CodeNotHomed || e.Message != "valve is unhomed" {
+		t.Fatalf("ErrNotHomed: %+v", e)
+	}
+}
