@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -424,5 +426,46 @@ func TestV1DiscoverErrorIs500(t *testing.T) {
 	}
 	if body.Detail != "boom" {
 		t.Errorf("detail: got %q, want 'boom'", body.Detail)
+	}
+}
+
+// TestV1CommandsSerializePerSession pins the guarantee the driver
+// completion-window guards rest on: concurrent HTTP requests to one device
+// execute strictly one at a time on the session goroutine.
+func TestV1CommandsSerializePerSession(t *testing.T) {
+	var inFlight, maxSeen atomic.Int32
+	drv := &fakeDriver{}
+	drv.exec = func(cmd string, _ json.RawMessage) (any, *device.CmdError) {
+		cur := inFlight.Add(1)
+		for {
+			m := maxSeen.Load()
+			if cur <= m || maxSeen.CompareAndSwap(m, cur) {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+		inFlight.Add(-1)
+		return "done", nil
+	}
+	sess := newFakeSession(t, "fake_1", drv)
+	reg := registry.New()
+	reg.Replace([]*device.Session{sess})
+	srv := newV1Server(t, reg, nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"id":"c%d","cmd":"work"}`, n)
+			rec := postEnvelope(t, srv, "/api/v1/devices/fake_1/command", body)
+			if rec.Code != http.StatusOK {
+				t.Errorf("request %d: status %d", n, rec.Code)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if maxSeen.Load() != 1 {
+		t.Fatalf("commands overlapped in the driver: max in-flight %d", maxSeen.Load())
 	}
 }
