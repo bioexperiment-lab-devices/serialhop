@@ -97,7 +97,8 @@ func (d *Driver) livenessAttempt(gen, n int) {
 	// fails the active job (TRANSLATION §5); on success we proceed.
 	reply, err := d.s.Transact(pingFrame, 4, replyTimeout)
 	if err != nil {
-		return // markUnreachable already failed the job + scheduled reattach
+		d.clearSweep() // markUnreachable already failed the job; clear d.sweep so the gate invariant holds
+		return
 	}
 	if reply[0] != TypeCode {
 		d.s.Jobs().Fail(device.ErrHardware("liveness: unexpected reply"))

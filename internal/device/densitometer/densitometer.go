@@ -275,12 +275,21 @@ func (d *Driver) persist() error {
 	})
 }
 
-// serialGate rejects commands that would touch the port during a sweep's
-// busy window (decision 1). status serves cached values instead of gating.
+// serialGate rejects commands that would touch the port while a sweep is in
+// flight — the whole sweep, including the post-busy_until completion phase
+// (liveness retries + array/temp read-out), during which d.sweep stays set.
+// Gating on busy_until alone would open a window on a slow device where a
+// concurrent status/ping does a live Transact against the still-finishing
+// device, times out, and tears the sweep down via markUnreachable. The
+// busy_until half preserves the post-stop case (d.sweep nilled but the
+// hardware is still physically sweeping and must keep reporting busy).
 func (d *Driver) serialGate() *device.CmdError {
-	if d.s.Now().Before(d.busyUntil) {
-		return device.ErrBusy("device is mid-sweep",
-			map[string]any{"busy_ms": d.busyUntil.Sub(d.s.Now()).Milliseconds()})
+	if d.sweep != nil || d.s.Now().Before(d.busyUntil) {
+		busyMs := d.busyUntil.Sub(d.s.Now()).Milliseconds()
+		if busyMs < 0 {
+			busyMs = 0
+		}
+		return device.ErrBusy("device is mid-sweep", map[string]any{"busy_ms": busyMs})
 	}
 	return nil
 }

@@ -229,6 +229,43 @@ func TestReadRawSingleLevel(t *testing.T) {
 	}
 }
 
+// TestStatusDuringSlowSweepStaysBusy: after busy_until elapses but before a
+// slow device answers the liveness poll, a concurrent status must serve cached
+// values (busy path), NOT do a live read that tears down the in-flight sweep.
+func TestStatusDuringSlowSweepStaysBusy(t *testing.T) {
+	f := newFixture(t)
+	// prime the temperature cache via an idle status
+	f.port.Feed([]byte{5, 5, 30, 0}) // temperature 30.00
+	f.port.Feed([]byte{5, 5, 0, 0})  // thermostat 0 (in sync with first-contact mirror)
+	if f.resultMap(f.exec("status", ""))["temperature_c"].(float64) != 30.0 {
+		t.Fatal("prime cache")
+	}
+	id := startJob(t, f, "measure_blank", "")
+	// device is slow: feed no liveness reply. busy_until elapses; the sweep is
+	// still in flight (a liveness retry is pending).
+	f.clock.Advance(densitometer.SweepWait)
+	// a concurrent status must serve cached temp and must NOT tear down the sweep
+	st := f.resultMap(f.exec("status", ""))
+	if st["state"] != "measuring" {
+		t.Fatalf("state during completion phase: %v", st)
+	}
+	if st["temperature_c"].(float64) != 30.0 {
+		t.Fatalf("status must serve cached temp during completion, got %v", st["temperature_c"])
+	}
+	if !f.s.Connected() {
+		t.Fatal("a concurrent status must not tear down the session mid-completion")
+	}
+	if jobResult(t, f, id)["state"] != "running" {
+		t.Fatal("the in-flight sweep must survive a concurrent status")
+	}
+	// the device finally answers; the retry completes the sweep cleanly
+	feedSweepCompletion(f, 100, 27, 45)
+	f.clock.Advance(densitometer.LivenessSpacing)
+	waitFor(t, "sweep completes after slow device answers", func() bool {
+		return jobResult(t, f, id)["state"] == "succeeded"
+	})
+}
+
 func TestReadRawInvalidLevel(t *testing.T) {
 	f := newFixture(t)
 	resp := f.exec("read_raw", `{"level":21}`)
