@@ -29,12 +29,12 @@ That's the entire tunneling configuration. There is no SOCKS proxy, no dynamic p
 
 ### What SerialHop does NOT do
 
-- **No remote command execution.** The control plane is three HTTP routes (`internal/api/handlers.go:29-35`):
-  - `GET /devices` — list cached discovery results
-  - `POST /discover` — re-enumerate COM ports
-  - `POST /devices/{id}/command` — write up to 1024 bytes to a configured serial port and optionally read a response
-  Bytes are validated to fit `0..255` and forwarded to a serial port handle. They are not executed, interpreted, or passed to any subprocess.
-- **No file system access.** No endpoint reads, writes, lists, or transfers files. The only file I/O the binary performs is reading its own config, writing its own logs, and (in service mode) updating SCM state.
+- **No remote command execution.** The control plane is three HTTP routes (`internal/api/handlers.go:48-50`):
+  - `GET /api/v1/devices` — list cached discovery results
+  - `POST /api/v1/discover` — re-enumerate COM ports and rebuild device sessions
+  - `POST /api/v1/devices/{id}/command` — execute one command on a device
+  Commands are JSON, validated per device protocol, and translated to fixed 5-byte frames on the serial port; raw byte passthrough no longer exists.
+- **No file system access.** No endpoint reads, writes, lists, or transfers arbitrary files. The only file I/O the binary performs is reading its own config, writing its own logs, persisting per-device state JSON files under its own data dir (`devicestate/`), and (in service mode) updating SCM state.
 - **No screen capture, keylogging, clipboard access, microphone, camera, browser/credential theft.** None of these subsystems are imported or invoked.
 - **No arbitrary network egress.** Outbound network activity from this binary consists of (a) the chisel control connection to the configured server, and (b) HTTP POSTs from the in-process log shipper to `127.0.0.1:3100` (which is then tunneled to Loki via chisel). No DNS-over-HTTPS exfil, no beaconing to attacker infrastructure, no auto-update channel.
 - **No inbound port on the lab machine's external interface.** The REST listener is bound to `127.0.0.1` (`internal/api/server.go:13-19`). Reachability from outside the lab machine is **only** through the chisel tunnel that the operator chose to configure.
@@ -48,7 +48,7 @@ If a future change adds any of the above, this section must be updated in the sa
 |---|---|
 | Operator chisel-server compromise | Attacker gains the same access the legitimate operator has: the three REST endpoints. Containment depends on the server's auth proxy. Not solvable by the client. |
 | Stolen `lab_bridge.user`/`lab_bridge.pass` from a single lab | Per-lab credentials. Attacker can authenticate to the chisel server as that lab but cannot impersonate other labs. Server allowlist is per-user; rotate on disclosure. |
-| Bug in the byte-handling REST handler exploited via the tunnel | Service runs as LocalSystem, so an exploitable bug is high-impact. Mitigations: input validation (`parseCommandBody` rejects out-of-range bytes, length-bounded reads, per-device mutex); race tests in CI (`go test -race`); `govulncheck` and `gosec` in `pr.yml`. |
+| Bug in the command REST handler exploited via the tunnel | Service runs as LocalSystem, so an exploitable bug is high-impact. Mitigations: input validation (`decodeEnvelope` rejects malformed bodies, 32 KiB body cap, per-device param validation in the driver); each device session runs on a single goroutine, serializing its commands; race tests in CI (`go test -race`); `govulncheck` and `gosec` in `pr.yml`. |
 | Tampered binary distributed to operators | Releases are built on `windows-latest` from `main`, published with `SHA256SUMS.txt` and a Sigstore build-provenance attestation. Verify with `gh attestation verify` (see `README.md` → "Releases"). |
 | Config-file disclosure on the lab machine | The config contains the chisel server URL and the per-lab credentials. Disclosure → rotate credentials and reissue. The file lives next to the .exe at install location; protect with normal NTFS ACLs. No secrets are logged. |
 | Log exfiltration through the Loki forward tunnel | Logs are gzipped JSON of the same lines already on disk in `SerialHop.log` / `SerialHop_stderr.log`. Line bodies are not scrubbed (per design). Operators must avoid logging secrets from upstream code; reviewers should check log call sites in PRs that touch new code paths. |

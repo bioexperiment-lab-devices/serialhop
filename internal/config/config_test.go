@@ -28,13 +28,6 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_RawSerialDisabled(t *testing.T) {
-	c := Default()
-	if c.RawSerial.Enabled {
-		t.Errorf("raw_serial.enabled: got true, want false (must default off)")
-	}
-}
-
 func TestDefaultConfig_PostOpenSettle(t *testing.T) {
 	c := Default()
 	if c.Discovery.PostOpenSettleMs != 2000 {

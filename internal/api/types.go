@@ -1,40 +1,29 @@
 package api
 
-import "time"
+import (
+	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+)
+
+// DeviceDTO is one entry in the /api/v1 device list (spec §4).
 type DeviceDTO struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	TypeCode byte   `json:"type_code"`
-	Port     string `json:"port"`
+	ID        string       `json:"id"`
+	Type      string       `json:"type"` // hub type name; the valve registers as "valve" while its identify.device_type is "distribution_valve"
+	Port      string       `json:"port"`
+	Connected bool         `json:"connected"`
+	Identify  *device.Info `json:"identify"` // null until Attach succeeds
 }
 
+// DevicesResponse is the body of GET /api/v1/devices and POST /api/v1/discover.
 type DevicesResponse struct {
 	Devices      []DeviceDTO `json:"devices"`
 	DiscoveredAt *time.Time  `json:"discovered_at"`
 }
 
-type CommandRequest struct {
-	Command []int `json:"command"`
-}
-
-type CommandResponse struct {
-	Response []int `json:"response"`
-}
-
 type ErrorBody struct {
 	Error  string `json:"error"`
 	Detail string `json:"detail,omitempty"`
-}
-
-type PortDTO struct {
-	Name       string `json:"name"`
-	Discovered bool   `json:"discovered"`
-	DeviceID   string `json:"device_id,omitempty"`
-}
-
-type PortsResponse struct {
-	Ports []PortDTO `json:"ports"`
 }
 
 type DetailedPortDTO struct {

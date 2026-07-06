@@ -95,17 +95,17 @@ func (c *ServiceCli) do(ctx context.Context, method, path string, out any) (Serv
 	return StatusOK, nil
 }
 
-// GetDevices proxies GET /devices.
+// GetDevices proxies GET /api/v1/devices.
 func (c *ServiceCli) GetDevices(ctx context.Context) (api.DevicesResponse, ServiceCliStatus, error) {
 	var out api.DevicesResponse
-	status, err := c.do(ctx, "GET", "/devices", &out)
+	status, err := c.do(ctx, "GET", "/api/v1/devices", &out)
 	return out, status, err
 }
 
-// Discover proxies POST /discover.
+// Discover proxies POST /api/v1/discover.
 func (c *ServiceCli) Discover(ctx context.Context) (api.DevicesResponse, ServiceCliStatus, error) {
 	var out api.DevicesResponse
-	status, err := c.do(ctx, "POST", "/discover", &out)
+	status, err := c.do(ctx, "POST", "/api/v1/discover", &out)
 	return out, status, err
 }
 

@@ -43,15 +43,15 @@ Typed editor over `%ProgramData%\SerialHop\SerialHop_config.yaml`. Field-level v
 
 Set `auto_update.enabled: false` in the YAML to disable update checks (e.g., on air-gapped lab machines).
 
-See [`docs/configuration.md`](docs/configuration.md) for the full configuration guide: every field, common tasks (rotate credentials, restrict discovery, enable raw serial or flashing), and when to use the panel vs. editing the YAML directly.
+See [`docs/configuration.md`](docs/configuration.md) for the full configuration guide: every field, common tasks (rotate credentials, restrict discovery, enable flashing), and when to use the panel vs. editing the YAML directly.
 
 ### Devices
 
-Discovered devices with **type** (`pump` / `valve` / `densitometer`), **type code**, and **port**. Send raw command bytes per row. Per-row Disconnect releases that one port without tearing down the rest of the registry.
+Discovered devices with **type** (`pump` / `valve` / `densitometer`), **port**, and connection state. Per-row Disconnect releases that one port without tearing down the rest of the registry.
 
 ### Ports
 
-Every enumerated COM port plus its USB descriptor (VID, PID, SerialNumber, Product). A filter box narrows the list. Send raw bytes to a port without a discovered device on it (gated by `raw_serial.enabled: true` in the config).
+Every enumerated COM port plus its USB descriptor (VID, PID, SerialNumber, Product). A filter box narrows the list.
 
 ### Logs
 
@@ -59,72 +59,71 @@ Live tail of the structured logs under `%ProgramData%\SerialHop\logs\`. Newest-f
 
 ## REST API
 
-The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from outside **only** through the chisel reverse tunnel that the lab-bridge auth proxy fronts. All requests and responses are JSON. Errors follow `{ "error": "<short>", "detail": "<long>" }`.
+The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from outside **only** through the chisel reverse tunnel that the lab-bridge auth proxy fronts. All requests and responses are JSON. Infra endpoints report errors as `{ "error": "<short>", "detail": "<long>" }`; device commands use the envelope described below.
 
 | Method | Path | Purpose | Gate |
 | --- | --- | --- | --- |
-| `POST` | `/discover` | Run a fresh discovery and return the device list | — |
-| `GET`  | `/devices` | Return the cached device list | — |
-| `POST` | `/devices/{id}/command` | Send raw bytes to a discovered device; optionally read a reply | — |
-| `POST` | `/devices/disconnect` | Release all device handles; with `?port=<name>` release just that one | — |
-| `GET`  | `/serial/ports` | List enumerated COM ports with discovery state | `raw_serial.enabled` |
-| `GET`  | `/serial/ports/detailed` | Same, plus USB descriptors | always available |
-| `POST` | `/serial/ports/{port}/command` | Send raw bytes to a port without a discovered device | `raw_serial.enabled` |
+| `POST` | `/api/v1/discover` | Re-probe ports, rebuild device sessions, return the new list | — |
+| `GET`  | `/api/v1/devices` | Return the cached device list | — |
+| `POST` | `/api/v1/devices/{id}/command` | Execute one JSON protocol command on a device | — |
+| `POST` | `/devices/disconnect` | Release all device sessions; with `?port=<name>` release just that one | — |
+| `GET`  | `/serial/ports/detailed` | List enumerated COM ports with USB descriptors | — |
 | `POST` | `/flash/{port}` | Pre-backup → flash → byte-verify → optional test → auto-rollback | `flashing.enabled` |
 | `GET`  | `/agent/info` | Agent self-description for server-pulled state | — |
 | `GET`  | `/power/keep-awake` | Report keep-awake state | — |
 | `POST` | `/power/keep-awake/enable` | Activate keep-awake (idempotent) | — |
 | `POST` | `/power/keep-awake/disable` | Clear keep-awake (idempotent) | — |
 
-Discovered device types: `pump` (type code `10`), `valve` (`30`), `densitometer` (`70`).
+Device types: `pump` (type code `10`), `valve` (`30`), `densitometer` (`70`). Device IDs are ordinal per type in `(type code, port)` order: `pump_1`, `valve_1`, … Note the valve's hub type name is `valve` while its `identify.device_type` is `distribution_valve`.
 
 <details>
-<summary><b>Discovery &amp; device commands</b> — <code>POST /discover</code>, <code>GET /devices</code>, <code>POST /devices/{id}/command</code></summary>
+<summary><b>Devices &amp; commands</b> — <code>POST /api/v1/discover</code>, <code>GET /api/v1/devices</code>, <code>POST /api/v1/devices/{id}/command</code></summary>
 
-`POST /discover` runs a fresh probe pass over every enumerated COM port and replaces the in-memory registry. `GET /devices` returns the same shape from the cached registry without re-probing.
+`POST /api/v1/discover` closes every current device session (drivers persist their state), re-probes the candidate ports, and builds fresh sessions. `GET /api/v1/devices` serves the same list from cache.
 
 ```json
 {
   "devices": [
-    { "id": "pump-COM3", "type": "pump", "type_code": 10, "port": "COM3" },
-    { "id": "valve-COM7", "type": "valve", "type_code": 30, "port": "COM7" }
+    {
+      "id": "pump_1", "type": "pump", "port": "COM7", "connected": true,
+      "identify": {
+        "device_type": "pump", "model": "peristaltic-1ch", "serial": "26-025",
+        "firmware_version": "legacy", "protocol_version": "1.0", "capabilities": {}
+      }
+    }
   ],
-  "discovered_at": "2026-05-23T12:34:56Z"
+  "discovered_at": "2026-07-06T12:34:56Z"
 }
 ```
 
-`POST /devices/{id}/command` writes raw bytes to the device's serial handle and optionally reads a reply. Request body:
+`identify` is `null` until the device's post-probe attach succeeds; a device that probed but failed to attach is listed with `"connected": false` and retried in the background.
+
+`POST /api/v1/devices/{id}/command` executes one command. Body and response are the protocol envelope:
 
 ```json
-{ "command": [85, 1, 2, 3] }
+{ "id": "req-1", "cmd": "dispense", "params": { "volume_ml": 5, "speed_pct": 60 } }
 ```
-
-Each element must be `0..255`; total length must be `1..1024`. Body is capped at 32 KiB. Optional query parameters:
-
-| Param | Range | Default | Effect |
-| --- | --- | --- | --- |
-| `timeout_ms` | 1..60000 | 100 (1000 if `expected_response_bytes>0`) | Total read deadline. |
-| `inter_byte_ms` | 1..1000 | 25 (50 if `expected_response_bytes>0`) | Frame-end gap. |
-| `wait_for_response` | `true` / `false` | `true` | Skip the read entirely if `false`. |
-| `expected_response_bytes` | `-1` or 1..1024 | `-1` (no length hint) | Stop early once N bytes have been read. |
-
-Response:
 
 ```json
-{ "response": [170, 1, 2, 3] }
+{ "id": "req-1", "status": "ok", "result": { "job_id": "j-3", "state": "running" } }
 ```
 
-Behavior:
-- `409 Conflict` if a discovery pass is in progress or the device is busy with another command.
-- `503 Service Unavailable` if the I/O fails after a reconnect attempt. If the re-probe finds a different type code, the device is removed from the registry and a `503` with `"device identity changed"` is returned.
-- Bytes sent and received are logged at `debug` level as integer arrays for round-trip auditing.
+The per-device command sets (envelope, error codes, job model) are documented canonically in [`docs/protocol_translation_docs/`](docs/protocol_translation_docs/) — one `JSON_PROTOCOL.md` per device type.
+
+HTTP status mirrors the envelope outcome:
+
+- Device-decided outcomes (`ok`, `busy`, `invalid_params`, `not_calibrated`, `not_homed`, `hardware_error`, `unknown_command`, `internal_error`) → **200** with the envelope.
+- Unknown device id → **404**, envelope error `unknown_device`.
+- Device unreachable → **503**, envelope error `device_unreachable`. Exception: `identify` (served from cache once a first attach has succeeded) and `get_job` (always served from the jobs engine — including a job that just failed with `hardware_error` when the device became unreachable mid-job) stay at **200**.
+- Malformed body / missing `id` or `cmd` → **400**, envelope error `invalid_request`.
+- `POST /api/v1/discover` while another discovery runs, or while any device has an active job → **409** with `{ "error": "...", "detail": "..." }`; stop jobs first.
 
 </details>
 
 <details>
 <summary><b>Disconnect</b> — <code>POST /devices/disconnect[?port=&lt;name&gt;]</code></summary>
 
-Releases serial handles in the registry. Always available — no config gate.
+Releases device sessions in the registry. Always available — no config gate.
 
 - No query: releases every open device handle.
 - `?port=COM3`: releases just the device on `COM3`, leaving the rest of the registry untouched. `404` if no device is registered on that port.
@@ -136,9 +135,9 @@ Releases serial handles in the registry. Always available — no config gate.
 </details>
 
 <details>
-<summary><b>Raw serial</b> — <code>GET /serial/ports</code>, <code>GET /serial/ports/detailed</code>, <code>POST /serial/ports/{port}/command</code></summary>
+<summary><b>Ports</b> — <code>GET /serial/ports/detailed</code></summary>
 
-The detailed listing is always available and is what the panel's Ports tab uses:
+Always available; this is what the panel's Ports tab uses:
 
 ```json
 {
@@ -147,13 +146,11 @@ The detailed listing is always available and is what the panel's Ports tab uses:
       "name": "COM3", "is_usb": true,
       "vid": "2341", "pid": "0043",
       "serial_number": "85731303530...", "product": "Arduino Uno",
-      "discovered": true, "device_id": "pump-COM3"
+      "discovered": true, "device_id": "pump_1"
     }
   ]
 }
 ```
-
-`GET /serial/ports` and `POST /serial/ports/{port}/command` are gated by `raw_serial.enabled: true`. The command endpoint accepts the same body and query params as `/devices/{id}/command`, plus `post_open_settle_ms` (0..60000) to override the per-port settle delay after `Open`. It rejects ports that already have a discovered device with `409 Conflict` and `"use /devices/{id}/command instead"`.
 
 </details>
 
@@ -211,7 +208,7 @@ Drives the Status tab's keep-awake toggle. The service holds a Windows `PowerReq
 
 </details>
 
-For the canonical contract (discovery semantics, type codes, error envelope) see [`docs/superpowers/specs/2026-04-26-lab-devices-client-design.md`](docs/superpowers/specs/2026-04-26-lab-devices-client-design.md).
+For the canonical contract (discovery semantics, type codes, error envelope) see [`docs/superpowers/specs/2026-07-05-json-device-protocol-design.md`](docs/superpowers/specs/2026-07-05-json-device-protocol-design.md).
 
 ## Architecture
 

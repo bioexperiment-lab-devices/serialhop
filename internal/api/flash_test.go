@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
@@ -23,7 +24,7 @@ func newTestServerForFlash(t *testing.T) (*Server, *registry.Registry, *labseria
 		t.Fatalf("power.New: %v", err)
 	}
 	t.Cleanup(func() { _ = ka.Close() })
-	s := New(reg, nil, op, true, nil, false, ka)
+	s := New(reg, nil, op, nil, false, ka)
 	return s, reg, op
 }
 
@@ -42,9 +43,9 @@ func TestDisconnect_EmptyRegistry(t *testing.T) {
 
 func TestDisconnect_PopulatedRegistry(t *testing.T) {
 	s, reg, _ := newTestServerForFlash(t)
-	reg.Replace([]*registry.Device{
-		{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
-		{ID: "b", Type: "valve", TypeCode: 30, Port: "COM4", Conn: labserial.NewFakePort("COM4")},
+	reg.Replace([]*device.Session{
+		newFakeSession(t, "a", &fakeDriver{}),
+		newFakeSession(t, "b", &fakeDriver{}),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect", nil)
 	rr := httptest.NewRecorder()
@@ -62,9 +63,7 @@ func TestDisconnect_PopulatedRegistry(t *testing.T) {
 
 func TestDisconnectByPort_NotFound(t *testing.T) {
 	s, reg, _ := newTestServerForFlash(t)
-	reg.Replace([]*registry.Device{
-		{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
-	})
+	reg.Replace([]*device.Session{newFakeSession(t, "a", &fakeDriver{})})
 	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect?port=COM99", nil)
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, req)
@@ -84,11 +83,11 @@ func TestDisconnectByPort_NotFound(t *testing.T) {
 
 func TestDisconnectByPort_Found(t *testing.T) {
 	s, reg, _ := newTestServerForFlash(t)
-	target := &registry.Device{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")}
-	other := &registry.Device{ID: "b", Type: "valve", TypeCode: 30, Port: "COM4", Conn: labserial.NewFakePort("COM4")}
-	reg.Replace([]*registry.Device{target, other})
+	target := newFakeSession(t, "a", &fakeDriver{})
+	other := newFakeSession(t, "b", &fakeDriver{})
+	reg.Replace([]*device.Session{target, other})
 
-	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect?port=COM3", nil)
+	req := httptest.NewRequest(http.MethodPost, "/devices/disconnect?port="+target.PortName(), nil)
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, req)
 	if rr.Code != 200 {
@@ -97,26 +96,25 @@ func TestDisconnectByPort_Found(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `"released":1`) {
 		t.Errorf("body: %q", rr.Body.String())
 	}
-	if _, ok := reg.HasPort("COM3"); ok {
-		t.Errorf("COM3 should be gone from registry")
+	if _, ok := reg.HasPort(target.PortName()); ok {
+		t.Errorf("%s should be gone from registry", target.PortName())
 	}
-	if _, ok := reg.HasPort("COM4"); !ok {
-		t.Errorf("COM4 must remain in registry")
-	}
-	if _, err := target.Conn.Write([]byte{1}); err == nil {
-		t.Errorf("target.Conn should be closed")
+	if _, ok := reg.HasPort(other.PortName()); !ok {
+		t.Errorf("%s must remain in registry", other.PortName())
 	}
 }
 
 func TestDetailedPorts_ReturnsAnnotatedPorts(t *testing.T) {
 	s, reg, op := newTestServerForFlash(t)
-	op.Add(labserial.NewFakePort("COM3"))
+	sess := newFakeSession(t, "pump_1", &fakeDriver{})
+	reg.Replace([]*device.Session{sess})
+	// The session holds sess.PortName(); make the opener enumerate it (with
+	// USB detail) plus an unclaimed COM4 so the handler must annotate exactly
+	// the discovered one.
+	op.Add(labserial.NewFakePort(sess.PortName()))
 	op.Add(labserial.NewFakePort("COM4"))
-	op.SetDetail("COM3", labserial.DetailedPort{
-		Name: "COM3", IsUSB: true, VID: "2341", PID: "0043", Product: "Arduino Uno",
-	})
-	reg.Replace([]*registry.Device{
-		{ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
+	op.SetDetail(sess.PortName(), labserial.DetailedPort{
+		Name: sess.PortName(), IsUSB: true, VID: "2341", PID: "0043", Product: "Arduino Uno",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/serial/ports/detailed", nil)
@@ -127,14 +125,14 @@ func TestDetailedPorts_ReturnsAnnotatedPorts(t *testing.T) {
 		t.Fatalf("status: %d, body=%s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `"name":"COM3"`) {
-		t.Errorf("missing COM3 in body: %s", body)
+	if !strings.Contains(body, `"name":"`+sess.PortName()+`"`) {
+		t.Errorf("missing %s in body: %s", sess.PortName(), body)
 	}
 	if !strings.Contains(body, `"name":"COM4"`) {
 		t.Errorf("missing COM4 in body: %s", body)
 	}
 	if !strings.Contains(body, `"discovered":true`) {
-		t.Errorf("expected discovered:true for COM3: %s", body)
+		t.Errorf("expected discovered:true for %s: %s", sess.PortName(), body)
 	}
 	if !strings.Contains(body, `"device_id":"pump_1"`) {
 		t.Errorf("expected device_id pump_1: %s", body)
@@ -166,7 +164,7 @@ func newTestServerWithFlash(t *testing.T, fl flasher.Flasher, enabled bool) (*Se
 		t.Fatalf("power.New: %v", err)
 	}
 	t.Cleanup(func() { _ = ka.Close() })
-	s := New(reg, nil, op, true, fl, enabled, ka)
+	s := New(reg, nil, op, fl, enabled, ka)
 	return s, reg, op
 }
 
@@ -194,9 +192,7 @@ func TestFlash_404_UnknownPort(t *testing.T) {
 func TestFlash_409_RegistryNotEmpty(t *testing.T) {
 	s, reg, op := newTestServerWithFlash(t, &stubFlasher{}, true)
 	op.Add(labserial.NewFakePort("COM3"))
-	reg.Replace([]*registry.Device{
-		{ID: "x", Type: "pump", TypeCode: 10, Port: "COM3", Conn: labserial.NewFakePort("COM3")},
-	})
+	reg.Replace([]*device.Session{newFakeSession(t, "fake_1", &fakeDriver{})})
 	req := httptest.NewRequest(http.MethodPost, "/flash/COM3", strings.NewReader(`{"firmware":":00000001FF"}`))
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, req)

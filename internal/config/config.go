@@ -10,7 +10,6 @@ type Config struct {
 	Rest       RestConfig       `yaml:"rest" json:"rest"`
 	Discovery  DiscoveryConfig  `yaml:"discovery" json:"discovery"`
 	Log        LogConfig        `yaml:"log" json:"log"`
-	RawSerial  RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
 	AutoUpdate AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
 	Flashing   FlashingConfig   `yaml:"flashing" json:"flashing"`
 }
@@ -33,10 +32,6 @@ type DiscoveryConfig struct {
 
 type LogConfig struct {
 	Level string `yaml:"level" json:"level"`
-}
-
-type RawSerialConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 type AutoUpdateConfig struct {
@@ -63,7 +58,6 @@ func Default() Config {
 			PostOpenSettleMs: 2000,
 		},
 		Log:        LogConfig{Level: "info"},
-		RawSerial:  RawSerialConfig{Enabled: false},
 		AutoUpdate: AutoUpdateConfig{Enabled: true},
 		Flashing:   FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
 	}
@@ -95,21 +89,15 @@ discovery:
 log:
   level: "info"            # debug | info | warn | error
 
-raw_serial:
-  enabled: false           # set true to allow GET /serial/ports and
-                           # POST /serial/ports/{port}/command. bypasses
-                           # device classification — leave off unless diagnosing.
-
 auto_update:
   enabled: true            # check GitHub Releases for newer versions
                            # and offer to install them from the panel.
                            # set to false on air-gapped lab boxes.
 
 flashing:
-  enabled: false                  # allow POST /flash/{port}. higher risk than
-                                  # raw_serial — a bad .hex bricks the board
-                                  # (ISP recovery required). independent of
-                                  # raw_serial.enabled.
+  enabled: false                  # allow POST /flash/{port}. a bad .hex bricks
+                                  # the board (ISP recovery required) — leave
+                                  # off unless you're actively flashing.
   backup_dir: ""                  # absolute path for pre-flash backups.
                                   # empty -> %ProgramData%\SerialHop\backups
   keep_n: 10                      # retain this many backups per COM port;

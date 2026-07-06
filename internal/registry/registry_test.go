@@ -1,285 +1,222 @@
-package registry
+package registry_test
 
 import (
-	"log/slog"
-	"sync"
+	"context"
+	"encoding/json"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
-	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
-func newDevice(t *testing.T, id, port string, typeCode byte) *Device {
+type nullDriver struct {
+	detached atomic.Bool
+}
+
+func (d *nullDriver) Attach(ctx context.Context, probeReply []byte) (device.Info, error) {
+	return device.Info{DeviceType: "stub", Model: "stub-1", FirmwareVersion: "legacy", ProtocolVersion: "1.0"}, nil
+}
+func (d *nullDriver) Execute(ctx context.Context, cmd string, params json.RawMessage) (any, *device.CmdError) {
+	return nil, device.ErrUnknownCommand(cmd)
+}
+func (d *nullDriver) Tick(now time.Time) {}
+func (d *nullDriver) Detach()            { d.detached.Store(true) }
+
+// newStubSession returns a started session on the named port and its driver.
+func newStubSession(t *testing.T, id, port string) (*device.Session, *nullDriver) {
 	t.Helper()
-	return &Device{
-		ID:       id,
-		Type:     typeName(typeCode),
-		TypeCode: typeCode,
-		Port:     port,
-		Conn:     serial.NewFakePort(port),
-		Opener:   serial.NewFakeOpener(),
+	drv := &nullDriver{}
+	fp := serial.NewFakePort(port)
+	opener := serial.NewFakeOpener()
+	opener.Add(fp)
+	conn, err := opener.Open(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := device.NewSession(device.SessionConfig{
+		ID: id, Type: "stub", TypeCode: 201, PortName: port,
+		Conn: conn, Opener: opener, Clock: device.NewFakeClock(time.Unix(1000, 0)),
+		StateDir: t.TempDir(),
+		Factory:  func(*device.Session) device.Driver { return drv },
+		Reprobe:  func(serial.Port) ([]byte, error) { return []byte{201, 0, 0, 1}, nil },
+	})
+	s.Start(context.Background())
+	s.WaitFirstAttach(context.Background())
+	t.Cleanup(s.Close)
+	return s, drv
+}
+
+func TestReplaceInstallsAndStampsDiscoveredAt(t *testing.T) {
+	r := registry.New()
+	s1, _ := newStubSession(t, "id1", "COM3")
+
+	r.Replace([]*device.Session{s1})
+
+	list := r.List()
+	if len(list) != 1 || list[0] != s1 {
+		t.Fatalf("List() = %v, want [s1]", list)
+	}
+	if got, ok := r.Get("id1"); !ok || got != s1 {
+		t.Fatalf("Get(id1) = %v, %v, want s1, true", got, ok)
+	}
+	if r.DiscoveredAt() == nil {
+		t.Fatal("DiscoveredAt() = nil, want non-nil after Replace")
 	}
 }
 
-func typeName(code byte) string {
-	switch code {
-	case 10:
-		return "pump"
-	case 30:
-		return "valve"
-	case 70:
-		return "densitometer"
+func TestReplaceClosesPreviousSessions(t *testing.T) {
+	r := registry.New()
+	s1, drv1 := newStubSession(t, "id1", "COM3")
+	s2, _ := newStubSession(t, "id2", "COM4")
+
+	r.Replace([]*device.Session{s1})
+	r.Replace([]*device.Session{s2})
+
+	if !drv1.detached.Load() {
+		t.Error("drv1.detached = false, want true after replaced")
 	}
-	return "unknown"
+	if _, ok := r.Get("id1"); ok {
+		t.Error("Get(id1) found, want gone after Replace")
+	}
+	list := r.List()
+	if len(list) != 1 || list[0] != s2 {
+		t.Fatalf("List() = %v, want [s2]", list)
+	}
 }
 
-func TestRegistry_CloseAll(t *testing.T) {
-	r := New()
-	d1 := newDevice(t, "pump_1", "COM3", 10)
-	d2 := newDevice(t, "valve_1", "COM4", 30)
-	r.Replace([]*Device{d1, d2})
-	originalDiscoveredAt := r.DiscoveredAt()
-	if originalDiscoveredAt == nil {
-		t.Fatal("setup: discoveredAt should be set after Replace")
+func TestReplaceNilClosesButKeepsTimestamp(t *testing.T) {
+	r := registry.New()
+	s1, drv1 := newStubSession(t, "id1", "COM3")
+
+	r.Replace([]*device.Session{s1})
+	firstStamp := r.DiscoveredAt()
+
+	r.Replace(nil)
+
+	if !drv1.detached.Load() {
+		t.Error("drv1.detached = false, want true after Replace(nil)")
 	}
+	if list := r.List(); len(list) != 0 {
+		t.Fatalf("List() = %v, want empty after Replace(nil)", list)
+	}
+	got := r.DiscoveredAt()
+	if got == nil || !got.Equal(*firstStamp) {
+		t.Fatalf("DiscoveredAt() = %v, want unchanged %v", got, firstStamp)
+	}
+}
+
+func TestCloseAllPreservesDiscoveredAt(t *testing.T) {
+	r := registry.New()
+	s1, drv1 := newStubSession(t, "id1", "COM3")
+
+	r.Replace([]*device.Session{s1})
+	firstStamp := r.DiscoveredAt()
 
 	r.CloseAll()
 
-	if len(r.List()) != 0 {
-		t.Errorf("List after CloseAll: got %d, want 0", len(r.List()))
+	if !drv1.detached.Load() {
+		t.Error("drv1.detached = false, want true after CloseAll")
 	}
-	if _, ok := r.Get("pump_1"); ok {
-		t.Errorf("pump_1 should be removed by CloseAll")
+	if list := r.List(); len(list) != 0 {
+		t.Fatalf("List() = %v, want empty after CloseAll", list)
 	}
-	if _, err := d1.Conn.Write([]byte{1}); err == nil {
-		t.Errorf("d1.Conn should be closed after CloseAll")
-	}
-	if _, err := d2.Conn.Write([]byte{1}); err == nil {
-		t.Errorf("d2.Conn should be closed after CloseAll")
-	}
-	if got := r.DiscoveredAt(); got == nil || !got.Equal(*originalDiscoveredAt) {
-		t.Errorf("CloseAll must preserve discoveredAt; got %v, want %v", got, originalDiscoveredAt)
+	got := r.DiscoveredAt()
+	if got == nil || !got.Equal(*firstStamp) {
+		t.Fatalf("DiscoveredAt() = %v, want unchanged %v", got, firstStamp)
 	}
 }
 
-func TestRegistry_ReplaceAndLookup(t *testing.T) {
-	r := New()
-	d := newDevice(t, "pump_1", "COM3", 10)
-	r.Replace([]*Device{d})
-	got, ok := r.Get("pump_1")
-	if !ok || got.ID != "pump_1" {
-		t.Fatalf("Get pump_1: got %v ok=%v", got, ok)
+func TestDisconnectAllReturnsCount(t *testing.T) {
+	r := registry.New()
+	s1, drv1 := newStubSession(t, "id1", "COM3")
+	s2, drv2 := newStubSession(t, "id2", "COM4")
+	r.Replace([]*device.Session{s1, s2})
+
+	n := r.DisconnectAll()
+
+	if n != 2 {
+		t.Fatalf("DisconnectAll() = %d, want 2", n)
 	}
-	if _, ok := r.Get("pump_2"); ok {
-		t.Errorf("Get pump_2: expected not-found")
+	if !drv1.detached.Load() || !drv2.detached.Load() {
+		t.Error("both drivers should be detached after DisconnectAll")
+	}
+	if list := r.List(); len(list) != 0 {
+		t.Fatalf("List() = %v, want empty after DisconnectAll", list)
 	}
 }
 
-func TestRegistry_ReplaceClosesOldDevices(t *testing.T) {
-	r := New()
-	old := newDevice(t, "pump_1", "COM3", 10)
-	r.Replace([]*Device{old})
-	r.Replace(nil)
-	// Old port must be closed.
-	if _, err := old.Conn.Write([]byte{1}); err == nil {
-		t.Errorf("old conn should be closed after Replace")
+func TestDisconnectByPort(t *testing.T) {
+	r := registry.New()
+	s1, drv1 := newStubSession(t, "id1", "COM3")
+	s2, drv2 := newStubSession(t, "id2", "COM4")
+	r.Replace([]*device.Session{s1, s2})
+
+	if ok := r.DisconnectByPort("COM3"); !ok {
+		t.Fatal("DisconnectByPort(COM3) = false, want true")
+	}
+	if !drv1.detached.Load() {
+		t.Error("drv1.detached = false, want true after DisconnectByPort")
+	}
+	if drv2.detached.Load() {
+		t.Error("drv2.detached = true, want false (untouched session)")
+	}
+	if _, ok := r.Get("id1"); ok {
+		t.Error("Get(id1) found, want gone after DisconnectByPort")
+	}
+
+	if ok := r.DisconnectByPort("COM9"); ok {
+		t.Error("DisconnectByPort(COM9) = true, want false for unknown port")
 	}
 }
 
-func TestRegistry_ListSortedByTypeAndPort(t *testing.T) {
-	r := New()
-	r.Replace([]*Device{
-		newDevice(t, "valve_1", "COM4", 30),
-		newDevice(t, "pump_1", "COM3", 10),
-		newDevice(t, "densitometer_1", "COM7", 70),
-	})
-	got := r.List()
-	if len(got) != 3 {
-		t.Fatalf("List len: got %d", len(got))
+func TestHasPort(t *testing.T) {
+	r := registry.New()
+	s1, _ := newStubSession(t, "id1", "COM3")
+	r.Replace([]*device.Session{s1})
+
+	if id, ok := r.HasPort("COM3"); !ok || id != "id1" {
+		t.Fatalf("HasPort(COM3) = %q, %v, want id1, true", id, ok)
 	}
-	if got[0].TypeCode != 10 || got[1].TypeCode != 30 || got[2].TypeCode != 70 {
-		t.Errorf("not sorted by TypeCode: %v %v %v", got[0].TypeCode, got[1].TypeCode, got[2].TypeCode)
+	if _, ok := r.HasPort("COM9"); ok {
+		t.Error("HasPort(COM9) = true, want false")
 	}
 }
 
-func TestRegistry_DiscoveryLockSerializes(t *testing.T) {
-	r := New()
+func TestListPreservesReplaceOrder(t *testing.T) {
+	r := registry.New()
+	s1, _ := newStubSession(t, "id1", "COM3")
+	s2, _ := newStubSession(t, "id2", "COM4")
+
+	r.Replace([]*device.Session{s2, s1})
+
+	list := r.List()
+	if len(list) != 2 || list[0] != s2 || list[1] != s1 {
+		t.Fatalf("List() = %v, want [s2, s1]", list)
+	}
+}
+
+func TestDiscoveryGate(t *testing.T) {
+	r := registry.New()
+
 	if !r.LockDiscovery() {
-		t.Fatalf("first LockDiscovery should succeed")
-	}
-	if r.LockDiscovery() {
-		t.Errorf("second LockDiscovery should fail (already locked)")
-	}
-	r.UnlockDiscovery()
-	if !r.LockDiscovery() {
-		t.Errorf("LockDiscovery after Unlock should succeed")
-	}
-	r.UnlockDiscovery()
-}
-
-func TestDevice_TryLockReleasesProperly(t *testing.T) {
-	d := newDevice(t, "pump_1", "COM3", 10)
-	if !d.TryLock() {
-		t.Fatal("first TryLock should succeed")
-	}
-	if d.TryLock() {
-		t.Error("second TryLock should fail")
-	}
-	d.Unlock()
-	if !d.TryLock() {
-		t.Error("TryLock after Unlock should succeed")
-	}
-	d.Unlock()
-}
-
-func TestRegistry_RemoveByID(t *testing.T) {
-	r := New()
-	r.Replace([]*Device{newDevice(t, "pump_1", "COM3", 10)})
-	r.Remove("pump_1")
-	if _, ok := r.Get("pump_1"); ok {
-		t.Errorf("Remove did not delete pump_1")
-	}
-}
-
-func TestRegistry_ConcurrentGetIsSafe(t *testing.T) {
-	r := New()
-	r.Replace([]*Device{newDevice(t, "pump_1", "COM3", 10)})
-	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, _ = r.Get("pump_1")
-		}()
-	}
-	wg.Wait()
-}
-
-func TestRegistry_IsDiscovering(t *testing.T) {
-	r := New()
-	if r.IsDiscovering() {
-		t.Errorf("IsDiscovering(): got true on fresh registry, want false")
-	}
-	if !r.LockDiscovery() {
-		t.Fatal("LockDiscovery: setup failed")
+		t.Fatal("LockDiscovery() = false, want true on first acquire")
 	}
 	if !r.IsDiscovering() {
-		t.Errorf("IsDiscovering(): got false while locked, want true")
+		t.Error("IsDiscovering() = false, want true while held")
 	}
+	if r.LockDiscovery() {
+		t.Error("LockDiscovery() = true, want false while already held")
+	}
+
 	r.UnlockDiscovery()
+
 	if r.IsDiscovering() {
-		t.Errorf("IsDiscovering(): got true after Unlock, want false")
+		t.Error("IsDiscovering() = true, want false after unlock")
 	}
-}
-
-func TestRegistry_HasPort(t *testing.T) {
-	r := New()
-
-	if id, ok := r.HasPort("COM3"); ok {
-		t.Errorf("HasPort(COM3): got (%q, true) on empty registry, want (\"\", false)", id)
-	}
-
-	r.Replace([]*Device{
-		{ID: "pump_1", Type: "pump", TypeCode: 10, Port: "COM3"},
-		{ID: "valve_1", Type: "valve", TypeCode: 30, Port: "COM4"},
-	})
-
-	id, ok := r.HasPort("COM3")
-	if !ok || id != "pump_1" {
-		t.Errorf("HasPort(COM3): got (%q, %v), want (\"pump_1\", true)", id, ok)
-	}
-	id, ok = r.HasPort("COM99")
-	if ok || id != "" {
-		t.Errorf("HasPort(COM99): got (%q, %v), want (\"\", false)", id, ok)
-	}
-}
-
-func TestDisconnectAll_EmptyRegistry(t *testing.T) {
-	r := New()
-	got := r.DisconnectAll()
-	if got != 0 {
-		t.Errorf("DisconnectAll on empty: got %d, want 0", got)
-	}
-	if len(r.List()) != 0 {
-		t.Errorf("registry not empty after DisconnectAll")
-	}
-}
-
-func TestRegistry_Replace_LogsInfoRecord(t *testing.T) {
-	rec := slogtest.NewRecorder()
-	prev := slog.Default()
-	slog.SetDefault(slog.New(rec))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-
-	r := New()
-	r.Replace([]*Device{
-		newDevice(t, "pump_1", "COM3", 10),
-		newDevice(t, "valve_1", "COM4", 30),
-	})
-
-	rec.AssertRecord(t, slog.LevelInfo, "registry replace", map[string]any{
-		"count":    2,
-		"previous": 0,
-	})
-}
-
-func TestDisconnectByPort_EmptyRegistry(t *testing.T) {
-	r := New()
-	if r.DisconnectByPort("COM3") {
-		t.Errorf("DisconnectByPort on empty registry: got true, want false")
-	}
-}
-
-func TestDisconnectByPort_NotFound(t *testing.T) {
-	r := New()
-	r.Replace([]*Device{newDevice(t, "pump_1", "COM3", 10)})
-	if r.DisconnectByPort("COM99") {
-		t.Errorf("DisconnectByPort(COM99): got true, want false")
-	}
-	if _, ok := r.Get("pump_1"); !ok {
-		t.Errorf("DisconnectByPort(COM99) removed pump_1 by mistake")
-	}
-}
-
-func TestDisconnectByPort_RemovesAndClosesMatch(t *testing.T) {
-	r := New()
-	target := newDevice(t, "pump_1", "COM3", 10)
-	other := newDevice(t, "valve_1", "COM4", 30)
-	r.Replace([]*Device{target, other})
-
-	if !r.DisconnectByPort("COM3") {
-		t.Fatalf("DisconnectByPort(COM3): got false, want true")
-	}
-	if _, ok := r.Get("pump_1"); ok {
-		t.Errorf("pump_1 should be removed after DisconnectByPort")
-	}
-	if _, err := target.Conn.Write([]byte{1}); err == nil {
-		t.Errorf("target.Conn should be closed after DisconnectByPort")
-	}
-
-	// Untouched device's port must still be open and registered.
-	if _, ok := r.Get("valve_1"); !ok {
-		t.Errorf("valve_1 should still be registered")
-	}
-	if _, err := other.Conn.Write([]byte{1}); err != nil {
-		t.Errorf("other.Conn should remain open; got err=%v", err)
-	}
-}
-
-func TestDisconnectAll_PopulatedRegistry(t *testing.T) {
-	r := New()
-	devs := []*Device{
-		{ID: "a", Type: "pump", TypeCode: 10, Port: "COM3", Conn: serial.NewFakePort("COM3")},
-		{ID: "b", Type: "valve", TypeCode: 30, Port: "COM4", Conn: serial.NewFakePort("COM4")},
-		{ID: "c", Type: "densitometer", TypeCode: 70, Port: "COM5", Conn: serial.NewFakePort("COM5")},
-	}
-	r.Replace(devs)
-
-	got := r.DisconnectAll()
-	if got != 3 {
-		t.Errorf("DisconnectAll: got %d, want 3", got)
-	}
-	if len(r.List()) != 0 {
-		t.Errorf("registry not empty after DisconnectAll")
+	if !r.LockDiscovery() {
+		t.Error("LockDiscovery() = false, want true after unlock")
 	}
 }

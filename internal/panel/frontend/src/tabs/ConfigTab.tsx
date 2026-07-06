@@ -19,7 +19,6 @@ interface ConfigDTO {
   rest: { port: number };
   discovery: { include: string[]; exclude: string[]; post_open_settle_ms: number };
   log: { level: string };
-  raw_serial: { enabled: boolean };
   auto_update: { enabled: boolean };
   flashing: { enabled: boolean; backup_dir: string; keep_n: number };
 }
@@ -435,22 +434,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         </Field>
       </Section>
 
-      <Section title="Raw serial"
-        helpComponent={
-          <Help
-            title="Raw serial"
-            what="Exposes GET /serial/ports + POST /serial/ports/{port}/command for diagnostics. Bypasses device classification."
-            defaultVal="off."
-            when="Enable only when actively probing the wire."
-          />
-        }>
-        <Field label="Enabled" dataField="raw_serial.enabled">
-          <Checkbox label="Allow raw passthrough on discovered ports"
-            checked={form.raw_serial.enabled}
-            onChange={v => setNested("raw_serial", "enabled", v)} />
-        </Field>
-      </Section>
-
       <Section title="Auto-update"
         helpComponent={
           <Help
@@ -477,7 +460,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         <div className="shp-info-block">
           <span className="shp-info-block__icon">&#x26A0;</span>
           <span>
-            Firmware flashing is higher risk than raw serial — a bad .hex bricks
+            Firmware flashing is a high-risk operation — a bad .hex bricks
             the board (ISP recovery required). Leave disabled unless you&apos;re
             actively flashing devices.
           </span>
@@ -581,7 +564,6 @@ const FIELD_LABELS: { path: (c: ConfigDTO) => unknown; label: string }[] = [
   { path: c => c.discovery.exclude.join(","), label: "Exclude" },
   { path: c => c.discovery.post_open_settle_ms, label: "Post-open settle" },
   { path: c => c.log.level, label: "Log level" },
-  { path: c => c.raw_serial.enabled, label: "Raw serial" },
   { path: c => c.auto_update.enabled, label: "Auto-update" },
   { path: c => c.flashing.enabled, label: "Firmware flashing" },
   { path: c => c.flashing.backup_dir, label: "Backup directory" },

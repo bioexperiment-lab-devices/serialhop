@@ -14,7 +14,7 @@ type Driver interface {
 	// read the serial number, push config mirrors, recover persistent state.
 	// probeReply is the 4-byte identify reply discovery consumed (pump:
 	// calibration bytes; valve: position count; densitometer: channels).
-	// The returned Info is cached and served for `identify` and GET /devices.
+	// The returned Info is cached and served for `identify` and GET /api/v1/devices.
 	Attach(ctx context.Context, probeReply []byte) (Info, error)
 	// Execute handles one JSON command. `identify` and `get_job` are served
 	// by the session before reaching the driver.

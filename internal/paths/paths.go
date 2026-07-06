@@ -12,7 +12,7 @@
 //
 // All composed-path getters (ConfigPath, LogsDir, ServiceLogPath,
 // StderrLogPath, PanelErrorLogPath, PanelUpdateStagingDir, PanelLogPath,
-// StateDir, PanelLogOffsetPath) return "" when their base directory
+// StateDir, DeviceStateDir, PanelLogOffsetPath) return "" when their base directory
 // returns "" (i.e., the underlying env var is unset and no test override
 // is in effect). Callers can detect "no directory available" with a
 // single empty-string check.
@@ -144,6 +144,17 @@ func StateDir() string {
 	return filepath.Join(d, "state")
 }
 
+// DeviceStateDir returns the directory for per-device persistent state
+// (devicestate/pump-26-025.json, devicestate/valve-COM7.json). Empty when
+// no data dir is available.
+func DeviceStateDir() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "devicestate")
+}
+
 // PanelLogOffsetPath returns <StateDir>/panel-log.offset, or "" if
 // StateDir is empty. The service-side logship file tailer atomically
 // persists its byte offset here on every successful queue push.
@@ -165,7 +176,7 @@ func ServerInfoCachePath() string {
 	return filepath.Join(d, ServerInfoCacheFileName)
 }
 
-// EnsureDirs creates DataDir, LogsDir, and StateDir with os.MkdirAll (0o750).
+// EnsureDirs creates DataDir, LogsDir, StateDir, and DeviceStateDir with os.MkdirAll (0o750).
 // Idempotent. Returns an error if DataDir() is empty or MkdirAll fails.
 // On Windows the Unix mode bits are advisory; the actual ACL inherits
 // from %ProgramData%.
@@ -181,6 +192,10 @@ func EnsureDirs() error {
 	state := StateDir()
 	if err := os.MkdirAll(state, 0o750); err != nil {
 		return fmt.Errorf("paths: create %s: %w", state, err)
+	}
+	deviceState := DeviceStateDir()
+	if err := os.MkdirAll(deviceState, 0o750); err != nil {
+		return fmt.Errorf("paths: create %s: %w", deviceState, err)
 	}
 	return nil
 }

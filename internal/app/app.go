@@ -12,6 +12,10 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/chisel"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/densitometer"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/pump"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device/valve"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
@@ -46,19 +50,59 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 
 	discovery.PostOpenSettle = time.Duration(cfg.Discovery.PostOpenSettleMs) * time.Millisecond
 
+	// Driver registration happens here, at wiring time — never in init()
+	// (spec §2.4), so tests can register fakes under unused type codes.
+	pump.Register()
+	densitometer.Register()
+	valve.Register()
+
 	reg := registry.New()
 	opener := labserial.NewRealOpener()
 	include := append([]string(nil), cfg.Discovery.Include...)
 	exclude := append([]string(nil), cfg.Discovery.Exclude...)
 
-	discoverFn := func(ctx context.Context) ([]*registry.Device, error) {
+	stateDir := paths.DeviceStateDir()
+	if stateDir == "" {
+		slog.Warn("device state: no data dir available; state files will land in the working directory")
+	}
+	// reprobe re-identifies a device during background reattach. Opening a
+	// port pulses DTR and reboots Arduino-class boards (see
+	// discovery.PostOpenSettle) — a reattach reopens the port, so probing
+	// before the settle would hit the bootloader window on every retry.
+	reprobe := func(p labserial.Port) ([]byte, error) {
+		time.Sleep(discovery.PostOpenSettle)
+		reply, _, err := discovery.Probe(p)
+		return reply, err
+	}
+	discoverFn := func(reqCtx context.Context) ([]*device.Session, error) {
 		all, err := opener.List()
 		if err != nil {
 			return nil, fmt.Errorf("list ports: %w", err)
 		}
 		ports := discovery.FilterPorts(all, include, exclude)
 		slog.Info("discovery: starting", "candidates", ports)
-		return discovery.Run(ctx, opener, ports)
+		matches, err := discovery.Run(reqCtx, opener, ports)
+		if err != nil {
+			return nil, err
+		}
+		sessions := make([]*device.Session, 0, len(matches))
+		for _, m := range matches {
+			name, factory, ok := device.LookupDriver(m.TypeCode)
+			if !ok {
+				// The probe classified it, so a missing factory is a wiring bug.
+				slog.Error("discovery: no driver registered", "type_code", int(m.TypeCode), "port", m.Port)
+				_ = m.Conn.Close()
+				continue
+			}
+			sess := device.NewSession(device.SessionConfig{
+				ID: m.ID, Type: name, TypeCode: m.TypeCode, PortName: m.Port,
+				Conn: m.Conn, Opener: opener, StateDir: stateDir,
+				Factory: factory, ProbeReply: m.Reply, Reprobe: reprobe,
+			})
+			sess.Start(ctx) // app-lifetime ctx: sessions die on shutdown
+			sessions = append(sessions, sess)
+		}
+		return sessions, nil
 	}
 
 	backupDir := cfg.Flashing.BackupDir
@@ -82,7 +126,7 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		return fmt.Errorf("power.New: %w", err)
 	}
 	defer func() { _ = keepAwake.Close() }()
-	srv := api.New(reg, discoverFn, opener, cfg.RawSerial.Enabled, fl, flashingEnabled, keepAwake)
+	srv := api.New(reg, discoverFn, opener, fl, flashingEnabled, keepAwake)
 
 	chiselDone := make(chan error, 1)
 	go func() {
@@ -122,7 +166,9 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 	<-chiselDone
 	<-apiDone
 
-	reg.Replace(nil)
+	// Close every session: each driver detaches gracefully (persisting its
+	// state) before its port is closed.
+	reg.CloseAll()
 	slog.Info("shutdown complete")
 	return runErr
 }

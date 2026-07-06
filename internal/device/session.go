@@ -49,10 +49,11 @@ type Session struct {
 	jobs   *Jobs
 	driver Driver
 
-	mail   chan mailMsg
-	posts  chan func()
-	done   chan struct{}
-	cancel context.CancelFunc
+	mail        chan mailMsg
+	posts       chan func()
+	done        chan struct{}
+	firstAttach chan struct{}
+	cancel      context.CancelFunc
 
 	// cross-goroutine mirrors for API reads
 	connected atomic.Bool
@@ -70,12 +71,13 @@ func NewSession(cfg SessionConfig) *Session {
 		cfg.Clock = SystemClock()
 	}
 	return &Session{
-		cfg:   cfg,
-		jobs:  NewJobs(cfg.Clock),
-		mail:  make(chan mailMsg),
-		posts: make(chan func(), 64),
-		done:  make(chan struct{}),
-		conn:  cfg.Conn,
+		cfg:         cfg,
+		jobs:        NewJobs(cfg.Clock),
+		mail:        make(chan mailMsg),
+		posts:       make(chan func(), 64),
+		done:        make(chan struct{}),
+		firstAttach: make(chan struct{}),
+		conn:        cfg.Conn,
 	}
 }
 
@@ -104,6 +106,7 @@ func (s *Session) loop(ctx context.Context) {
 	// attach is harmless: the connected guard below skips Tick).
 	heartbeat := s.cfg.Clock.After(HeartbeatInterval)
 	s.attach(s.cfg.ProbeReply)
+	close(s.firstAttach)
 	for {
 		select {
 		case <-ctx.Done():
@@ -168,14 +171,21 @@ func (s *Session) Execute(ctx context.Context, req Request) Response {
 }
 
 func (s *Session) handle(ctx context.Context, req Request) Response {
-	if !s.connected.Load() {
-		return Err(req.ID, errUnreachable("device is not responding"))
-	}
+	// identify and get_job are memory-served (spec §3): they keep answering
+	// while the device is unreachable so a client whose job just died can
+	// read why without waiting for a reattach.
 	switch req.Cmd {
 	case "identify":
-		return OK(req.ID, *s.info.Load())
+		if p := s.info.Load(); p != nil {
+			return OK(req.ID, *p)
+		}
+		// No successful Attach has ever populated the cache — nothing to serve.
+		return Err(req.ID, errUnreachable("device is not responding"))
 	case "get_job":
 		return s.handleGetJob(req)
+	}
+	if !s.connected.Load() {
+		return Err(req.ID, errUnreachable("device is not responding"))
 	}
 	result, cerr := s.driver.Execute(ctx, req.Cmd, req.Params)
 	if cerr != nil {
@@ -217,6 +227,22 @@ func (s *Session) CachedInfo() (Info, bool) {
 		return Info{}, false
 	}
 	return *p, true
+}
+
+// HasActiveJob reports whether the session has a running or paused job.
+// Thread-safe; the API's discover-conflict check uses it.
+func (s *Session) HasActiveJob() bool { return s.jobs.HasActive() }
+
+// WaitFirstAttach blocks until the initial attach attempt completes
+// (success or failure), ctx is cancelled, or the session shuts down.
+// Discover uses it so the device list it returns reflects real attach
+// outcomes instead of a transient connected=false.
+func (s *Session) WaitFirstAttach(ctx context.Context) {
+	select {
+	case <-s.firstAttach:
+	case <-s.done:
+	case <-ctx.Done():
+	}
 }
 
 // --- driver services ---

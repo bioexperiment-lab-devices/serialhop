@@ -1,6 +1,6 @@
 # SerialHop HTTP API reference
 
-`SerialHop` is a Go service running on a lab machine. It controls serial-port lab devices and exposes a REST API. The lab machine sits behind NAT and reaches the rest of the docker-compose network through a chisel reverse tunnel.
+`SerialHop` is a Go service running on a lab machine. It controls serial-port lab devices (peristaltic pumps, distribution valves, densitometers) through a high-level JSON command protocol and exposes a REST API. The lab machine sits behind NAT and reaches the rest of the docker-compose network through a chisel reverse tunnel.
 
 This document describes the wire-level behavior of that API.
 
@@ -13,6 +13,8 @@ This document describes the wire-level behavior of that API.
 
 ## Devices
 
+### ID scheme
+
 Every device is identified by an `id` of the form `{type}_{n}`, where:
 
 | `type` | `type_code` | Device |
@@ -23,139 +25,175 @@ Every device is identified by an `id` of the form `{type}_{n}`, where:
 
 `n` is `1`-based and assigned by the service in the order it discovers ports of that type, sorted by `(type_code, port)`. The same physical device on the same COM port keeps the same `id` across re-discoveries.
 
-Devices are discovered with `POST /discover` and remain available for commanding until the next discovery (which closes all current ports and re-probes) or until the device's identity changes on the wire (which removes it from the registry — see the 503 section).
+The valve's hub `type` is `valve`, but its `identify` block reports `device_type: "distribution_valve"` — the two names differ deliberately (the hub name is the short form used in IDs and routing; `device_type` is the protocol-level name from `JSON_PROTOCOL.md`). The per-device docs directory follows the protocol name: `docs/protocol_translation_docs/distribution_valve/`, not `.../valve/`.
+
+Devices are discovered with `POST /api/v1/discover` and remain available for commanding until the next discovery (which closes every current device session and re-probes), the session is explicitly released via the (non-`/api/v1`) `POST /devices/disconnect` endpoint, or the process restarts. A device that probed successfully but whose driver failed to attach is still listed (`"connected": false`) and is retried in the background — it does not disappear from the list the way a legacy "identity changed" device used to.
 
 ## Endpoints
 
-### `POST /discover`
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/discover` | Re-probe ports, rebuild every device session, return the new list |
+| `GET` | `/api/v1/devices` | Return the cached device list |
+| `POST` | `/api/v1/devices/{id}/command` | Execute one JSON protocol command on a device |
 
-Run a fresh discovery pass. The service closes every currently-open serial port, enumerates candidate COM ports per its config (include/exclude lists), and probes each in parallel with a 5-byte universal probe (`[1, 2, 3, 4, 0]`). Devices that reply with a known type byte are registered; others are dropped.
+### `POST /api/v1/discover`
 
-This is **destructive** — any open device connections owned by the service are closed. Pending commands against those devices fail with 503.
+Closes every current device session (drivers get a chance to persist their state first), re-enumerates candidate COM ports per the service's config (include/exclude lists), and probes each in parallel with the universal identify probe. Waits for each newly-created session's first attach attempt to finish before responding, so the returned list reflects real attach outcomes instead of a transient `connected: false`.
+
+This is **destructive** — any open device sessions are torn down and rebuilt. Run it only when you actually need to re-enumerate hardware, not as a lightweight "give me current state" call (use `GET /api/v1/devices` for that).
 
 - **Request body:** none.
-- **Query parameters:** none.
-- **Response (200):** JSON, identical shape to `GET /devices`:
-  ```json
-  {
-    "devices": [
-      {"id": "pump_1",         "type": "pump",         "type_code": 10, "port": "COM3"},
-      {"id": "valve_1",        "type": "valve",        "type_code": 30, "port": "COM4"},
-      {"id": "densitometer_1", "type": "densitometer", "type_code": 70, "port": "COM7"}
-    ],
-    "discovered_at": "2026-04-26T12:34:56Z"
-  }
-  ```
-  `discovered_at` is RFC 3339 / ISO 8601 in UTC.
+- **Response (200):** JSON, identical shape to `GET /api/v1/devices` (see below).
 - **Errors:**
-  - `409 Conflict` — another discovery is already running. Body: `{"error":"discovery in progress","detail":""}`. Discovery typically takes 1–3 seconds.
-  - `500 Internal Server Error` — the service could not enumerate ports. Body: `{"error":"discovery failed","detail":"<message>"}`.
+  - `409 Conflict` — another discovery is already running. Body: `{ "error": "discovery in progress" }` (no `detail`).
+  - `409 Conflict` — a device has an active job. Body: `{ "error": "job in progress", "detail": "pump_1 has an active job; stop it before re-discovering" }`. Stop the job (`cmd: "stop"`, where supported) before retrying.
+  - `500 Internal Server Error` — the service could not enumerate ports. Body: `{ "error": "discovery failed", "detail": "<message>" }`.
 
-### `GET /devices`
+### `GET /api/v1/devices`
 
 Return the cached result of the most recent discovery, without re-probing. Cheap and idempotent.
 
 - **Request body:** none.
-- **Query parameters:** none.
 - **Response (200):**
   ```json
   {
-    "devices": [ {...}, {...} ],
-    "discovered_at": "2026-04-26T12:34:56Z"
+    "devices": [
+      {
+        "id": "pump_1", "type": "pump", "port": "COM3", "connected": true,
+        "identify": {
+          "device_type": "pump", "model": "peristaltic-1ch", "serial": "26-025",
+          "firmware_version": "legacy", "protocol_version": "1.0", "capabilities": {}
+        }
+      },
+      { "id": "valve_1", "type": "valve", "port": "COM7", "connected": false, "identify": null }
+    ],
+    "discovered_at": "2026-07-06T12:34:56Z"
   }
   ```
-  If discovery has never run on the service, the response is:
-  ```json
-  { "devices": [], "discovered_at": null }
-  ```
-  `discovered_at` may be `null`.
+  - `connected` reflects the device session's current attach state, independent of whether it has ever attached before.
+  - `identify` is `null` until the device's post-probe attach succeeds at least once; after that it holds the last successful identify block even if the device later goes unreachable (see "Memory-served commands" below).
+  - If discovery has never run on the service, the response is `{ "devices": [], "discovered_at": null }`.
 
-### `POST /devices/{id}/command`
+### `POST /api/v1/devices/{id}/command`
 
-Send a sequence of raw bytes to a discovered device and (optionally) read its reply.
-
-- **Path parameter:** `{id}` is one of the device IDs returned by `/discover` or `/devices` (e.g. `pump_1`).
-- **Request body:**
-  ```json
-  { "command": [1, 2, 3, 4, 0] }
-  ```
-  `command` is a non-empty list of integers, each in `0..255`. Out-of-range values, non-integers, or an empty list → 400.
-- **Query parameters** (all optional):
-
-  | Param | Default when `expected_response_bytes=-1` | Default when `expected_response_bytes>0` | Range | Meaning |
-  |---|---|---|---|---|
-  | `timeout_ms` | `100` | `1000` | `1..60000` | Max wait (ms) for the **first** response byte |
-  | `inter_byte_ms` | `25` | `50` | `1..1000` | Inter-byte silence (ms) that ends the read |
-  | `wait_for_response` | `true` | `true` | `true` / `false` | If `false`, write and return immediately with empty `response`; other read params are ignored |
-  | `expected_response_bytes` | `-1` | `-1` | `-1` or `1..1024` | If `>0`, stop reading as soon as that many bytes are collected |
-
-  The defaults are context-dependent: when the caller supplies `expected_response_bytes` (i.e. they know how long the reply is), the service waits longer for the first byte and tolerates longer inter-byte gaps. When the caller doesn't supply it, the service prefers to fail fast.
-
-- **Response (200):**
-  ```json
-  { "response": [10, 1, 2, 3] }
-  ```
-  `response` is always present and always a list of integers in `0..255`. It is `[]` when the device stayed silent within the configured timeout, or when `wait_for_response=false`.
-
-#### Read-termination rules (when `wait_for_response=true`)
-
-- `expected_response_bytes=-1` (default): the read ends when either
-  - `timeout_ms` elapses before any byte arrives, or
-  - once at least one byte has arrived, `inter_byte_ms` of silence elapses.
-
-  Whatever has been collected is returned.
-- `expected_response_bytes=N`: the read ends when any of
-  - `N` bytes have been collected,
-  - `timeout_ms` fires before any byte arrives,
-  - once at least one byte has arrived, `inter_byte_ms` of silence elapses.
-
-  Partial results (`len(response) < N`) are returned without an error status.
-
-#### Per-device concurrency
-
-Each device has a per-device mutex. Two simultaneous commands against the same device cannot both proceed — the second gets **409**, never queues. Different devices are independent and may be commanded in parallel.
-
-#### Internal reconnect-and-reprobe
-
-If the service detects an I/O error while writing or reading the device's serial port, it transparently:
-
-1. Closes the current handle and re-opens the same COM port at 9600 / 8N1.
-2. Sends the universal probe `[1, 2, 3, 4, 0]` and reads 4 bytes.
-3. Verifies the first byte equals the device's stored `type_code`.
-4. Retries the original write+read once.
-
-The outcomes visible to the caller:
-
-- **Reconnect succeeds and identity matches** → the original command completes and the caller gets a normal `200` response. The reconnect is invisible.
-- **Re-open fails** → `503 device unreachable`. The device stays in the registry; the next command will retry.
-- **Re-probe returns a different `type_code` (or no reply)** → `503 device identity changed`. The device is **removed from the registry**. Subsequent commands to this `id` return `404` until `/discover` is run again.
-
-## Error response shape
-
-All error responses share this body shape:
+Execute one command against a device. Body and response are both the **envelope** shared by every device type (`JSON_PROTOCOL.md §2` under `docs/protocol_translation_docs/`):
 
 ```json
-{ "error": "<short_code>", "detail": "<human readable string, may be empty>" }
+// request
+{ "id": "req-1", "cmd": "dispense", "params": { "volume_ml": 5, "speed_pct": 60 } }
 ```
 
-| Status | `error` codes |
-|---|---|
-| 400 | `invalid request body`, `invalid query param` |
-| 404 | `device not found` |
-| 409 | `discovery in progress`, `device busy` |
-| 500 | `discovery failed` |
-| 503 | `device unreachable`, `device i/o failed`, `device identity changed` |
+```json
+// response
+{
+  "id": "req-1",
+  "status": "ok",
+  "result": {
+    "job_id": "j-7f21",
+    "state": "running",
+    "progress": 0.35,
+    "estimated_duration_s": 200.0,
+    "elapsed_s": 70.2,
+    "result": null,
+    "error": null
+  }
+}
+```
 
-`device busy` (409) means another caller currently holds the device's mutex. `device identity changed` (503) means the device was removed from the registry; further calls to the same `id` return `404` until `/discover` runs again.
+`id` is caller-generated and echoed back verbatim. `cmd` and `params` are device-specific — see `docs/protocol_translation_docs/<device>/JSON_PROTOCOL.md` for the command set, parameter shapes, and result shapes per device type (directory names: `pump`, `distribution_valve`, `densitometer`).
 
-## Byte encoding
+#### HTTP status vs. envelope status
 
-Bytes are always represented as JSON **integers** in `0..255`, both inbound (`command`) and outbound (`response`). No base64, no hex strings.
+The HTTP status code reflects who decided the outcome, not whether the command "succeeded":
 
-## Request duration
+- **200** — the device (or the hub's in-memory job/identify cache) decided the outcome. `status` in the body is `"ok"` or `"error"`; on error, `error.code` is one of `invalid_params`, `busy`, `not_calibrated`, `not_homed`, `hardware_error`, `unknown_command`, `internal_error` (which codes a given device can return is documented per device).
+- **404** — unknown `{id}`. Envelope error `unknown_device`.
+- **503** — the device is unreachable. Envelope error `device_unreachable`. Exception: `identify` and `get_job` (below).
+- **400** — malformed body, or a body missing `id` / `cmd`. Envelope error `invalid_request`.
 
-The service holds the HTTP connection open while it talks to the device, so a request's wall-clock duration tracks the configured read timeouts:
+Worked examples:
 
-- `POST /devices/{id}/command` — at most `timeout_ms + inter_byte_ms × len(response)` milliseconds, plus a small constant for write + framing. With defaults this is well under 1 second; with overrides it can be up to ~60 s.
-- `POST /discover` — bounded by 200 ms drain + 50 ms probe writes + 1 s read deadline per port; ports are probed in parallel, so the total is roughly 1.3 s regardless of port count, plus a small constant.
-- `GET /devices` — sub-millisecond; serves cached state.
+- **Device-decided error, still 200** (illustrative — exact commands/messages are per-device):
+  ```json
+  // request
+  { "id": "req-2", "cmd": "dispense", "params": { "volume_ml": -1, "speed_pct": 60 } }
+  // response, HTTP 200
+  {
+    "id": "req-2", "status": "error",
+    "error": { "code": "invalid_params", "message": "volume_ml must be positive",
+               "details": { "param": "volume_ml", "value": -1 } }
+  }
+  ```
+- **Unknown device, 404:**
+  ```json
+  // POST /api/v1/devices/pump_9/command  { "id": "req-3", "cmd": "identify" }
+  // response, HTTP 404
+  { "id": "req-3", "status": "error",
+    "error": { "code": "unknown_device", "message": "no device with id pump_9" } }
+  ```
+- **Device unreachable, 503:**
+  ```json
+  // response, HTTP 503
+  { "id": "req-4", "status": "error",
+    "error": { "code": "device_unreachable", "message": "device is not responding" } }
+  ```
+- **Malformed request, 400** (here: body is missing `"id"`):
+  ```json
+  // POST /api/v1/devices/pump_1/command  { "cmd": "dispense" }
+  // response, HTTP 400
+  { "id": "", "status": "error",
+    "error": { "code": "invalid_request", "message": "\"id\" and \"cmd\" are required" } }
+  ```
+
+#### Memory-served commands: `identify` and `get_job`
+
+Two commands are answered from the hub's in-memory state instead of talking to the device, and so stay at HTTP 200 even while the device is otherwise unreachable:
+
+- **`identify`** returns the cached identify block from the device's last successful attach, regardless of the session's *current* connection state. If no attach has ever succeeded (cache still empty), it returns the normal `device_unreachable` error at 503 — the exception only applies once the cache has been populated at least once.
+  ```json
+  // device currently disconnected, but attached successfully earlier
+  { "id": "req-5", "cmd": "identify" }
+  // → HTTP 200
+  { "id": "req-5", "status": "ok",
+    "result": { "device_type": "pump", "model": "peristaltic-1ch", "serial": "26-025",
+                "firmware_version": "legacy", "protocol_version": "1.0", "capabilities": {} } }
+  ```
+- **`get_job`** looks up a `job_id` in the active job or the last-8 history ring and returns whatever it finds — including a job that just failed with `hardware_error` because the device went unreachable mid-job. It never checks the session's connection state.
+  ```json
+  { "id": "req-6", "cmd": "get_job", "params": { "job_id": "j-3" } }
+  // → HTTP 200, even though the device is currently unreachable
+  { "id": "req-6", "status": "ok",
+    "result": { "job_id": "j-3", "state": "failed", "progress": 0.62,
+                "estimated_duration_s": 200.0, "elapsed_s": 124.0, "result": null,
+                "error": { "code": "hardware_error", "message": "…" } } }
+  ```
+  `params.job_id` is required; a missing or unrecognized `job_id` returns the ordinary `invalid_params` device-decided error (still HTTP 200).
+
+## Job model
+
+Long-running operations (dispense, calibration, a valve move, …) return a **job** immediately and complete asynchronously. Poll it with `get_job`:
+
+```json
+{
+  "job_id": "j-7f21",
+  "state": "running",           // running | paused | succeeded | failed | cancelled
+  "progress": 0.35,             // 0.0–1.0; only a verified completion reaches 1.0
+  "estimated_duration_s": 200.0,
+  "elapsed_s": 70.2,
+  "result": null,               // populated when state == "succeeded"
+  "error": null                 // populated when state == "failed"
+}
+```
+
+- A session runs **at most one active job**; starting another while one is active returns the device-decided `busy` error (details include the running job's `job_id`).
+- The hub retains the **last 8 completed jobs** per session, newest first, for `get_job` lookups after the job finishes. Older history is dropped.
+- Job semantics that are per-device (which commands start jobs, `pause`/`stop` behavior, whether a device also has continuous non-job "state" concepts) are documented in that device's `JSON_PROTOCOL.md`.
+
+## Per-device commands
+
+This document only covers the transport-level envelope, HTTP status mapping, discovery, and job polling — all of which are shared across device types. For the actual command set, parameters, results, and error codes of a specific device, see:
+
+- `docs/protocol_translation_docs/pump/JSON_PROTOCOL.md`
+- `docs/protocol_translation_docs/distribution_valve/JSON_PROTOCOL.md`
+- `docs/protocol_translation_docs/densitometer/JSON_PROTOCOL.md`

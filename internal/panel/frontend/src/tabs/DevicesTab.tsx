@@ -5,8 +5,16 @@ import { GetDevices, Discover, DisconnectAll, DisconnectPort } from "../wails/go
 interface DeviceDTO {
   id: string;
   type: string;
-  type_code: number;
   port: string;
+  connected: boolean;
+  identify: {
+    device_type: string;
+    model: string;
+    serial?: string;
+    firmware_version: string;
+    protocol_version: string;
+    capabilities: unknown;
+  } | null;
 }
 
 interface DevicesResult {
@@ -135,9 +143,10 @@ export function DevicesTab() {
           <table className="shp-table">
             <thead>
               <tr>
-                <th style={{ width: "30%" }}>ID</th>
-                <th style={{ width: "30%" }}>Type</th>
-                <th style={{ width: "30%" }}>Port</th>
+                <th style={{ width: "25%" }}>ID</th>
+                <th style={{ width: "25%" }}>Type</th>
+                <th style={{ width: "25%" }}>Port</th>
+                <th style={{ width: "15%" }}>Connected</th>
                 <th />
               </tr>
             </thead>
@@ -147,6 +156,7 @@ export function DevicesTab() {
                   <td><b style={{ color: "var(--text)" }}>{d.id}</b></td>
                   <td>{d.type}</td>
                   <td>{d.port}</td>
+                  <td>{d.connected ? "yes" : "no"}</td>
                   <td style={{ textAlign: "right" }}>
                     <Button
                       variant="danger"

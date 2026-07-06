@@ -50,7 +50,12 @@ describe("DevicesTab", () => {
 
   it("renders rows when devices are present", async () => {
     vi.mocked(App.GetDevices).mockResolvedValueOnce({
-      devices: [{ id: "d1", type: "stim", type_code: 1, port: "COM3" }],
+      devices: [
+        {
+          id: "d1", type: "stim", port: "COM3", connected: true,
+          identify: { device_type: "stim", model: "Stim-100", serial: "S-001", firmware_version: "1.0.0", protocol_version: "1.0", capabilities: {} },
+        },
+      ],
       discovered_at: new Date().toISOString(),
       status: { reachable: true },
     });
@@ -58,13 +63,37 @@ describe("DevicesTab", () => {
     await waitFor(() => expect(screen.getByText("d1")).toBeInTheDocument());
     expect(screen.getByText("stim")).toBeInTheDocument();
     expect(screen.getByText("COM3")).toBeInTheDocument();
+    // Connected column: header + "yes" cell for a connected device.
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("yes")).toBeInTheDocument();
+  });
+
+  it("renders the Connected column as yes/no per device", async () => {
+    vi.mocked(App.GetDevices).mockResolvedValueOnce({
+      devices: [
+        {
+          id: "pump_1", type: "pump", port: "COM3", connected: true,
+          identify: { device_type: "pump", model: "PeriPump 4", serial: "P-042", firmware_version: "2.3.1", protocol_version: "1.0", capabilities: {} },
+        },
+        { id: "valve_1", type: "valve", port: "COM4", connected: false, identify: null },
+      ],
+      discovered_at: new Date().toISOString(),
+      status: { reachable: true },
+    });
+    render(<DevicesTab />);
+    await waitFor(() => expect(screen.getByText("pump_1")).toBeInTheDocument());
+    expect(screen.getByText("yes")).toBeInTheDocument();
+    expect(screen.getByText("no")).toBeInTheDocument();
   });
 
   it("renders a Disconnect button per device row", async () => {
     vi.mocked(App.GetDevices).mockResolvedValueOnce({
       devices: [
-        { id: "pump_1", type: "pump", type_code: 10, port: "COM3" },
-        { id: "valve_1", type: "valve", type_code: 30, port: "COM4" },
+        {
+          id: "pump_1", type: "pump", port: "COM3", connected: true,
+          identify: { device_type: "pump", model: "PeriPump 4", serial: "P-042", firmware_version: "2.3.1", protocol_version: "1.0", capabilities: {} },
+        },
+        { id: "valve_1", type: "valve", port: "COM4", connected: false, identify: null },
       ],
       discovered_at: new Date().toISOString(),
       status: { reachable: true },
@@ -78,7 +107,12 @@ describe("DevicesTab", () => {
   it("invokes DisconnectPort with the row's port and refreshes", async () => {
     vi.mocked(App.GetDevices)
       .mockResolvedValueOnce({
-        devices: [{ id: "pump_1", type: "pump", type_code: 10, port: "COM3" }],
+        devices: [
+          {
+            id: "pump_1", type: "pump", port: "COM3", connected: true,
+            identify: { device_type: "pump", model: "PeriPump 4", serial: "P-042", firmware_version: "2.3.1", protocol_version: "1.0", capabilities: {} },
+          },
+        ],
         discovered_at: new Date().toISOString(),
         status: { reachable: true },
       })

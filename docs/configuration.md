@@ -15,7 +15,7 @@ The rest of this guide is organized around the panel. The [Field reference](#fie
 
 ## Editing through the panel
 
-Open `SerialHop.exe` (or the Start Menu shortcut). The **Config** tab loads the current values and shows them grouped by section: lab-bridge, REST, discovery, log, raw serial, auto-update, firmware flashing.
+Open `SerialHop.exe` (or the Start Menu shortcut). The **Config** tab loads the current values and shows them grouped by section: lab-bridge, REST, discovery, log, auto-update, firmware flashing.
 
 - **Validation is per field.** The lab-bridge host must be an IPv4 address or an RFC 1123 hostname (IPv6 is not supported). Integer fields can be cleared. Bad values are flagged inline; you can't save until they're fixed.
 - **Switching tabs with unsaved edits opens a confirmation modal** that lists exactly which fields are dirty, so you don't lose work by accident.
@@ -61,15 +61,7 @@ When SerialHop opens a serial port, many Arduino-class boards auto-reset on DTR 
 
 ### Turn on verbose logging for troubleshooting
 
-Change **log → Level** (`log.level`) from `info` to `debug`. Save & restart. The Logs tab will now show probe-by-probe details, request/response byte arrays for serial commands, and other low-level events. Set it back to `info` when you're done — `debug` is noisy.
-
-### Enable raw serial commands to undiscovered ports
-
-By default, you can only send commands to ports where SerialHop has positively identified a device (pump, valve, densitometer). To send raw bytes to any enumerated COM port — useful for diagnosing a board that isn't being discovered, or for talking to instruments outside the supported list — turn on **raw serial → Enabled** (`raw_serial.enabled`).
-
-This unlocks the panel's Ports-tab command box and the `GET /serial/ports` and `POST /serial/ports/{port}/command` REST endpoints. The detailed-listing endpoint (`GET /serial/ports/detailed`) is always available regardless of this flag.
-
-> **Note.** Raw serial bypasses SerialHop's device-classification step. Anyone with access to the panel or the API can send arbitrary bytes to any port. Leave it off unless you're actively diagnosing something.
+Change **log → Level** (`log.level`) from `info` to `debug`. Save & restart. The Logs tab will now show probe-by-probe details (including the raw byte arrays discovery sends/receives while identifying devices) and other low-level events. Set it back to `info` when you're done — `debug` is noisy.
 
 ### Enable firmware flashing
 
@@ -80,7 +72,7 @@ Two related fields:
 - **Backup directory** (`flashing.backup_dir`) — absolute path where SerialHop writes a pre-flash backup of the existing firmware (used for auto-rollback if the new firmware fails verification or its test command). Leave blank to use the default, `%ProgramData%\SerialHop\backups`.
 - **Keep N backups** (`flashing.keep_n`) — how many backups to retain per COM port. Older backups are pruned after each completed flash. Default `10`. Set to `0` to keep all backups indefinitely.
 
-> **Warning.** Firmware flashing is materially riskier than raw serial: a bad HEX file can leave a board unresponsive ("bricked") until it's recovered with an ISP programmer. SerialHop's byte-verify and auto-rollback flow cover the common failure modes, but they can't cover everything. Only enable flashing on machines where the operators are aware they can re-flash firmware remotely.
+> **Warning.** Firmware flashing is a materially risky operation: a bad HEX file can leave a board unresponsive ("bricked") until it's recovered with an ISP programmer. SerialHop's byte-verify and auto-rollback flow cover the common failure modes, but they can't cover everything. Only enable flashing on machines where the operators are aware they can re-flash firmware remotely.
 
 ## Field reference
 
@@ -113,12 +105,6 @@ Every field in `SerialHop_config.yaml`. Defaults are what a fresh install writes
 | Field | Type | Default | Validation | Effect |
 | --- | --- | --- | --- | --- |
 | `level` | string | `info` | one of `debug`, `info`, `warn`, `error` | Minimum slog level written to disk and shipped to Loki. `debug` is noisy; reserve for troubleshooting. |
-
-### `raw_serial`
-
-| Field | Type | Default | Validation | Effect |
-| --- | --- | --- | --- | --- |
-| `enabled` | bool | `false` | — | When `true`, unlocks `GET /serial/ports` and `POST /serial/ports/{port}/command`. Bypasses device classification. |
 
 ### `auto_update`
 

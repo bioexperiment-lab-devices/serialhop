@@ -20,14 +20,14 @@ func TestLogMiddleware_OKLogsInfo(t *testing.T) {
 	}))
 	srv := httptest.NewServer(h)
 	defer srv.Close()
-	resp, err := http.Get(srv.URL + "/devices")
+	resp, err := http.Get(srv.URL + "/api/v1/devices")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	_ = resp.Body.Close()
 
 	rec.AssertRecord(t, slog.LevelInfo, "api handler",
-		map[string]any{"route": "/devices", "status": 200, "method": "GET"})
+		map[string]any{"route": "/api/v1/devices", "status": 200, "method": "GET"})
 }
 
 func TestLogMiddleware_5xxLogsError(t *testing.T) {
