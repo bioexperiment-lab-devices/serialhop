@@ -70,6 +70,11 @@ func holdFrame(on bool) []byte {
 	return []byte{35, 2, h, 0, 0}
 }
 
+// moveFrame rotates motor 1 to the device-frame position (36 1 P). No
+// reply; the firmware bumps its position counter immediately on parse,
+// before the motion completes.
+func moveFrame(targetDevice byte) []byte { return []byte{36, 1, targetDevice, 0, 0} }
+
 // Register binds the valve driver into the device registry under the hub
 // type name "valve" (state files valve-<port>.json per spec §5, future API
 // ids valve_N); the JSON identify block reports device_type
@@ -244,6 +249,10 @@ func (d *Driver) persistNow() error {
 	return d.store.Save(ps)
 }
 
+// slots is S = N+1: the rotor detents (position 0 plus outputs 1..N); all
+// position arithmetic is modulo this.
+func (d *Driver) slots() int { return d.positions + 1 }
+
 // Execute dispatches one JSON command (identify/get_job are session-served).
 func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage) (any, *device.CmdError) {
 	switch cmd {
@@ -253,6 +262,8 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 		return d.status()
 	case "home":
 		return d.home(params)
+	case "set_position":
+		return d.setPosition(params)
 	default:
 		return nil, device.ErrUnknownCommand(cmd)
 	}
