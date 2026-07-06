@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
@@ -38,55 +37,60 @@ func TestRun_AssignsSequentialIDs(t *testing.T) {
 		"COM4": {10, 4, 5, 6},
 		"COM5": {30, 1, 1, 6},
 	})
-	devs, err := Run(context.Background(), o, []string{"COM3", "COM4", "COM5"})
+	matches, err := Run(context.Background(), o, []string{"COM3", "COM4", "COM5"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	r := registry.New()
-	r.Replace(devs)
-	got := r.List()
-	if len(got) != 3 {
-		t.Fatalf("List len: got %d", len(got))
+	if len(matches) != 3 {
+		t.Fatalf("matches len: got %d", len(matches))
 	}
+	// Sorted by (TypeCode, Port): the two pumps come before the valve, so
+	// ordinal IDs are assigned in that deterministic order.
 	wantIDs := []string{"pump_1", "pump_2", "valve_1"}
 	for i, w := range wantIDs {
-		if got[i].ID != w {
-			t.Errorf("got[%d].ID=%q, want %q", i, got[i].ID, w)
+		if matches[i].ID != w {
+			t.Errorf("matches[%d].ID=%q, want %q", i, matches[i].ID, w)
 		}
+	}
+	for _, m := range matches {
+		_ = m.Conn.Close()
 	}
 }
 
-func TestRun_SkipsUnknownAndPartial(t *testing.T) {
+func TestRun_SkipsUnknownPartialAndUnopenable(t *testing.T) {
 	o := newOpener(t, map[string][]byte{
 		"COM3": {10, 1, 2, 3},
-		"COM4": {99, 1, 2, 3}, // unknown type byte
-		"COM5": {30, 1, 1},    // only 3 bytes
+		"COM4": {99, 1, 2, 3}, // unknown type byte → classified as no-match, closed
+		"COM5": {30, 1, 1},    // only 3 bytes → no-match, closed
 	})
-	devs, err := Run(context.Background(), o, []string{"COM3", "COM4", "COM5"})
+	// COMX is a candidate the opener does not know about, so Open fails and
+	// the port is skipped entirely.
+	matches, err := Run(context.Background(), o, []string{"COM3", "COM4", "COM5", "COMX"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(devs) != 1 {
-		t.Errorf("got %d devices, want 1 (only the pump)", len(devs))
+	if len(matches) != 1 || matches[0].Type != "pump" {
+		t.Errorf("got %+v, want 1 match (only the pump)", matches)
 	}
+	_ = matches[0].Conn.Close()
 }
 
 func TestRun_EmptyPortList(t *testing.T) {
 	o := serial.NewFakeOpener()
-	devs, err := Run(context.Background(), o, []string{})
+	matches, err := Run(context.Background(), o, []string{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(devs) != 0 {
-		t.Errorf("expected no devices, got %d", len(devs))
+	if len(matches) != 0 {
+		t.Errorf("expected no matches, got %d", len(matches))
 	}
 }
 
-func TestRunMatchesCapturesProbeReply(t *testing.T) {
+func TestRun_CapturesProbeReply(t *testing.T) {
 	o := newOpener(t, map[string][]byte{
 		"COM3": {10, 1, 2, 3},
 	})
-	matches, err := RunMatches(context.Background(), o, []string{"COM3"})
+	matches, err := Run(context.Background(), o, []string{"COM3"})
 	if err != nil {
 		t.Fatal(err)
 	}

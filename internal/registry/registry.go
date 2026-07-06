@@ -1,213 +1,129 @@
 package registry
 
 import (
-	"log/slog"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
 )
 
-// Device is one classified, port-open serial device.
-type Device struct {
-	ID       string
-	Type     string // "pump" | "valve" | "densitometer"
-	TypeCode byte   // 10 | 30 | 70
-	Port     string
-	Conn     serial.Port
-	Opener   serial.Opener // used to re-open the port on reconnect
-
-	busy atomic.Bool
-}
-
-// TryLock attempts to claim exclusive access to this device.
-// Returns false if the device is already locked.
-func (d *Device) TryLock() bool { return d.busy.CompareAndSwap(false, true) }
-
-// Unlock releases the lock acquired by TryLock.
-func (d *Device) Unlock() { d.busy.Store(false) }
-
-// Registry holds the live device set. All methods are safe for concurrent use.
+// Registry tracks the device sessions created by the most recent
+// discovery, keyed by ordinal device ID. List preserves Replace order
+// (discovery's (type code, port) sort). Sessions handed to Replace must
+// already be Start()ed — Close on an unstarted session blocks forever.
 type Registry struct {
 	mu           sync.RWMutex
-	devices      map[string]*Device
+	ordered      []*device.Session
+	byID         map[string]*device.Session
 	discoveredAt *time.Time
-
 	discoverGate atomic.Bool
 }
 
 func New() *Registry {
-	return &Registry{devices: map[string]*Device{}}
+	return &Registry{byID: map[string]*device.Session{}}
 }
 
-// LockDiscovery returns true if no other discovery is in progress; the
-// caller must call UnlockDiscovery when finished.
-func (r *Registry) LockDiscovery() bool {
-	return r.discoverGate.CompareAndSwap(false, true)
-}
+// LockDiscovery acquires the single-discovery gate; false if held.
+func (r *Registry) LockDiscovery() bool { return r.discoverGate.CompareAndSwap(false, true) }
 
+// UnlockDiscovery releases the gate.
 func (r *Registry) UnlockDiscovery() { r.discoverGate.Store(false) }
 
-// IsDiscovering reports whether a discovery is currently in progress.
-// Non-acquiring read; callers must NOT use it as a lock.
-func (r *Registry) IsDiscovering() bool {
-	return r.discoverGate.Load()
-}
+// IsDiscovering reports whether a discovery pass is in flight.
+func (r *Registry) IsDiscovering() bool { return r.discoverGate.Load() }
 
-// Replace closes every device currently in the registry and installs the new set.
-// If devs is nil (e.g. shutdown path), the existing devices are closed but
-// discoveredAt is NOT updated so a racing GET /devices sees the original timestamp.
-func (r *Registry) Replace(devs []*Device) {
+// Replace installs a new session set and closes every session of the old
+// set (graceful: Close runs Detach, which persists driver state). A non-nil
+// sessions slice stamps discoveredAt; Replace(nil) closes everything but
+// keeps the timestamp (shutdown path).
+func (r *Registry) Replace(sessions []*device.Session) {
 	r.mu.Lock()
-	old := r.devices
-	r.devices = make(map[string]*Device, len(devs))
-	for _, d := range devs {
-		r.devices[d.ID] = d
+	old := r.ordered
+	r.ordered = append([]*device.Session(nil), sessions...)
+	r.byID = make(map[string]*device.Session, len(sessions))
+	for _, s := range sessions {
+		r.byID[s.ID()] = s
 	}
-	if devs != nil {
-		now := time.Now().UTC()
+	if sessions != nil {
+		now := time.Now()
 		r.discoveredAt = &now
 	}
 	r.mu.Unlock()
-
-	slog.Info("registry replace", "count", len(devs), "previous", len(old))
-
-	for _, d := range old {
-		if d.Conn != nil {
-			_ = d.Conn.Close()
-		}
+	// Close outside the lock: Close blocks on graceful detach, which may do
+	// serial I/O (pump safety stop).
+	for _, s := range old {
+		s.Close()
 	}
 }
 
-// CloseAll closes every device port currently in the registry and empties the
-// device map. discoveredAt is preserved so a racing GET /devices during
-// re-discovery still sees the original timestamp until Replace installs the
-// new set.
-func (r *Registry) CloseAll() {
+// CloseAll closes every session and empties the registry, preserving
+// discoveredAt (used before a re-probe and at shutdown).
+func (r *Registry) CloseAll() { r.removeAll() }
+
+// DisconnectAll closes every session and returns how many were released.
+func (r *Registry) DisconnectAll() int { return r.removeAll() }
+
+func (r *Registry) removeAll() int {
 	r.mu.Lock()
-	old := r.devices
-	r.devices = map[string]*Device{}
+	old := r.ordered
+	r.ordered = nil
+	r.byID = map[string]*device.Session{}
 	r.mu.Unlock()
-
-	slog.Info("registry close all", "count", len(old))
-
-	for _, d := range old {
-		if d.Conn != nil {
-			_ = d.Conn.Close()
-		}
+	for _, s := range old {
+		s.Close()
 	}
+	return len(old)
 }
 
-// DisconnectAll closes every device port in the registry, empties the map,
-// and returns the count of devices that were removed. Safe on an empty
-// registry. Used by POST /devices/disconnect before a flash operation.
-func (r *Registry) DisconnectAll() int {
+// DisconnectByPort closes and removes the session holding the named port.
+func (r *Registry) DisconnectByPort(port string) bool {
 	r.mu.Lock()
-	n := len(r.devices)
-	old := r.devices
-	r.devices = map[string]*Device{}
-	r.mu.Unlock()
-
-	slog.Info("registry disconnect all", "count", n)
-
-	for _, d := range old {
-		if d.Conn != nil {
-			_ = d.Conn.Close()
-		}
-	}
-	return n
-}
-
-// DisconnectByPort closes and removes the single device whose Port == name.
-// Returns true if a matching device was found and released, false otherwise.
-// The connection is closed outside the registry mutex so a slow Close cannot
-// stall concurrent readers. Used by POST /devices/disconnect/{port}.
-func (r *Registry) DisconnectByPort(name string) bool {
-	r.mu.Lock()
-	var found *Device
-	var foundID string
-	for id, d := range r.devices {
-		if d.Port == name {
-			found = d
-			foundID = id
+	var victim *device.Session
+	for i, s := range r.ordered {
+		if s.PortName() == port {
+			victim = s
+			r.ordered = append(r.ordered[:i:i], r.ordered[i+1:]...)
+			delete(r.byID, s.ID())
 			break
 		}
 	}
-	if found != nil {
-		delete(r.devices, foundID)
-	}
 	r.mu.Unlock()
-
-	if found == nil {
+	if victim == nil {
 		return false
 	}
-	slog.Info("registry disconnect by port", "port", name, "id", foundID)
-	if found.Conn != nil {
-		_ = found.Conn.Close()
-	}
+	victim.Close()
 	return true
 }
 
-// Get looks up a device by ID.
-func (r *Registry) Get(id string) (*Device, bool) {
+// Get returns the session with the given device ID.
+func (r *Registry) Get(id string) (*device.Session, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	d, ok := r.devices[id]
-	return d, ok
+	s, ok := r.byID[id]
+	return s, ok
 }
 
-// Remove deletes a device from the registry and closes its port.
-func (r *Registry) Remove(id string) {
-	r.mu.Lock()
-	d, ok := r.devices[id]
-	if ok {
-		delete(r.devices, id)
-	}
-	r.mu.Unlock()
-	if ok {
-		slog.Info("registry remove", "id", id)
-		if d.Conn != nil {
-			_ = d.Conn.Close()
-		}
-	}
-}
-
-// List returns devices sorted by (TypeCode, Port).
-func (r *Registry) List() []*Device {
+// List returns the sessions in Replace order.
+func (r *Registry) List() []*device.Session {
 	r.mu.RLock()
-	out := make([]*Device, 0, len(r.devices))
-	for _, d := range r.devices {
-		out = append(out, d)
-	}
-	r.mu.RUnlock()
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].TypeCode != out[j].TypeCode {
-			return out[i].TypeCode < out[j].TypeCode
-		}
-		return out[i].Port < out[j].Port
-	})
-	return out
+	defer r.mu.RUnlock()
+	return append([]*device.Session(nil), r.ordered...)
 }
 
-// HasPort reports whether any device in the registry currently uses the named
-// serial port. If a match exists, returns its device ID and true; otherwise
-// "", false. Linear scan — registry size is bounded by the number of attached
-// devices (typically <10).
+// HasPort returns the ID of the session holding the named port, if any.
 func (r *Registry) HasPort(name string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, d := range r.devices {
-		if d.Port == name {
-			return d.ID, true
+	for _, s := range r.ordered {
+		if s.PortName() == name {
+			return s.ID(), true
 		}
 	}
 	return "", false
 }
 
-// DiscoveredAt returns the timestamp of the most recent successful discovery
-// (UTC), or nil if discovery has never run.
+// DiscoveredAt returns the time of the last discovery, or nil if never run.
 func (r *Registry) DiscoveredAt() *time.Time {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

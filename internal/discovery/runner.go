@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
@@ -91,12 +90,12 @@ func bytesToInts(b []byte) []int {
 	return out
 }
 
-// RunMatches probes every port in candidates concurrently (no cap),
+// Run probes every port in candidates concurrently (no cap),
 // classifies the replies, and returns a slice of Match with sequential
 // per-type IDs ("pump_1", "pump_2", ...) and the captured probe reply bytes.
 // Ports that do not match a known device are closed; ports that match keep
 // their connections open inside the returned matches.
-func RunMatches(ctx context.Context, opener serial.Opener, candidates []string) ([]Match, error) {
+func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]Match, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -173,21 +172,4 @@ func RunMatches(ctx context.Context, opener serial.Opener, candidates []string) 
 	}
 	slog.Info("discovery: completed", "candidates", len(candidates), "matched", len(out))
 	return out, nil
-}
-
-// Run adapts RunMatches to the legacy registry shape. Deleted in the v2
-// API cutover once nothing consumes *registry.Device.
-func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]*registry.Device, error) {
-	matches, err := RunMatches(ctx, opener, candidates)
-	if err != nil {
-		return nil, err
-	}
-	devs := make([]*registry.Device, 0, len(matches))
-	for _, m := range matches {
-		devs = append(devs, &registry.Device{
-			ID: m.ID, Type: m.Type, TypeCode: m.TypeCode, Port: m.Port,
-			Conn: m.Conn, Opener: opener,
-		})
-	}
-	return devs, nil
 }
