@@ -148,3 +148,12 @@ func TestCalibrateTubeFromLastMeasurement(t *testing.T) {
 		t.Fatalf("based_on_seq = %v", m["based_on_seq"])
 	}
 }
+
+func TestCalibrateTubeRejectsOutOfRange(t *testing.T) {
+	f := newFixture(t)
+	measureAfterBlank(t, f, "", 50, 27, 45)
+	resp := f.exec("calibrate_tube", `{"reference_absorbance":3.0}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeInvalidParams {
+		t.Fatalf("out-of-range calibrate_tube must be invalid_params: %+v", resp)
+	}
+}

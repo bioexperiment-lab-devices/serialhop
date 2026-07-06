@@ -172,6 +172,14 @@ func (d *Driver) calibrateTube(params json.RawMessage) (any, *device.CmdError) {
 			"last measurement absorbance is zero — cannot calibrate")
 	}
 	factor := p.ReferenceAbsorbance / uncorrected
+	// A materially out-of-range factor means a bad reference or a unit error —
+	// reject it rather than silently corrupt every later measurement. A factor
+	// that only overshoots by float noise (the boundary case) is snapped to bound.
+	const tol = 1e-6
+	if factor < 0.5-tol || factor > 2.0+tol {
+		return nil, device.ErrInvalidParams("reference_absorbance", p.ReferenceAbsorbance,
+			"resulting tube correction out of range [0.5, 2.0]")
+	}
 	factor = math.Max(0.5, math.Min(2.0, factor))
 	d.tubeCorrection = factor
 	if err := d.persist(); err != nil {
