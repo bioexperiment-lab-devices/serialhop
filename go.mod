@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/go-ole/go-ole v1.3.0
-	github.com/jpillora/chisel v1.11.7
+	github.com/jpillora/chisel v1.11.8
 	github.com/wailsapp/wails/v2 v2.12.0
 	go.bug.st/serial v1.7.1
 	golang.org/x/sys v0.46.0
