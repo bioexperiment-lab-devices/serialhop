@@ -7,7 +7,7 @@ require (
 	github.com/jpillora/chisel v1.11.7
 	github.com/wailsapp/wails/v2 v2.12.0
 	go.bug.st/serial v1.7.1
-	golang.org/x/sys v0.46.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/tools v0.47.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
