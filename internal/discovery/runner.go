@@ -128,10 +128,25 @@ func Run(ctx context.Context, opener serial.Opener, candidates []string) ([]Matc
 				return
 			}
 			if res == nil {
-				slog.Debug("discovery: no device on port",
-					"port", portName,
-					"sent", sent,
-					"reply", bytesToInts(reply))
+				switch {
+				case len(reply) == 0:
+					slog.Debug("discovery: no device on port",
+						"port", portName,
+						"sent", sent,
+						"reply", bytesToInts(reply))
+				case len(reply) < 4:
+					// A partial frame that survived Probe's retry: a device
+					// is on this port but its reply keeps breaking up.
+					slog.Warn("discovery: partial probe reply (device present, frame incomplete)",
+						"port", portName,
+						"sent", sent,
+						"reply", bytesToInts(reply))
+				default:
+					slog.Warn("discovery: unknown device type",
+						"port", portName,
+						"sent", sent,
+						"reply", bytesToInts(reply))
+				}
 				_ = conn.Close()
 				return
 			}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/slogtest"
 )
 
 func init() {
@@ -168,6 +169,7 @@ func TestRun_DebugLogsSentAndReplyPerPort(t *testing.T) {
 	}
 
 	type logLine struct {
+		Level string `json:"level"`
 		Msg   string `json:"msg"`
 		Port  string `json:"port"`
 		Sent  any    `json:"sent"`
@@ -214,8 +216,11 @@ func TestRun_DebugLogsSentAndReplyPerPort(t *testing.T) {
 	if got := byPort["COM3"].Reply.([]any); !equalNums(got, []any{10.0, 1.0, 2.0, 3.0}) {
 		t.Errorf("COM3: reply=%v, want [10 1 2 3]", got)
 	}
-	if got := byPort["COM4"].Msg; got != "discovery: no device on port" {
-		t.Errorf("COM4: msg=%q, want %q", got, "discovery: no device on port")
+	if got := byPort["COM4"].Msg; got != "discovery: unknown device type" {
+		t.Errorf("COM4: msg=%q, want %q", got, "discovery: unknown device type")
+	}
+	if got := byPort["COM4"].Level; got != "WARN" {
+		t.Errorf("COM4: level=%q, want %q", got, "WARN")
 	}
 	if got := byPort["COM4"].Reply.([]any); !equalNums(got, []any{99.0, 1.0, 2.0, 3.0}) {
 		t.Errorf("COM4: reply=%v, want [99 1 2 3]", got)
@@ -223,8 +228,41 @@ func TestRun_DebugLogsSentAndReplyPerPort(t *testing.T) {
 	if got := byPort["COM5"].Msg; got != "discovery: no device on port" {
 		t.Errorf("COM5: msg=%q, want %q", got, "discovery: no device on port")
 	}
+	if got := byPort["COM5"].Level; got != "DEBUG" {
+		t.Errorf("COM5: level=%q, want %q", got, "DEBUG")
+	}
 	if got := byPort["COM5"].Reply.([]any); len(got) != 0 {
 		t.Errorf("COM5: reply=%v, want empty (no reply)", got)
+	}
+}
+
+// A port that only ever produces a partial frame must be logged at Warn,
+// distinguishable from a silent port — a truncated device hiding in Debug
+// logs is how the original bug went unnoticed for 30 days.
+func TestRun_WarnsOnPartialReply(t *testing.T) {
+	rec := slogtest.NewRecorder()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	o := newOpener(t, map[string][]byte{
+		"COM9": {30, 1}, // 2 bytes, then silence — retry also comes up empty
+	})
+	matches, err := Run(context.Background(), o, []string{"COM9"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no matches, got %+v", matches)
+	}
+	if rec.Find(slog.LevelWarn,
+		"discovery: partial probe reply (device present, frame incomplete)",
+		map[string]any{"port": "COM9", "reply": []int{30, 1}}) == nil {
+		t.Errorf("missing partial-reply warn; records=%+v", rec.Records())
+	}
+	if rec.Find(slog.LevelDebug, "discovery: no device on port",
+		map[string]any{"port": "COM9"}) != nil {
+		t.Errorf("partial reply must not be logged as 'no device on port'")
 	}
 }
 

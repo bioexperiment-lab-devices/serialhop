@@ -89,12 +89,15 @@ func TestProbe_UnknownTypeByte(t *testing.T) {
 	}
 }
 
+// A partial reply proves a device is present, so Probe retries exactly once.
+// Here the retry gets silence: the result is still nil, the first attempt's
+// bytes are returned for logging, and the probe was sent twice.
 func TestProbe_FewerThan4Bytes(t *testing.T) {
 	p := serial.NewFakePort("COM6")
 	defer p.Close() //nolint:errcheck // test teardown
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		p.Feed([]byte{10, 1}) // only 2 bytes
+		p.Feed([]byte{10, 1}) // only 2 bytes, then silence forever
 	}()
 	reply, got, err := Probe(p)
 	if err != nil {
@@ -103,12 +106,17 @@ func TestProbe_FewerThan4Bytes(t *testing.T) {
 	if got != nil {
 		t.Errorf("expected nil for partial reply, got %v", got)
 	}
-	// Partial reply must still be returned so callers can log what arrived.
+	// The partial bytes are the strongest evidence of a device — they must
+	// survive the empty retry so callers can log them.
 	if string(reply) != string([]byte{10, 1}) {
 		t.Errorf("expected partial reply=[10 1], got %v", reply)
 	}
+	if want := 2 * len(probeBytes); len(p.Written()) != want {
+		t.Errorf("probe written %d bytes, want %d (two attempts)", len(p.Written()), want)
+	}
 }
 
+// A silent port is genuinely deviceless: no retry, single probe write.
 func TestProbe_NoReply(t *testing.T) {
 	p := serial.NewFakePort("COM8")
 	defer p.Close() //nolint:errcheck // test teardown
@@ -121,6 +129,64 @@ func TestProbe_NoReply(t *testing.T) {
 	}
 	if len(reply) != 0 {
 		t.Errorf("expected empty reply on timeout, got %v", reply)
+	}
+	if want := len(probeBytes); len(p.Written()) != want {
+		t.Errorf("probe written %d bytes, want %d (no retry on silence)", len(p.Written()), want)
+	}
+}
+
+// Partial first attempt, complete frame on the retry: classified normally.
+func TestProbe_PartialThenCompleteOnRetry(t *testing.T) {
+	p := serial.NewFakePort("COM3")
+	defer p.Close() //nolint:errcheck // test teardown
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		p.Feed([]byte{10, 1}) // truncated frame → triggers retry
+		// Wait for the second probe sequence to finish (drain during the
+		// retry would wipe anything fed earlier), then answer properly.
+		deadline := time.Now().Add(3 * time.Second)
+		for len(p.Written()) < 2*len(probeBytes) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		p.Feed([]byte{10, 99, 88, 77})
+	}()
+	reply, got, err := Probe(p)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if got == nil || got.TypeCode != 10 || got.Type != "pump" {
+		t.Fatalf("expected pump classification after retry, got %v", got)
+	}
+	if string(reply) != string([]byte{10, 99, 88, 77}) {
+		t.Errorf("expected retry reply=[10 99 88 77], got %v", reply)
+	}
+}
+
+// Regression for the original field bug: USB latency timers batch reply
+// bytes with gaps far beyond the old 25 ms slack. 100 ms inter-byte gaps
+// must classify on the first attempt.
+func TestProbe_SlowInterByteArrival(t *testing.T) {
+	p := serial.NewFakePort("COM4")
+	defer p.Close() //nolint:errcheck // test teardown
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		for _, b := range []byte{10, 99, 88, 77} {
+			p.Feed([]byte{b})
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	reply, got, err := Probe(p)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if got == nil || got.Type != "pump" {
+		t.Fatalf("expected pump despite slow byte arrival, got %v", got)
+	}
+	if string(reply) != string([]byte{10, 99, 88, 77}) {
+		t.Errorf("reply=%v, want [10 99 88 77]", reply)
+	}
+	if want := len(probeBytes); len(p.Written()) != want {
+		t.Errorf("probe written %d bytes, want %d (no retry needed)", len(p.Written()), want)
 	}
 }
 
