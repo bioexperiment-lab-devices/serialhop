@@ -160,6 +160,10 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 	slog.Info("raw_attach_open", "port", port, "remote", c.ws.RemoteAddr().String(), "baud", baud)
 	_ = c.writeJSON(controlMsg{Op: "ready", Port: port, Baud: baud})
 
+	var lastActive atomic.Int64
+	lastActive.Store(time.Now().UnixNano())
+	touch := func() { lastActive.Store(time.Now().UnixNano()) }
+
 	// serial -> ws
 	serialDone := make(chan struct{})
 	go func() {
@@ -176,6 +180,7 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 			if n == 0 {
 				continue
 			}
+			touch()
 			atomic.AddInt64(&rxBytes, int64(n))
 			if err := c.writeBinary(buf[:n]); err != nil {
 				return
@@ -211,6 +216,28 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 	}()
 	defer close(pingDone)
 
+	// idle-timeout watchdog
+	if s.rawIdleTimeout > 0 {
+		idleDone := make(chan struct{})
+		defer close(idleDone)
+		go func() {
+			t := time.NewTicker(s.rawIdleTimeout / 2)
+			defer t.Stop()
+			for {
+				select {
+				case <-idleDone:
+					return
+				case <-t.C:
+					last := time.Unix(0, lastActive.Load())
+					if time.Since(last) >= s.rawIdleTimeout {
+						c.close(websocket.CloseGoingAway, "idle timeout")
+						return
+					}
+				}
+			}
+		}()
+	}
+
 	// ws -> serial (this goroutine)
 	_ = c.ws.SetReadDeadline(time.Now().Add(rawPongWait))
 	c.ws.SetPongHandler(func(string) error {
@@ -232,9 +259,13 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 			case <-serialDone:
 				reason = "read_error"
 			default:
+				if s.rawIdleTimeout > 0 && time.Since(time.Unix(0, lastActive.Load())) >= s.rawIdleTimeout {
+					reason = "idle_timeout"
+				}
 			}
 			return
 		}
+		touch()
 		_ = c.ws.SetReadDeadline(time.Now().Add(rawPongWait))
 		switch mt {
 		case websocket.BinaryMessage:

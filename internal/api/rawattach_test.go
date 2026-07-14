@@ -44,7 +44,6 @@ func newAttachServer(t *testing.T, enabled bool, ports ...string) (*httptest.Ser
 	return ts, op, reg
 }
 
-//nolint:unused // fixture for the Task 6 idle-timeout test; not yet exercised in Task 4
 func newServerWithIdle(t *testing.T, reg *registry.Registry, op *labserial.FakeOpener, idle time.Duration) *Server {
 	return buildServer(t, reg, op, true, idle)
 }
@@ -332,6 +331,33 @@ func TestAttachControlFrames(t *testing.T) {
 			contains(fake.RTSSequence(), true) &&
 			len(fake.BreakSequence()) == 1 && fake.BreakSequence()[0] == 200*time.Millisecond
 	})
+}
+
+func TestAttachIdleTimeoutCloses(t *testing.T) {
+	op := labserial.NewFakeOpener()
+	op.Add(labserial.NewFakePort("COM3"))
+	reg := registry.New()
+	srv := newServerWithIdle(t, reg, op, 150*time.Millisecond)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/serial/ports/COM3/attach"
+	ws, dialResp, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = dialResp.Body.Close() }()
+	defer func() { _ = ws.Close() }()
+	_, _, _ = ws.ReadMessage() // ready
+
+	// Send nothing. The server should close within ~idle timeout.
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		if _, _, err := ws.ReadMessage(); err != nil {
+			break // closed as expected
+		}
+	}
+	waitFor(t, func() bool { return len(reg.RawLeasedPorts()) == 0 })
 }
 
 func contains[T comparable](xs []T, v T) bool {
