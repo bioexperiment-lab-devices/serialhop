@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,10 +19,11 @@ type Registry struct {
 	byID         map[string]*device.Session
 	discoveredAt *time.Time
 	discoverGate atomic.Bool
+	rawLeases    map[string]bool
 }
 
 func New() *Registry {
-	return &Registry{byID: map[string]*device.Session{}}
+	return &Registry{byID: map[string]*device.Session{}, rawLeases: map[string]bool{}}
 }
 
 // LockDiscovery acquires the single-discovery gate; false if held.
@@ -121,6 +123,48 @@ func (r *Registry) HasPort(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// TryAcquireRaw grants an exclusive raw lease on port. It fails if a
+// discovery pass is in flight, the port is owned by a discovered device,
+// or another raw lease is already held. Same mutex as the session map, so
+// it cannot race Replace/HasPort.
+func (r *Registry) TryAcquireRaw(port string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.discoverGate.Load() {
+		return false
+	}
+	for _, s := range r.ordered {
+		if s.PortName() == port {
+			return false
+		}
+	}
+	if r.rawLeases[port] {
+		return false
+	}
+	r.rawLeases[port] = true
+	return true
+}
+
+// ReleaseRaw drops the raw lease on port (no-op if not held).
+func (r *Registry) ReleaseRaw(port string) {
+	r.mu.Lock()
+	delete(r.rawLeases, port)
+	r.mu.Unlock()
+}
+
+// RawLeasedPorts returns the ports currently under a raw lease, sorted.
+// Discovery excludes these from its candidate list.
+func (r *Registry) RawLeasedPorts() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.rawLeases))
+	for p := range r.rawLeases {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // DiscoveredAt returns the time of the last discovery, or nil if never run.
