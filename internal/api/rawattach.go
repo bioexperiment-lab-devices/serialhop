@@ -179,6 +179,16 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 		}
 	}()
 
+	// When the serial side dies, force the ws->serial ReadMessage below to
+	// return immediately. Without this, gorilla's default ping handler
+	// auto-pongs and keeps resetting the read deadline, so an idle client
+	// would hold the raw lease forever after the port is gone. Setting an
+	// already-elapsed read deadline is deadlock-free — it does not take wmu.
+	go func() {
+		<-serialDone
+		_ = c.ws.SetReadDeadline(time.Now())
+	}()
+
 	// ping keepalive
 	pingDone := make(chan struct{})
 	go func() {
@@ -212,6 +222,13 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 		}
 		mt, data, err := c.ws.ReadMessage()
 		if err != nil {
+			// A closed serialDone means the read unblocked because the serial
+			// side died (via the watcher above), not because the client left.
+			select {
+			case <-serialDone:
+				reason = "read_error"
+			default:
+			}
 			return
 		}
 		_ = c.ws.SetReadDeadline(time.Now().Add(rawPongWait))

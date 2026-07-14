@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,6 +46,30 @@ func newAttachServer(t *testing.T, enabled bool, ports ...string) (*httptest.Ser
 //nolint:unused // fixture for the Task 6 idle-timeout test; not yet exercised in Task 4
 func newServerWithIdle(t *testing.T, reg *registry.Registry, op *labserial.FakeOpener, idle time.Duration) *Server {
 	return buildServer(t, reg, op, true, idle)
+}
+
+// newSessionOwningPort builds a started device.Session that owns the named
+// port, so reg.HasPort(port) reports true — mirrors v1_test.go's
+// newFakeSession but with a caller-chosen port name.
+func newSessionOwningPort(t *testing.T, port string) *device.Session {
+	t.Helper()
+	fp := labserial.NewFakePort(port)
+	opener := labserial.NewFakeOpener()
+	opener.Add(fp)
+	conn, err := opener.Open(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := device.NewSession(device.SessionConfig{
+		ID: "owner", Type: "fake", TypeCode: 240, PortName: port,
+		Conn: conn, Opener: opener, StateDir: t.TempDir(),
+		Factory: func(sess *device.Session) device.Driver { return &fakeDriver{s: sess} },
+		Reprobe: func(labserial.Port) ([]byte, error) { return nil, errors.New("no reprobe in tests") },
+	})
+	s.Start(context.Background())
+	s.WaitFirstAttach(context.Background())
+	t.Cleanup(s.Close)
+	return s
 }
 
 func TestAttachDisabledReturns403(t *testing.T) {
@@ -146,5 +171,111 @@ func TestAttachByteRoundTrip(t *testing.T) {
 	}
 	if got := reg.RawLeasedPorts(); len(got) != 0 {
 		t.Fatalf("lease not released: %v", got)
+	}
+}
+
+func TestAttachBadBaudReturns400(t *testing.T) {
+	ts, _, _ := newAttachServer(t, true, "COM3")
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/serial/ports/COM3/attach?baud=abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestAttachOwnedPortReturns409(t *testing.T) {
+	ts, _, reg := newAttachServer(t, true, "COM3")
+	defer ts.Close()
+	reg.Replace([]*device.Session{newSessionOwningPort(t, "COM3")})
+	resp, err := http.Get(ts.URL + "/serial/ports/COM3/attach")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestAttachDiscoveringReturns409(t *testing.T) {
+	ts, _, reg := newAttachServer(t, true, "COM3")
+	defer ts.Close()
+	if !reg.LockDiscovery() {
+		t.Fatal("LockDiscovery failed")
+	}
+	defer reg.UnlockDiscovery()
+	resp, err := http.Get(ts.URL + "/serial/ports/COM3/attach")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+}
+
+// TestAttachSerialDeathClosesSession is the regression test for the unbounded
+// lease-hold bug: if the serial port dies while the client is connected but
+// idle, gorilla's default ping handler auto-pongs and keeps resetting the read
+// deadline, so the ws->serial ReadMessage loop never returns and the raw lease
+// is held forever. The serialDone watcher must force ReadMessage to unblock the
+// moment the serial reader exits, closing the session within milliseconds.
+func TestAttachSerialDeathClosesSession(t *testing.T) {
+	ts, op, reg := newAttachServer(t, true, "COM3")
+	defer ts.Close()
+	fp, _ := op.Open("COM3")
+	fake := fp.(*labserial.FakePort)
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/serial/ports/COM3/attach"
+	ws, dialResp, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = dialResp.Body.Close() }()
+	defer func() { _ = ws.Close() }()
+
+	// consume the ready control frame
+	if _, _, err := ws.ReadMessage(); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
+
+	// Simulate device death: close the underlying serial port. The client
+	// deliberately sends nothing after this point.
+	_ = fake.Close()
+
+	// The server must close the ws promptly. A generous client-side read
+	// deadline (5s) ensures the read only returns because the SERVER closed
+	// the conn, not because the client self-timed-out; the outer 2s select
+	// bounds "prompt". Without the watcher the server stays blocked ~40s and
+	// this select times out (RED).
+	done := make(chan error, 1)
+	go func() {
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, _, e := ws.ReadMessage()
+		done <- e
+	}()
+	select {
+	case e := <-done:
+		if e == nil {
+			t.Fatal("expected ws close error on serial death, got nil")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not close ws within 2s of serial death (lease would be held ~40s)")
+	}
+
+	// Lease must drain — the definitive RED/GREEN discriminator.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if len(reg.RawLeasedPorts()) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := reg.RawLeasedPorts(); len(got) != 0 {
+		t.Fatalf("lease not released after serial death: %v", got)
 	}
 }
