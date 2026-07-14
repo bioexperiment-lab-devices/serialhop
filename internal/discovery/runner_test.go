@@ -169,6 +169,7 @@ func TestRun_DebugLogsSentAndReplyPerPort(t *testing.T) {
 	}
 
 	type logLine struct {
+		Level string `json:"level"`
 		Msg   string `json:"msg"`
 		Port  string `json:"port"`
 		Sent  any    `json:"sent"`
@@ -218,11 +219,17 @@ func TestRun_DebugLogsSentAndReplyPerPort(t *testing.T) {
 	if got := byPort["COM4"].Msg; got != "discovery: unknown device type" {
 		t.Errorf("COM4: msg=%q, want %q", got, "discovery: unknown device type")
 	}
+	if got := byPort["COM4"].Level; got != "WARN" {
+		t.Errorf("COM4: level=%q, want %q", got, "WARN")
+	}
 	if got := byPort["COM4"].Reply.([]any); !equalNums(got, []any{99.0, 1.0, 2.0, 3.0}) {
 		t.Errorf("COM4: reply=%v, want [99 1 2 3]", got)
 	}
 	if got := byPort["COM5"].Msg; got != "discovery: no device on port" {
 		t.Errorf("COM5: msg=%q, want %q", got, "discovery: no device on port")
+	}
+	if got := byPort["COM5"].Level; got != "DEBUG" {
+		t.Errorf("COM5: level=%q, want %q", got, "DEBUG")
 	}
 	if got := byPort["COM5"].Reply.([]any); len(got) != 0 {
 		t.Errorf("COM5: reply=%v, want empty (no reply)", got)
