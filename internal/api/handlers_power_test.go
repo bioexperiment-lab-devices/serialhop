@@ -24,7 +24,7 @@ func powerTestServer(t *testing.T) (http.Handler, power.KeepAwake) {
 	}
 	t.Cleanup(func() { _ = ka.Close() })
 	reg := registry.New()
-	srv := New(reg, nil, serial.NewFakeOpener(), nil, false, ka).Handler()
+	srv := New(reg, nil, serial.NewFakeOpener(), nil, false, ka, false, 0).Handler()
 	return srv, ka
 }
 
@@ -97,7 +97,7 @@ var errSyscallFake = errors.New("synthetic failure")
 func powerTestServerWith(t *testing.T, ka power.KeepAwake) http.Handler {
 	t.Helper()
 	reg := registry.New()
-	return New(reg, nil, serial.NewFakeOpener(), nil, false, ka).Handler()
+	return New(reg, nil, serial.NewFakeOpener(), nil, false, ka, false, 0).Handler()
 }
 
 func TestEnableKeepAwake_FlipsActive(t *testing.T) {
