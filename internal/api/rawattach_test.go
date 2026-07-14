@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -278,4 +279,78 @@ func TestAttachSerialDeathClosesSession(t *testing.T) {
 	if got := reg.RawLeasedPorts(); len(got) != 0 {
 		t.Fatalf("lease not released after serial death: %v", got)
 	}
+}
+
+func TestAttachControlFrames(t *testing.T) {
+	ts, op, _ := newAttachServer(t, true, "COM3")
+	defer ts.Close()
+	fp, _ := op.Open("COM3")
+	fake := fp.(*labserial.FakePort)
+	fake.SetModem(labserial.ModemBits{CTS: true, DSR: true})
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/serial/ports/COM3/attach"
+	ws, dialResp, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = dialResp.Body.Close() }()
+	defer func() { _ = ws.Close() }()
+	_, _, _ = ws.ReadMessage() // consume ready
+
+	send := func(v map[string]any) { _ = ws.WriteJSON(v) }
+	send(map[string]any{"op": "set_baud", "baud": 57600})
+	send(map[string]any{"op": "set_dtr", "level": false})
+	send(map[string]any{"op": "set_rts", "level": true})
+	send(map[string]any{"op": "send_break", "ms": 200})
+	send(map[string]any{"op": "get_modem"})
+
+	// read frames until we see the modem reply
+	var modem controlMsg
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		mt, msg, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if mt != websocket.TextMessage {
+			continue
+		}
+		_ = json.Unmarshal(msg, &modem)
+		if modem.Op == "modem" {
+			break
+		}
+	}
+	if !modem.CTS || !modem.DSR {
+		t.Fatalf("modem reply = %+v, want CTS+DSR true", modem)
+	}
+
+	// assert side effects on the fake, allowing the pump to catch up
+	waitFor(t, func() bool {
+		return len(fake.BaudSequence()) > 0 &&
+			fake.BaudSequence()[len(fake.BaudSequence())-1] == 57600 &&
+			contains(fake.DTRSequence(), false) &&
+			contains(fake.RTSSequence(), true) &&
+			len(fake.BreakSequence()) == 1 && fake.BreakSequence()[0] == 200*time.Millisecond
+	})
+}
+
+func contains[T comparable](xs []T, v T) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not met within 2s")
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/discovery"
+	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
 var rawUpgrader = websocket.Upgrader{
@@ -241,13 +245,41 @@ func (s *Server) runRawSession(c *rawConn, port string, baud int) {
 			}
 			atomic.AddInt64(&txBytes, int64(len(data)))
 		case websocket.TextMessage:
-			s.handleRawControl(c, sp, data) // implemented in Task 5
+			s.handleRawControl(c, sp, data)
 		}
 	}
 }
 
-// handleRawControl is a temporary stub. Task 5 replaces this with the real
-// line-control frame handling (SetDTR/SetRTS/SendBreak/SetBaudRate/
-// ModemStatus), tightening the sp parameter type as needed.
-func (s *Server) handleRawControl(c *rawConn, sp interface{ Write([]byte) (int, error) }, data []byte) {
+func (s *Server) handleRawControl(c *rawConn, sp labserial.Port, data []byte) {
+	var m controlMsg
+	if err := json.Unmarshal(data, &m); err != nil {
+		_ = c.writeJSON(controlMsg{Op: "error", Detail: "bad control frame: " + err.Error()})
+		return
+	}
+	var err error
+	switch m.Op {
+	case "set_baud":
+		err = sp.SetBaudRate(m.Baud)
+	case "set_dtr":
+		err = sp.SetDTR(m.Level != nil && *m.Level)
+	case "set_rts":
+		err = sp.SetRTS(m.Level != nil && *m.Level)
+	case "send_break":
+		err = sp.SendBreak(time.Duration(m.Ms) * time.Millisecond)
+	case "drain":
+		err = sp.Drain(discovery.DrainDuration)
+	case "get_modem":
+		var bits labserial.ModemBits
+		bits, err = sp.ModemStatus()
+		if err == nil {
+			_ = c.writeJSON(controlMsg{Op: "modem", CTS: bits.CTS, DSR: bits.DSR, RI: bits.RI, CD: bits.CD})
+			return
+		}
+	default:
+		_ = c.writeJSON(controlMsg{Op: "error", Detail: "unknown op: " + m.Op})
+		return
+	}
+	if err != nil {
+		_ = c.writeJSON(controlMsg{Op: "error", Detail: m.Op + ": " + err.Error()})
+	}
 }
