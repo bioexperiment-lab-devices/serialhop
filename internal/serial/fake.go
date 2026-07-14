@@ -21,6 +21,9 @@ type FakePort struct {
 	rxSignal    chan struct{} // signaled whenever rx grows
 	dtrSeq      []bool
 	baudSeq     []int
+	rtsSeq      []bool
+	breakSeq    []time.Duration
+	modem       ModemBits
 }
 
 func NewFakePort(name string) *FakePort {
@@ -155,6 +158,58 @@ func (f *FakePort) BaudSequence() []int {
 	defer f.mu.Unlock()
 	out := make([]int, len(f.baudSeq))
 	copy(out, f.baudSeq)
+	return out
+}
+
+func (f *FakePort) SetRTS(level bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return ErrClosed
+	}
+	f.rtsSeq = append(f.rtsSeq, level)
+	return nil
+}
+
+func (f *FakePort) SendBreak(d time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return ErrClosed
+	}
+	f.breakSeq = append(f.breakSeq, d)
+	return nil
+}
+
+func (f *FakePort) ModemStatus() (ModemBits, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return ModemBits{}, ErrClosed
+	}
+	return f.modem, nil
+}
+
+// SetModem sets the modem bits a subsequent ModemStatus() will return.
+func (f *FakePort) SetModem(m ModemBits) {
+	f.mu.Lock()
+	f.modem = m
+	f.mu.Unlock()
+}
+
+func (f *FakePort) RTSSequence() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]bool, len(f.rtsSeq))
+	copy(out, f.rtsSeq)
+	return out
+}
+
+func (f *FakePort) BreakSequence() []time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]time.Duration, len(f.breakSeq))
+	copy(out, f.breakSeq)
 	return out
 }
 

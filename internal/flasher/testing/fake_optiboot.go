@@ -224,6 +224,12 @@ func (f *FakeOptiboot) SetBaudRate(rate int) error {
 	return nil
 }
 
+func (f *FakeOptiboot) SetRTS(level bool) error         { return nil }
+func (f *FakeOptiboot) SendBreak(d time.Duration) error { return nil }
+func (f *FakeOptiboot) ModemStatus() (labserial.ModemBits, error) {
+	return labserial.ModemBits{}, nil
+}
+
 func (f *FakeOptiboot) Drain(d time.Duration) error {
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {

@@ -12,15 +12,26 @@ import (
 
 var ErrClosed = errors.New("serial port closed")
 
+// ModemBits are the input modem status lines read from the UART.
+type ModemBits struct {
+	CTS bool // ClearToSend
+	DSR bool // DataSetReady
+	RI  bool // RingIndicator
+	CD  bool // DataCarrierDetect
+}
+
 // Port is the abstraction the rest of the code uses.
 // All read methods respect the most recent SetReadTimeout call.
 type Port interface {
 	Read(p []byte) (int, error) // returns (0, nil) on read-timeout, never blocks past it
 	Write(p []byte) (int, error)
 	SetReadTimeout(d time.Duration) error
-	Drain(d time.Duration) error // discard all RX bytes available within d
-	SetDTR(level bool) error     // toggle DTR line — used to reset Arduino into bootloader
-	SetBaudRate(rate int) error  // change baud on the open handle (e.g., 115200 -> 9600 between bootloader and sketch)
+	Drain(d time.Duration) error     // discard all RX bytes available within d
+	SetDTR(level bool) error         // toggle DTR line — used to reset Arduino into bootloader
+	SetBaudRate(rate int) error      // change baud on the open handle (e.g., 115200 -> 9600 between bootloader and sketch)
+	SetRTS(level bool) error         // toggle RTS line
+	SendBreak(d time.Duration) error // hold TX in break for d
+	ModemStatus() (ModemBits, error) // read CTS/DSR/RI/CD input lines
 	Close() error
 	Name() string
 }
@@ -128,6 +139,17 @@ func (r *realPort) SetBaudRate(rate int) error {
 		Parity:   bugst.NoParity,
 		StopBits: bugst.OneStopBit,
 	})
+}
+
+func (r *realPort) SetRTS(level bool) error         { return r.p.SetRTS(level) }
+func (r *realPort) SendBreak(d time.Duration) error { return r.p.Break(d) }
+
+func (r *realPort) ModemStatus() (ModemBits, error) {
+	b, err := r.p.GetModemStatusBits()
+	if err != nil {
+		return ModemBits{}, err
+	}
+	return ModemBits{CTS: b.CTS, DSR: b.DSR, RI: b.RI, CD: b.DCD}, nil
 }
 
 func (r *realPort) Drain(d time.Duration) error {
