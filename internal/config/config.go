@@ -12,6 +12,7 @@ type Config struct {
 	Log        LogConfig        `yaml:"log" json:"log"`
 	AutoUpdate AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
 	Flashing   FlashingConfig   `yaml:"flashing" json:"flashing"`
+	RawSerial  RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
 }
 
 type LabBridgeConfig struct {
@@ -44,6 +45,11 @@ type FlashingConfig struct {
 	KeepN     int    `yaml:"keep_n" json:"keep_n"`
 }
 
+type RawSerialConfig struct {
+	Enabled       bool `yaml:"enabled" json:"enabled"`
+	IdleTimeoutMs int  `yaml:"idle_timeout_ms" json:"idle_timeout_ms"`
+}
+
 func Default() Config {
 	return Config{
 		LabBridge: LabBridgeConfig{
@@ -60,6 +66,7 @@ func Default() Config {
 		Log:        LogConfig{Level: "info"},
 		AutoUpdate: AutoUpdateConfig{Enabled: true},
 		Flashing:   FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
+		RawSerial:  RawSerialConfig{Enabled: false, IdleTimeoutMs: 900000},
 	}
 }
 
@@ -103,6 +110,14 @@ flashing:
   keep_n: 10                      # retain this many backups per COM port;
                                   # oldest pruned after each completed flash.
                                   # 0 = keep all.
+
+raw_serial:
+  enabled: false                  # allow GET /serial/ports/{port}/attach (raw
+                                  # WebSocket byte + line-control stream). Only
+                                  # ports with no discovered device are eligible.
+                                  # off by default — turn on for bring-up / RE.
+  idle_timeout_ms: 900000         # close a raw session after this many ms with
+                                  # no traffic. 0 = never time out.
 `
 
 func WriteScaffold(w io.Writer) error {
