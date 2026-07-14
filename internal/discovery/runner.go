@@ -59,6 +59,25 @@ func FilterPorts(enumerated, include, exclude []string) []string {
 	return out
 }
 
+// ExcludePorts returns ports with every entry in exclude removed, preserving
+// order. Used to keep discovery off ports held under a raw-serial lease.
+func ExcludePorts(ports, exclude []string) []string {
+	if len(exclude) == 0 {
+		return ports
+	}
+	set := make(map[string]bool, len(exclude))
+	for _, p := range exclude {
+		set[p] = true
+	}
+	out := make([]string, 0, len(ports))
+	for _, p := range ports {
+		if !set[p] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 type probeOutcome struct {
 	port   string
 	conn   serial.Port

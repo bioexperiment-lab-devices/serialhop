@@ -80,6 +80,7 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 			return nil, fmt.Errorf("list ports: %w", err)
 		}
 		ports := discovery.FilterPorts(all, include, exclude)
+		ports = discovery.ExcludePorts(ports, reg.RawLeasedPorts())
 		slog.Info("discovery: starting", "candidates", ports)
 		matches, err := discovery.Run(reqCtx, opener, ports)
 		if err != nil {
