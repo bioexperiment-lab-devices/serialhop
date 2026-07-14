@@ -53,6 +53,8 @@ Discovered devices with **type** (`pump` / `valve` / `densitometer`), **port**, 
 
 Every enumerated COM port plus its USB descriptor (VID, PID, SerialNumber, Product). A filter box narrows the list.
 
+Raw serial attach (`GET /serial/ports/{port}/attach`, see the REST API table below) isn't a panel feature — it's an operator-gated (`raw_serial.enabled`) WebSocket endpoint available only for ports with no discovered device.
+
 ### Logs
 
 Live tail of the structured logs under `%ProgramData%\SerialHop\logs\`. Newest-first ordering, sticky filter bar (level + free-text), inline log-detail view for the structured fields, on-open backlog so you can read what happened before the panel opened. An **Open logs folder** button reveals the directory in Explorer.
@@ -68,6 +70,7 @@ The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from ou
 | `POST` | `/api/v1/devices/{id}/command` | Execute one JSON protocol command on a device | — |
 | `POST` | `/devices/disconnect` | Release all device sessions; with `?port=<name>` release just that one | — |
 | `GET`  | `/serial/ports/detailed` | List enumerated COM ports with USB descriptors | — |
+| `GET`  | `/serial/ports/{port}/attach` | Raw serial byte + line-control stream (WebSocket), for ports with no discovered device | `raw_serial.enabled` |
 | `POST` | `/flash/{port}` | Pre-backup → flash → byte-verify → optional test → auto-rollback | `flashing.enabled` |
 | `GET`  | `/agent/info` | Agent self-description for server-pulled state | — |
 | `GET`  | `/power/keep-awake` | Report keep-awake state | — |
