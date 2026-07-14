@@ -64,7 +64,10 @@ classify reply[0]                            // unchanged
   showed 10 s settles and 5× resync bursts never wake a mute board, so
   empty-reply retries only slow every discovery down).
 - Write/drain errors during the retry return an error, as today.
-- The returned `reply` is the final attempt's bytes, preserved for logging.
+- When no device is classified, the returned `reply` is the **longest** reply
+  observed across the attempts — an empty retry must not mask the first
+  attempt's partial bytes, which are the caller's only logged evidence that
+  a device is present.
 
 Considered and rejected: a cross-attempt consistency check on `reply[0]`
 (attempt-1 byte must equal attempt-2 byte). It guards a near-zero-probability
