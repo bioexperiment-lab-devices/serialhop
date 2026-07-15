@@ -22,6 +22,7 @@ const seedCfg = () => ({
   log: { level: "info" },
   auto_update: { enabled: true },
   flashing: { enabled: false, backup_dir: "", keep_n: 10 },
+  raw_serial: { enabled: false, idle_timeout_ms: 900000 },
 });
 
 beforeEach(() => {
@@ -138,5 +139,38 @@ describe("ConfigTab", () => {
 
     ref.current!.discard();
     await waitFor(() => screen.getByDisplayValue("h"));
+  });
+
+  it("raw serial: idle-timeout input is disabled when off and enables when toggled on", async () => {
+    render(<ConfigTab onDirtyChange={() => {}} />);
+    await waitFor(() => screen.getByDisplayValue("h"));
+    const idleInput = document.querySelector(
+      '[data-field="raw_serial.idle_timeout_ms"] input',
+    ) as HTMLInputElement;
+    // Seeded off → idle timeout disabled, value shows the default.
+    expect(idleInput.disabled).toBe(true);
+    expect(idleInput.value).toBe("900000");
+    const enable = screen.getByText("Allow raw serial attach through the service");
+    fireEvent.click(enable);
+    await waitFor(() => expect(idleInput.disabled).toBe(false));
+  });
+
+  it("raw serial: enabling marks the form dirty and saves the edited raw_serial block", async () => {
+    const onDirty = vi.fn();
+    render(<ConfigTab onDirtyChange={onDirty} />);
+    await waitFor(() => screen.getByDisplayValue("h"));
+
+    fireEvent.click(screen.getByText("Allow raw serial attach through the service"));
+    await waitFor(() => expect(onDirty).toHaveBeenCalledWith(true));
+
+    const idleInput = document.querySelector(
+      '[data-field="raw_serial.idle_timeout_ms"] input',
+    ) as HTMLInputElement;
+    fireEvent.change(idleInput, { target: { value: "60000" } });
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(App.SaveConfig as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+    const payload = (App.SaveConfig as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.raw_serial).toEqual({ enabled: true, idle_timeout_ms: 60000 });
   });
 });

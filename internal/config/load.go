@@ -74,6 +74,9 @@ func Validate(c *Config) error {
 	if c.Flashing.Enabled && c.Flashing.BackupDir != "" && !filepath.IsAbs(c.Flashing.BackupDir) {
 		return fmt.Errorf("flashing.backup_dir must be absolute when flashing.enabled (got %q)", c.Flashing.BackupDir)
 	}
+	if c.RawSerial.IdleTimeoutMs < 0 {
+		return fmt.Errorf("raw_serial.idle_timeout_ms must be >= 0 (got %d)", c.RawSerial.IdleTimeoutMs)
+	}
 	return nil
 }
 

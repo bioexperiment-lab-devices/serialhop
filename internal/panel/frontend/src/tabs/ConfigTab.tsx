@@ -21,6 +21,7 @@ interface ConfigDTO {
   log: { level: string };
   auto_update: { enabled: boolean };
   flashing: { enabled: boolean; backup_dir: string; keep_n: number };
+  raw_serial: { enabled: boolean; idle_timeout_ms: number };
 }
 
 interface Props { onDirtyChange: (b: boolean) => void; }
@@ -208,6 +209,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
   const includeActive = form.discovery.include.length > 0;
   const excludeActive = form.discovery.exclude.length > 0;
   const flashOff = !form.flashing.enabled;
+  const rawSerialOff = !form.raw_serial.enabled;
 
   // Local form-level helpers use `renderErrors` so that the on-blur host
   // validator decorates the row even before a Save is attempted. We split
@@ -515,6 +517,56 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab({
         </Field>
       </Section>
 
+      <Section title="Raw serial access"
+        helpComponent={
+          <Help
+            title="Raw serial access"
+            what="When on, the service exposes GET /serial/ports/{port}/attach — a raw WebSocket byte and line-control stream — for ports with no discovered device."
+            defaultVal="off."
+            when="Enable for board bring-up or reverse-engineering; leave off in normal operation."
+          />
+        }>
+        <div className="shp-info-block">
+          <span className="shp-info-block__icon">&#x26A0;</span>
+          <span>
+            Raw serial access bypasses device classification and streams
+            unfiltered bytes to/from an undiscovered port. Only ports with no
+            recognized device are eligible. Leave disabled unless you&apos;re
+            actively bringing up or reverse-engineering hardware.
+          </span>
+        </div>
+        <Field label="Enabled" dataField="raw_serial.enabled"
+          helpComponent={
+            <Help
+              title="Enabled"
+              what="Allows raw WebSocket serial attach on undiscovered ports."
+              defaultVal="off."
+            />
+          }>
+          <Checkbox label="Allow raw serial attach through the service"
+            checked={form.raw_serial.enabled}
+            onChange={v => setNested("raw_serial", "enabled", v)} />
+        </Field>
+        <Field label="Idle timeout" dataField="raw_serial.idle_timeout_ms" disabled={rawSerialOff}
+          helpComponent={
+            <Help
+              title="Idle timeout (ms)"
+              what="Close a raw serial session after this many milliseconds with no traffic."
+              defaultVal="900000 (15 minutes)."
+              when="0 keeps the session open until the client disconnects or the port dies."
+            />
+          }>
+          <div className="shp-input-row" style={{ maxWidth: 220 }}>
+            <IntegerInput className="shp-input shp-input--mono" min={0}
+              value={form.raw_serial.idle_timeout_ms}
+              disabled={rawSerialOff}
+              onChange={v => setNested("raw_serial", "idle_timeout_ms", v)} />
+            <span className="shp-muted">ms</span>
+          </div>
+          <div className="shp-field__hint">0 = never time out</div>
+        </Field>
+      </Section>
+
       <div
         className="shp-btn-row"
         style={{ marginTop: 14, paddingTop: 4, borderTop: "1px solid var(--border)" }}
@@ -568,6 +620,8 @@ const FIELD_LABELS: { path: (c: ConfigDTO) => unknown; label: string }[] = [
   { path: c => c.flashing.enabled, label: "Firmware flashing" },
   { path: c => c.flashing.backup_dir, label: "Backup directory" },
   { path: c => c.flashing.keep_n, label: "Keep N backups" },
+  { path: c => c.raw_serial.enabled, label: "Raw serial access" },
+  { path: c => c.raw_serial.idle_timeout_ms, label: "Raw serial idle timeout" },
 ];
 
 function diffFieldLabels(a: ConfigDTO, b: ConfigDTO): string[] {

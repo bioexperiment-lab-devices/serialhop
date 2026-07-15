@@ -19,6 +19,7 @@ export interface ConfigShape {
   log: { level: string };
   auto_update: { enabled: boolean };
   flashing: { enabled: boolean; backup_dir: string; keep_n: number };
+  raw_serial: { enabled: boolean; idle_timeout_ms: number };
 }
 
 export const defaultConfig: ConfigShape = {
@@ -28,6 +29,7 @@ export const defaultConfig: ConfigShape = {
   log: { level: "info" },
   auto_update: { enabled: true },
   flashing: { enabled: false, backup_dir: "", keep_n: 10 },
+  raw_serial: { enabled: false, idle_timeout_ms: 900000 },
 };
 
 export const fakeDevices = [
