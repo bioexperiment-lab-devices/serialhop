@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.1.0...v2.1.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* stop rfc2217 bridge poller writing to a closed socket on disconnect ([#194](https://github.com/bioexperiment-lab-devices/serialhop/issues/194)) ([a003c0d](https://github.com/bioexperiment-lab-devices/serialhop/commit/a003c0d96a22f167c403605f8b14c2d315e159c3))
+
 ## [2.1.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.0.1...v2.1.0) (2026-07-15)
 
 
