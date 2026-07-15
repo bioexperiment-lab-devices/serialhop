@@ -21,12 +21,12 @@
   "StringFileInfo": {
     "CompanyName": "Lab Devices",
     "FileDescription": "SerialHop Installer",
-    "FileVersion": "2.0.1",
+    "FileVersion": "2.1.0",
     "InternalName": "serialhop-installer",
     "LegalCopyright": "Copyright (c) 2026 Lab Devices",
     "OriginalFilename": "SerialHop-Setup.exe",
     "ProductName": "SerialHop Installer",
-    "ProductVersion": "2.0.1"
+    "ProductVersion": "2.1.0"
   },
   "VarFileInfo": {
     "Translation": {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.0.1...v2.1.0) (2026-07-15)
+
+
+### Features
+
+* raw serial port attach over websocket ([#192](https://github.com/bioexperiment-lab-devices/serialhop/issues/192)) ([e973a70](https://github.com/bioexperiment-lab-devices/serialhop/commit/e973a70241e5af760827f5fa24f5d157bda88923))
+
 ## [2.0.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.0.0...v2.0.1) (2026-07-14)
 
 
