@@ -174,6 +174,56 @@ func TestAttachByteRoundTrip(t *testing.T) {
 	}
 }
 
+// TestAttachOversizeMessageClosed is the regression test for unbounded
+// per-message memory: without ws.SetReadLimit, gorilla accepts a frame of
+// any size, so a single huge client frame could OOM the agent (which runs
+// as LocalSystem). The server must cap message size and close the
+// connection (releasing the raw lease) when a client exceeds it.
+func TestAttachOversizeMessageClosed(t *testing.T) {
+	ts, _, reg := newAttachServer(t, true, "COM3")
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/serial/ports/COM3/attach"
+	ws, dialResp, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = dialResp.Body.Close() }()
+	defer func() { _ = ws.Close() }()
+
+	// consume the ready control frame
+	if _, _, err := ws.ReadMessage(); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
+
+	// Send a binary message modestly over the server's read limit. The
+	// server should reject/close rather than buffer it.
+	oversize := make([]byte, rawMaxMessageBytes+4096)
+	_ = ws.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	// A blocked Write is expected once the server stops reading mid-frame
+	// (it only needs the frame header to see the message exceeds the
+	// limit); the server closing the conn shortly after unblocks it either
+	// way, so a write error here is not itself a failure.
+	_ = ws.WriteMessage(websocket.BinaryMessage, oversize)
+
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := ws.ReadMessage(); err == nil {
+		t.Fatal("expected ws close error on oversize message, got nil")
+	}
+
+	// Lease must drain.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if len(reg.RawLeasedPorts()) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := reg.RawLeasedPorts(); len(got) != 0 {
+		t.Fatalf("lease not released after oversize message: %v", got)
+	}
+}
+
 func TestAttachBadBaudReturns400(t *testing.T) {
 	ts, _, _ := newAttachServer(t, true, "COM3")
 	defer ts.Close()

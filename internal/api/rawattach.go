@@ -30,6 +30,12 @@ const (
 	rawPongWait     = 40 * time.Second
 	rawPingPeriod   = 30 * time.Second
 	rawSerialReadTO = 50 * time.Millisecond
+
+	// rawMaxMessageBytes bounds per-message memory: gorilla's default read
+	// limit is unlimited, so a single huge frame from a client could OOM the
+	// agent (which runs as LocalSystem). 1 MiB is generous for a serial byte
+	// stream.
+	rawMaxMessageBytes = 1 << 20 // 1 MiB
 )
 
 // controlMsg is one text/JSON control frame in either direction.
@@ -131,6 +137,7 @@ func (s *Server) handleSerialAttach(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("raw_attach upgrade failed", "port", port, "err", err)
 		return
 	}
+	ws.SetReadLimit(rawMaxMessageBytes)
 	s.runRawSession(&rawConn{ws: ws}, port, baud)
 }
 
