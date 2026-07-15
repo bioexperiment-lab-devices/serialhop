@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.0.0...v2.0.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* retry truncated probe replies and widen discovery inter-byte slack ([#190](https://github.com/bioexperiment-lab-devices/serialhop/issues/190)) ([0b54fac](https://github.com/bioexperiment-lab-devices/serialhop/commit/0b54facf5e4c1450c0072b07809f265774f0053e))
+
 ## [2.0.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v1.2.0...v2.0.0) (2026-07-06)
 
 
