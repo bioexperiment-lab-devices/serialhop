@@ -422,6 +422,92 @@ log:
 	}
 }
 
+func TestLoad_V0RawSerialUpgrades(t *testing.T) {
+	// A config written by a v0/v1 binary carries only `raw_serial.enabled`
+	// (no idle_timeout_ms). Load() seeds from Default() and unmarshals over it,
+	// so the missing key inherits the 900000 default — the client that had raw
+	// serial on keeps it on, now backed by the v2 attach endpoint, without
+	// touching their file.
+	dir := t.TempDir()
+	body := `
+lab_bridge:
+  host: "10.0.0.1"
+  user: "u"
+  pass: "p"
+rest:
+  port: 0
+log:
+  level: "info"
+raw_serial:
+  enabled: true
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.RawSerial.Enabled {
+		t.Errorf("raw_serial.enabled: got false, want true")
+	}
+	if c.RawSerial.IdleTimeoutMs != 900000 {
+		t.Errorf("raw_serial.idle_timeout_ms: got %d, want 900000 (default)", c.RawSerial.IdleTimeoutMs)
+	}
+}
+
+func TestLoad_RawSerialDefaultsToDisabled(t *testing.T) {
+	// A config file with no raw_serial section keeps the safe defaults.
+	dir := t.TempDir()
+	body := `
+lab_bridge:
+  host: "10.0.0.1"
+  user: "u"
+  pass: "p"
+rest:
+  port: 0
+log:
+  level: "info"
+`
+	p := writeFile(t, dir, "cfg.yaml", body)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.RawSerial.Enabled {
+		t.Errorf("raw_serial.enabled: got true, want false (default)")
+	}
+	if c.RawSerial.IdleTimeoutMs != 900000 {
+		t.Errorf("raw_serial.idle_timeout_ms: got %d, want 900000 (default)", c.RawSerial.IdleTimeoutMs)
+	}
+}
+
+func TestValidate_RawSerialRejectsNegativeIdleTimeout(t *testing.T) {
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.RawSerial.IdleTimeoutMs = -1
+	err := Validate(&c)
+	if err == nil {
+		t.Fatal("expected error for negative idle_timeout_ms, got nil")
+	}
+	if !strings.Contains(err.Error(), "idle_timeout_ms") {
+		t.Errorf("error message %q must mention idle_timeout_ms", err)
+	}
+}
+
+func TestValidate_RawSerialAcceptsZeroIdleTimeout(t *testing.T) {
+	// 0 is valid and means "never time out" (matches the scaffold comment).
+	c := Default()
+	c.LabBridge.Host = "h"
+	c.LabBridge.User = "u"
+	c.LabBridge.Pass = "p"
+	c.RawSerial.Enabled = true
+	c.RawSerial.IdleTimeoutMs = 0
+	if err := Validate(&c); err != nil {
+		t.Errorf("Validate: unexpected error %v", err)
+	}
+}
+
 func TestLoad_FlashingEnabled(t *testing.T) {
 	dir := t.TempDir()
 	body := `
