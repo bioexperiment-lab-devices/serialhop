@@ -291,10 +291,12 @@ def _handle_connection(conn: socket.socket, ws_url: str, baud: int) -> None:
         while alive.is_set():
             try:
                 bridge.request_modem_status()
+                time.sleep(MODEM_POLL_INTERVAL_S)
+                if not alive.is_set():
+                    break  # session ended during the sleep — don't write to a closed socket
+                pm.check_modem_lines()
             except Exception:  # noqa: BLE001 - end this session, not the process
                 break
-            time.sleep(MODEM_POLL_INTERVAL_S)
-            pm.check_modem_lines()
 
     t_reader = threading.Thread(target=reader, daemon=True, name="serialhop-attach-reader")
     t_reader.start()
