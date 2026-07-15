@@ -35,6 +35,37 @@ jobs:
           requireScope: false
           subjectPattern: ^.+$
 
+  commit-message:
+    # Fail a PR whose squash commit release-please cannot parse. The parser
+    # throws on some bodies (e.g. a parenthesis that spans a line break) and
+    # release-please then silently skips the commit -> no release PR. Once
+    # squash-merged the body can't be fixed (main is protected + linear), so
+    # this must run pre-merge. Re-runs on `edited`, so a body fix re-checks.
+    # See scripts/check-commit-message.js.
+    name: commit message parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: install parser
+        run: npm ci
+        working-directory: scripts
+
+      - name: verify squash commit parses (release-please guard)
+        # title/body via env, never inline ${{ }} in run: — a PR body is
+        # attacker-controlled and must not be interpolated into the shell.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node check-commit-message.js
+        working-directory: scripts
+
   verify:
     name: verify
     runs-on: ubuntu-latest
