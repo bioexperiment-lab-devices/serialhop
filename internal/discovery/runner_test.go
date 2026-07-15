@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"reflect"
 	"testing"
 	"time"
 
@@ -263,6 +264,18 @@ func TestRun_WarnsOnPartialReply(t *testing.T) {
 	if rec.Find(slog.LevelDebug, "discovery: no device on port",
 		map[string]any{"port": "COM9"}) != nil {
 		t.Errorf("partial reply must not be logged as 'no device on port'")
+	}
+}
+
+func TestExcludePorts(t *testing.T) {
+	got := ExcludePorts([]string{"COM3", "COM4", "COM5"}, []string{"COM4"})
+	want := []string{"COM3", "COM5"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ExcludePorts = %v, want %v", got, want)
+	}
+	// nil exclude returns input unchanged
+	if got := ExcludePorts([]string{"COM3"}, nil); !reflect.DeepEqual(got, []string{"COM3"}) {
+		t.Fatalf("ExcludePorts(nil) = %v", got)
 	}
 }
 

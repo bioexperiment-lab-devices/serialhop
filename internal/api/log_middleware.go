@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bufio"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -24,6 +27,18 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += n
 	return n, err
+}
+
+// Hijack lets the raw-serial websocket upgrade (and anything else that
+// needs to take over the connection) pass through the logging wrapper.
+// Embedding http.ResponseWriter only promotes the ResponseWriter interface
+// methods, not http.Hijacker, so it must be forwarded explicitly.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support Hijack")
+	}
+	return hj.Hijack()
 }
 
 // logMiddleware wraps a handler with one slog record per request.

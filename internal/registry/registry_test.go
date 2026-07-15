@@ -220,3 +220,57 @@ func TestDiscoveryGate(t *testing.T) {
 		t.Error("LockDiscovery() = false, want true after unlock")
 	}
 }
+
+func TestRawLeaseLifecycle(t *testing.T) {
+	r := registry.New()
+	if !r.TryAcquireRaw("COM3") {
+		t.Fatal("first acquire should succeed")
+	}
+	if r.TryAcquireRaw("COM3") {
+		t.Fatal("second acquire of same port should fail")
+	}
+	if got := r.RawLeasedPorts(); len(got) != 1 || got[0] != "COM3" {
+		t.Fatalf("RawLeasedPorts = %v, want [COM3]", got)
+	}
+	r.ReleaseRaw("COM3")
+	if got := r.RawLeasedPorts(); len(got) != 0 {
+		t.Fatalf("after release RawLeasedPorts = %v, want []", got)
+	}
+	if !r.TryAcquireRaw("COM3") {
+		t.Fatal("acquire after release should succeed")
+	}
+}
+
+func TestRawLeaseBlockedByDiscovery(t *testing.T) {
+	r := registry.New()
+	if !r.LockDiscovery() {
+		t.Fatal("LockDiscovery should succeed")
+	}
+	if r.TryAcquireRaw("COM3") {
+		t.Fatal("acquire during discovery should fail")
+	}
+	r.UnlockDiscovery()
+	if !r.TryAcquireRaw("COM3") {
+		t.Fatal("acquire after discovery unlock should succeed")
+	}
+}
+
+func TestRawLeaseBlockedByOwnedPort(t *testing.T) {
+	r := registry.New()
+	s1, _ := newStubSession(t, "id1", "COM3")
+	r.Replace([]*device.Session{s1})
+
+	if r.TryAcquireRaw("COM3") {
+		t.Fatal("acquire of a port owned by a discovered device should fail")
+	}
+	// A port no discovered device owns is still acquirable.
+	if !r.TryAcquireRaw("COM9") {
+		t.Fatal("acquire of an unowned port should succeed")
+	}
+
+	// Once the owning session is gone, the port frees up.
+	r.Replace(nil)
+	if !r.TryAcquireRaw("COM3") {
+		t.Fatal("acquire after the owning device is removed should succeed")
+	}
+}

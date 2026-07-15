@@ -48,6 +48,16 @@ func TestDefaultConfig_FlashingDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultRawSerialDisabled(t *testing.T) {
+	c := Default()
+	if c.RawSerial.Enabled {
+		t.Errorf("RawSerial.Enabled default = true, want false")
+	}
+	if c.RawSerial.IdleTimeoutMs != 900000 {
+		t.Errorf("RawSerial.IdleTimeoutMs default = %d, want 900000", c.RawSerial.IdleTimeoutMs)
+	}
+}
+
 func TestWriteScaffold_GoldenSnapshot(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteScaffold(&buf); err != nil {

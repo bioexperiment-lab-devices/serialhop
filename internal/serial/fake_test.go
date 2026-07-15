@@ -203,6 +203,33 @@ func TestFakeOpener_Open_ErrorLogsError(t *testing.T) {
 	})
 }
 
+func TestFakePortLineControl(t *testing.T) {
+	f := NewFakePort("COM3")
+	if err := f.SetRTS(true); err != nil {
+		t.Fatalf("SetRTS: %v", err)
+	}
+	if err := f.SetRTS(false); err != nil {
+		t.Fatalf("SetRTS: %v", err)
+	}
+	if err := f.SendBreak(250 * time.Millisecond); err != nil {
+		t.Fatalf("SendBreak: %v", err)
+	}
+	f.SetModem(ModemBits{CTS: true})
+	got, err := f.ModemStatus()
+	if err != nil {
+		t.Fatalf("ModemStatus: %v", err)
+	}
+	if !got.CTS {
+		t.Errorf("modem CTS = false, want true")
+	}
+	if want := []bool{true, false}; !reflect.DeepEqual(f.RTSSequence(), want) {
+		t.Errorf("RTSSequence = %v, want %v", f.RTSSequence(), want)
+	}
+	if want := []time.Duration{250 * time.Millisecond}; !reflect.DeepEqual(f.BreakSequence(), want) {
+		t.Errorf("BreakSequence = %v, want %v", f.BreakSequence(), want)
+	}
+}
+
 func TestFakeOpener_ListDetailed(t *testing.T) {
 	o := NewFakeOpener()
 	o.Add(NewFakePort("COM3"))

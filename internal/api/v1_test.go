@@ -72,7 +72,7 @@ func newV1Server(t *testing.T, reg *registry.Registry, disc DiscoverFn) http.Han
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ka.Close() })
-	return New(reg, disc, serial.NewFakeOpener(), nil, false, ka).Handler()
+	return New(reg, disc, serial.NewFakeOpener(), nil, false, ka, false, 0).Handler()
 }
 
 func postEnvelope(t *testing.T, srv http.Handler, path, body string) *httptest.ResponseRecorder {

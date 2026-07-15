@@ -80,6 +80,7 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 			return nil, fmt.Errorf("list ports: %w", err)
 		}
 		ports := discovery.FilterPorts(all, include, exclude)
+		ports = discovery.ExcludePorts(ports, reg.RawLeasedPorts())
 		slog.Info("discovery: starting", "candidates", ports)
 		matches, err := discovery.Run(reqCtx, opener, ports)
 		if err != nil {
@@ -126,7 +127,8 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		return fmt.Errorf("power.New: %w", err)
 	}
 	defer func() { _ = keepAwake.Close() }()
-	srv := api.New(reg, discoverFn, opener, fl, flashingEnabled, keepAwake)
+	srv := api.New(reg, discoverFn, opener, fl, flashingEnabled, keepAwake,
+		cfg.RawSerial.Enabled, time.Duration(cfg.RawSerial.IdleTimeoutMs)*time.Millisecond)
 
 	chiselDone := make(chan error, 1)
 	go func() {

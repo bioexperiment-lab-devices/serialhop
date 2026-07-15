@@ -19,12 +19,14 @@ import (
 type DiscoverFn func(ctx context.Context) ([]*device.Session, error)
 
 type Server struct {
-	reg             *registry.Registry
-	discover        DiscoverFn
-	opener          labserial.Opener
-	flasher         flasher.Flasher
-	flashingEnabled bool
-	keepAwake       power.KeepAwake
+	reg              *registry.Registry
+	discover         DiscoverFn
+	opener           labserial.Opener
+	flasher          flasher.Flasher
+	flashingEnabled  bool
+	keepAwake        power.KeepAwake
+	rawSerialEnabled bool
+	rawIdleTimeout   time.Duration
 }
 
 func New(
@@ -34,10 +36,13 @@ func New(
 	fl flasher.Flasher,
 	flashingEnabled bool,
 	keepAwake power.KeepAwake,
+	rawSerialEnabled bool,
+	rawIdleTimeout time.Duration,
 ) *Server {
 	return &Server{
 		reg: reg, discover: discover, opener: opener,
 		flasher: fl, flashingEnabled: flashingEnabled, keepAwake: keepAwake,
+		rawSerialEnabled: rawSerialEnabled, rawIdleTimeout: rawIdleTimeout,
 	}
 }
 
@@ -50,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/devices/{id}/command", s.handleV1Command)
 	mux.HandleFunc("POST /devices/disconnect", s.handlePostDevicesDisconnect)
 	mux.HandleFunc("GET /serial/ports/detailed", s.handleGetSerialPortsDetailed)
+	mux.HandleFunc("GET /serial/ports/{port}/attach", s.handleSerialAttach)
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
 	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
 	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)

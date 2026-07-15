@@ -197,3 +197,69 @@ This document only covers the transport-level envelope, HTTP status mapping, dis
 - `docs/protocol_translation_docs/pump/JSON_PROTOCOL.md`
 - `docs/protocol_translation_docs/distribution_valve/JSON_PROTOCOL.md`
 - `docs/protocol_translation_docs/densitometer/JSON_PROTOCOL.md`
+
+## Raw serial attach
+
+### `GET /serial/ports/{port}/attach`
+
+A separate, non-`/api/v1` endpoint that upgrades to a **WebSocket** and gives a caller direct byte-level access to one serial port — no envelope, no `id`/`cmd`, no job model. It exists for what the JSON device protocol above can't do: bring-up of hardware with no driver yet, firmware/bootloader work (DTR reset, baud switching), and ad-hoc interactive pyserial scripting. It only ever operates on ports with **no discovered device** on them.
+
+Off by default: the whole endpoint is disabled unless the service's config has `raw_serial.enabled: true`.
+
+- **Path param:** `{port}` — a COM port name (e.g. `COM7`), matched against the live port list (the same list behind `GET /serial/ports/detailed`).
+- **Query param:** `baud` (int, default `9600`, must be in `1..4000000` if given). There is no `post_open_settle_ms` query param in v1 — unlike the old raw-byte device API, the port is opened at attach time with no configurable settle delay.
+
+#### Pre-upgrade gate
+
+Before the WebSocket handshake, the server runs these checks in order; the first failure wins and the response is a normal HTTP error (the connection never upgrades):
+
+| Order | Condition | Status | Error body |
+|---|---|---|---|
+| 1 | `raw_serial.enabled` is `false` | 403 | `{"error":"raw serial disabled","detail":"set raw_serial.enabled: true in config"}` |
+| 2 | `baud` query param given but not an integer in `1..4000000` | 400 | `{"error":"invalid query param","detail":"<message>"}` |
+| 3 | `{port}` is not in the live port list | 404 | `{"error":"port not found","detail":"<port>"}` |
+| 4 | `{port}` is owned by a discovered device | 409 | `{"error":"port has discovered device","detail":"owned by <id>"}` |
+| 5 | a discovery pass is currently running | 409 | `{"error":"discovery in progress","detail":""}` |
+| 6 | another raw session already holds the lease on `{port}` | 409 | `{"error":"port already attached","detail":""}` |
+
+(If the server fails to enumerate ports at all — an internal error, not a normal gate outcome — it returns `500` with `{"error":"list ports failed","detail":"<message>"}` between checks 2 and 3.)
+
+Only once all checks pass does the server take an exclusive lease on the port, complete the WebSocket upgrade, and open it at the requested baud. The lease is released the instant the WebSocket closes, for any reason.
+
+#### Frame protocol
+
+Once upgraded, two frame kinds share the same connection:
+
+- **Binary WebSocket frames** carry raw serial bytes in both directions — a binary frame from the client is written to the port verbatim; bytes read off the port are pushed to the client as binary frames as they arrive.
+- **Text WebSocket frames** carry JSON control messages in both directions.
+
+Client → server control ops (`{"op": "...", ...}`):
+
+| `op` | Fields | Effect |
+|---|---|---|
+| `set_baud` | `baud` (int) | Change the port's baud rate |
+| `set_dtr` | `level` (bool) | Set the DTR line |
+| `set_rts` | `level` (bool) | Set the RTS line |
+| `send_break` | `ms` (int) | Assert a break condition for `ms` milliseconds |
+| `drain` | — | Block until pending output has flushed |
+| `get_modem` | — | Request current modem status; answered with a `modem` frame |
+
+Server → client frames:
+
+| `op` | Fields | Sent |
+|---|---|---|
+| `ready` | `port`, `baud` | Once, immediately after a successful open |
+| `modem` | `cts`, `dsr`, `ri`, `cd` (bool) | In reply to a `get_modem` request |
+| `error` | `detail` | On a malformed control frame, an unrecognized `op` (`"unknown op: <op>"`), or a serial-port write/control failure |
+
+The boolean fields on `modem` are marshaled with `omitempty`, so a `false` line state may be **absent from the JSON object** rather than present with value `false` — treat a missing key as `false`. An unrecognized `op` gets an `error` reply; the connection is **not** closed for this.
+
+#### Session lifetime
+
+- At most one raw session per port at a time (gate check 6 above); discovery also skips any port currently under a raw lease, and a raw attach is refused while discovery is running (gate check 5).
+- `raw_serial.idle_timeout_ms` (default `900000` ms / 15 min) closes the session (WebSocket close code 1001, "going away") if neither direction has carried traffic for that long. `0` disables the idle timeout.
+- If the underlying serial port itself dies (e.g. device unplugged), the session tears down immediately rather than waiting for the client to notice.
+
+#### Reference client
+
+[`clients/`](../clients/) has a small, documented Python bridge (`serialhop_attach.py`) that exposes this endpoint as a local `rfc2217://` URL, so pyserial code can talk to it with `serial.serial_for_url("rfc2217://127.0.0.1:<port>")`. It translates pyserial's `baudrate` / `dtr` / `rts` / `send_break` operations into the control ops above and streams everything else as binary frames. It is a runnable command, built on pyserial's own `serial.rfc2217.PortManager` server codec. See `clients/README.md` for setup, the JupyterLab-only reachability note, and the "Known v1 limitations" section (fixed 8N1, best-effort modem-status cache, break modeled as a fixed pulse).
