@@ -1,0 +1,13 @@
+{
+  "name": "serialhop-ci-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CI-only helper scripts (not shipped). See README.md.",
+  "license": "MIT",
+  "scripts": {
+    "check-commit-message": "node check-commit-message.js"
+  },
+  "dependencies": {
+    "@conventional-commits/parser": "0.4.1"
+  }
+}
