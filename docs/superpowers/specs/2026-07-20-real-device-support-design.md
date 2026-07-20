@@ -46,6 +46,20 @@ For densitometers the ping frame `47 02 03 04 00` looked like a candidate identi
 
 **Conclusion: no firmware serial number is recoverable for either device type.**
 
+### Defect 3 — opcode 11 is also the end-of-job liveness check and panel disarm
+
+`serialFrame` is not only used by `Attach`. `job.go:245` (`finishJob`) and `watch.go:85` transact it to (a) confirm the device survived the run and (b) overwrite the EEPROM "last command" so a physical START press replays a harmless ping instead of re-running the dispense.
+
+Because opcode 11 draws no reply on real hardware, `Transact(serialFrame, 4, …)` fails, and per `finishJob`'s own comment that failure flips the session unreachable and fails the job. **Every dispense would therefore fail at completion even after `Attach` is fixed.** Fixing discovery and attach alone is not sufficient to make a pump usable.
+
+Replacement: `{18, 0, 0, 0, 0}` — a zero-step timed run.
+
+- **Liveness**: verified to reply on all three pumps (COM4 `00 00 0D 28`, COM6 `00 00 00 18`, COM7 `00 00 13 74`).
+- **Disarm**: `PROTOCOL.md` §7 stores every command as "last command" except types 10, 13 and 19, so opcode 18 qualifies, and replaying a zero-step run moves nothing.
+- **Reply shape**: 4 bytes of elapsed µs, so unlike opcode 11 the first byte is *not* the type code. The `reply[0] != TypeCode` check in `finishJob` must be dropped rather than adapted — a successful 4-byte read is itself the liveness proof.
+
+The disarm property is asserted by the firmware doc and cannot be verified remotely (it needs a physical START press). It is strictly better than today regardless: the current disarm is already inert, since the firmware does not implement opcode 11 at all.
+
 ### Calibration is readable, writable and verifiable
 
 - Identify carries the EEPROM calibration mirror on every attach: COM4 `0A 01 86 A0` (100000), COM6 `0A 01 48 1F` (83999), COM7 `0A 01 67 60` (92000).
@@ -68,6 +82,9 @@ This makes the device itself a viable source of truth for calibration, which rem
 - `set_calibration` writes `13 00 c1 c2 c3` where the value is `round(ml_per_step × 1e8)` clamped to 24 bits, then **verifies by re-reading identify**. A mismatch returns an error; it must never report success on an unconfirmed write.
 - `get_calibration` returns the in-memory `ml_per_step`; `set_at_uptime_ms` becomes session-scoped.
 - `serial` reports empty, following the valve.
+- `serialFrame` is replaced by `disarmFrame = {18, 0, 0, 0, 0}` at both remaining call sites (`job.go` `finishJob`, `watch.go` timeout path), and `finishJob`'s `reply[0] != TypeCode` check is removed because opcode 18 returns elapsed µs, not a type code.
+
+Note that `persistCalibration` already writes the EEPROM mirror via opcode 13 and verifies it by read-back; only its `store.Save` call and `unverified` bookkeeping are removed.
 
 Rationale: calibration then follows the physical pump across ports, hosts and reinstalls, and there is exactly one place it can live. EEPROM wear is not a concern — calibration is a rare operator action, and TRANSLATION §5's wear rule targets *periodic* traffic.
 
