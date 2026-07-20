@@ -26,7 +26,7 @@ Volatile:
 | `pause_assumed` | translator's belief about the firmware's pause toggle (see §4 `pause`) |
 | `last_config_sent` | the last `[10,…]` parameter frame, to avoid redundant sends |
 | `connected_since` | basis for reported `uptime_ms` |
-| `cal_set_at` | wall-clock time of the last `set_calibration` this connection; used to compute `set_at_uptime_ms` relative to `connected_since` — absent (and the field omitted) across a reconnect |
+| `cal_set_at` | wall-clock time of the last `set_calibration` this connection; used to compute `set_at_uptime_ms` relative to `connected_since`. The field is always present and reads `0` when the calibration predates this connection (e.g. set on a previous connection and just re-read from EEPROM at attach) |
 
 ## 2. Serial primitives and conversions
 
