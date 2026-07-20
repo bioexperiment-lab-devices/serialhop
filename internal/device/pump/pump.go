@@ -22,12 +22,17 @@ const (
 	replyTimeout = 2 * time.Second // 4-byte replies arrive within ~50 ms
 )
 
-// Command frames (PROTOCOL.md §4). identifyFrame is the only frame safe for
-// polling — it writes nothing to EEPROM. serialFrame IS stored as the
-// device's "last command", which the end-of-job panel disarm exploits.
+// Command frames (PROTOCOL.md §4). identifyFrame carries the strict 181
+// parameter byte required by newer pump firmware; it writes nothing to EEPROM
+// and is the only frame safe for polling. disarmFrame is a zero-step timed run
+// (opcode 18): it replies with elapsed microseconds, proving liveness, and is
+// stored as the device's "last command" (PROTOCOL §7 stores everything except
+// types 10/13/19), so a physical START press replays a harmless no-op instead
+// of re-running the last dispense. Opcode 11 is NOT implemented by any pump
+// firmware in the field and must not be used.
 var (
-	identifyFrame = []byte{1, 2, 3, 0, 0}
-	serialFrame   = []byte{11, 2, 3, 4, 5}
+	identifyFrame = []byte{1, 2, 3, 4, 181}
+	disarmFrame   = []byte{18, 0, 0, 0, 0}
 	pauseFrame    = []byte{19, 0, 0, 0, 0}
 	stopFrame     = []byte{10, 0, 0, 0, 0}
 )
@@ -133,7 +138,9 @@ func (d *Driver) Attach(ctx context.Context, probeReply []byte) (device.Info, er
 	}
 	calMirror := uint32(probeReply[1])<<16 | uint32(probeReply[2])<<8 | uint32(probeReply[3])
 
-	reply, err := d.s.Transact(serialFrame, 4, replyTimeout)
+	// Opcode 11 (unimplemented by real firmware — see the frame block above).
+	// Still used here for the serial-number read; removing it is Task 3's job.
+	reply, err := d.s.Transact([]byte{11, 2, 3, 4, 5}, 4, replyTimeout)
 	if err != nil {
 		return device.Info{}, fmt.Errorf("pump: serial number read: %w", err)
 	}

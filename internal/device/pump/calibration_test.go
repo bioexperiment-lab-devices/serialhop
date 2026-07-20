@@ -61,7 +61,7 @@ func TestSetCalibrationFromJob(t *testing.T) {
 	}
 	fr := f.frames()
 	n := len(fr)
-	if !frameEq(fr[n-2], 13, 0, 0, 195, 80) || !frameEq(fr[n-1], 1, 2, 3, 0, 0) {
+	if !frameEq(fr[n-2], 13, 0, 0, 195, 80) || !frameEq(fr[n-1], 1, 2, 3, 4, 181) {
 		t.Fatalf("mirror frames: %v", fr[n-2:])
 	}
 	// capabilities refreshed: identify now reports speed limits

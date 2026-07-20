@@ -234,23 +234,17 @@ func (d *Driver) timerFire(gen int) {
 }
 
 // finishJob runs TRANSLATION §4 dispense steps 10–11: end-of-job
-// verification + panel disarm, then job completion. The serial-number ping
+// verification + panel disarm, then job completion. The zero-step disarm run
 // (a) confirms the device is alive after the run and (b) overwrites the
-// EEPROM "last command" so a physical START press replays a harmless ping
+// EEPROM "last command" so a physical START press replays a harmless no-op
 // instead of re-running the dispense.
 func (d *Driver) finishJob(gen int, dur time.Duration) {
 	if gen != d.jobGen || d.job == nil || d.s.Jobs().Active() == nil {
 		return
 	}
-	reply, err := d.s.Transact(serialFrame, 4, replyTimeout)
-	if err != nil {
+	if _, err := d.s.Transact(disarmFrame, 4, replyTimeout); err != nil {
 		// Transact's double failure flipped the session unreachable and
 		// failed the job (decision 2) — nothing left to do here.
-		return
-	}
-	if reply[0] != TypeCode {
-		d.s.Jobs().Fail(device.ErrHardware("post-job verification: unexpected reply"))
-		d.clearJob()
 		return
 	}
 	j := d.job

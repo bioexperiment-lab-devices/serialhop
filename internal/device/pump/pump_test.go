@@ -199,6 +199,52 @@ func TestAttachProposesUnverifiedMirrorCalibration(t *testing.T) {
 	}
 }
 
+// TestFinishJobDisarmsWithZeroStepRun proves the end-of-job frame is the
+// zero-step opcode-18 run, not the absent opcode-11 ping. Real firmware never
+// answers opcode 11, so using it failed every dispense at completion.
+func TestFinishJobDisarmsWithZeroStepRun(t *testing.T) {
+	f := newCalibratedFixture(t)
+
+	// newCalibratedFixture's Attach already wrote its own opcode-11
+	// serial-number-read frame before this test does anything (Task 3's job
+	// to remove, not this one's) — snapshot the frame count so the ping
+	// check below looks only at what THIS dispense/completion writes, not
+	// at Attach's unrelated opcode-11 use.
+	base := len(f.frames())
+
+	// 1 ml at 0.0005 ml/step = 2000 steps. direction must be "forward" (opcode
+	// 18 — the only motion opcode with a completion reply, so it is the one
+	// that reaches finishJob via the watch path) and speed_ml_min must be
+	// positive (speedToBytes rejects <=0); the brief's literal
+	// {"volume_ml":1.0} omits both required params and fails validation
+	// before ever reaching the disarm frame.
+	if resp := f.exec("dispense", `{"direction":"forward","volume_ml":1.0,"speed_ml_min":3.0}`); resp.Error != nil {
+		t.Fatalf("dispense: %v", resp.Error)
+	}
+	f.port.Feed([]byte{0, 0, 0, 10}) // run completion (elapsed us)
+	f.port.Feed([]byte{0, 0, 0, 10}) // disarm frame's elapsed-us reply
+	// Jobs().Active() is loop-only (device/jobs.go); calling it from the test
+	// goroutine races with the session loop under -race. HasActiveJob() is
+	// the documented cross-goroutine-safe mirror (device/session.go).
+	waitFor(t, "job done", func() bool { return !f.s.HasActiveJob() })
+
+	var sawDisarm, sawPing bool
+	for _, fr := range f.frames()[base:] {
+		if frameEq(fr, 18, 0, 0, 0, 0) {
+			sawDisarm = true
+		}
+		if frameEq(fr, 11, 2, 3, 4, 5) {
+			sawPing = true
+		}
+	}
+	if !sawDisarm {
+		t.Errorf("no zero-step disarm frame in %v", f.frames()[base:])
+	}
+	if sawPing {
+		t.Error("opcode-11 ping still sent; real firmware never answers it")
+	}
+}
+
 func TestUnknownCommand(t *testing.T) {
 	f := newFixture(t)
 	resp := f.exec("frobnicate", "")

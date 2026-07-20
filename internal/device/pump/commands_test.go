@@ -17,7 +17,7 @@ func TestPingIdleUsesIdentifyFrameOnly(t *testing.T) {
 		t.Fatalf("ping: %+v", resp)
 	}
 	fr := f.frames()
-	if len(fr) != before+1 || !frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+	if len(fr) != before+1 || !frameEq(fr[len(fr)-1], 1, 2, 3, 4, 181) {
 		t.Fatalf("idle ping must send exactly one identify frame (EEPROM-safe): %v", fr[before:])
 	}
 	if _, ok := f.resultMap(resp)["uptime_ms"]; !ok {
@@ -304,7 +304,7 @@ func TestStopCancelsWatcherJob(t *testing.T) {
 	go func() {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
-			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 4, 181) {
 				f.port.Feed([]byte{10, 0, 0, 0})
 				return
 			}
@@ -322,10 +322,10 @@ func TestStopCancelsWatcherJob(t *testing.T) {
 	if got := m["dispensed_ml"].(float64); got < 0.2 || got > 0.3 {
 		t.Fatalf("dispensed estimate: %v", got)
 	}
-	// frame order: ... [10 0 0 0 0] halt, then [1 2 3 0 0] verification
+	// frame order: ... [10 0 0 0 0] halt, then [1 2 3 4 181] verification
 	fr := f.frames()
 	n := len(fr)
-	if !frameEq(fr[n-2], 10, 0, 0, 0, 0) || !frameEq(fr[n-1], 1, 2, 3, 0, 0) {
+	if !frameEq(fr[n-2], 10, 0, 0, 0, 0) || !frameEq(fr[n-1], 1, 2, 3, 4, 181) {
 		t.Fatalf("stop frames: %v", fr[n-2:])
 	}
 	if js := jobState(t, f, id); js["state"] != "cancelled" {

@@ -48,7 +48,7 @@ func TestDispenseReverseTimerCompletion(t *testing.T) {
 		t.Fatalf("status: %v", st)
 	}
 
-	f.port.Feed([]byte{10, 26, 25, 1}) // panel-disarm ping reply
+	f.port.Feed([]byte{0, 0, 0, 10}) // disarm frame's elapsed-us reply
 	f.clock.Advance(20*time.Second + pump.TimerGrace)
 	waitFor(t, "job success", func() bool {
 		return jobState(t, f, id)["state"] == "succeeded"
@@ -61,10 +61,10 @@ func TestDispenseReverseTimerCompletion(t *testing.T) {
 	if res["mean_speed_ml_min"].(float64) < 2.8 || res["mean_speed_ml_min"].(float64) > 3.2 {
 		t.Fatalf("mean speed: %v", res)
 	}
-	// the disarm ping (serial-number frame) must have been sent
+	// the zero-step disarm run must have been sent
 	fr = f.frames()
-	if !frameEq(fr[len(fr)-1], 11, 2, 3, 4, 5) {
-		t.Fatalf("panel-disarm ping missing: %v", fr[len(fr)-1])
+	if !frameEq(fr[len(fr)-1], 18, 0, 0, 0, 0) {
+		t.Fatalf("panel-disarm run missing: %v", fr[len(fr)-1])
 	}
 	if f.resultMap(f.exec("status", ""))["state"] != "idle" {
 		t.Fatal("must return to idle")
