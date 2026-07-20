@@ -147,12 +147,15 @@ Over **Bluetooth** the command must be received **three times in a row** before 
 
 ```
 → 1 2 3 0 0            # discover                ← 10 c1 c2 c3
-→ 11 2 3 4 5           # ping / serial number    ← 10 26 25 1
 → 10 1 2 30 0          # set speed: DelTime = 30×2×100 = 6000 µs, no gradient
 → 15 0 0 19 136        # pump 5000 steps forward (0x00001388)
 → 18 0 0 39 16         # calibration: 10000 steps  ← 4 bytes elapsed µs
 → 13 0 c1 c2 c3        # store computed calibration
 ```
+
+The opcode-`11` ping/serial-number step is intentionally omitted here: no
+pump tested answers it (§4's field-reality note). Liveness is instead proven
+with the identify frame `1 2 3 0 0` shown above.
 
 ## 7. EEPROM map & standalone operation
 
@@ -170,6 +173,6 @@ Every value is stored twice; on read the copies must match or defaults are used.
 
 * No checksum/terminator; a dropped byte desynchronizes parsing until the `N1` range filter recovers.
 * The serial port **is** polled between motor steps (once per half-step-period loop pass), so commands — including a stop via `10` or pause via `19` — take effect mid-run. However, receiving a command stalls the motor for ~100 ms (5 × 20 ms inter-byte delays), so avoid chatter during precision dispensing.
-* The ping (`11 2 3 4 5`) is written to EEPROM as the last command before it is recognized as a ping; a subsequent START-button press may therefore replay it (harmless — it's a no-op for the motor, but it overwrites the previously stored job).
+* The ping (`11 2 3 4 5`) is written to EEPROM as the last command before it is recognized as a ping; a subsequent START-button press may therefore replay it (harmless — it's a no-op for the motor, but it overwrites the previously stored job). This is firmware-source behavior only — no pump tested actually answers the ping (§4's field-reality note), so it cannot be confirmed against real hardware and SerialHop never sends it.
 * `11`/`12` with `N4 ≤ 1` gives `DelTime = 100` µs — near the maximum step rate; always set an explicit speed.
 * Replies have 10–20 ms gaps between bytes; a 4-byte reply takes ~50 ms.

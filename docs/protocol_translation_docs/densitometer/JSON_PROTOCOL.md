@@ -92,7 +92,7 @@ Commands that take noticeable time (measurements, sweeps) return a **job** immed
 {
   "device_type": "densitometer",
   "model": "TDS909A-wide",
-  "serial": "25-006",
+  "serial": "",
   "firmware_version": "2.0.0",
   "protocol_version": "1.0",
   "capabilities": {
@@ -103,6 +103,11 @@ Commands that take noticeable time (measurements, sweeps) return a **job** immed
   }
 }
 ```
+
+`serial` is a best-effort read of the serial-number frame at attach: no
+tested densitometer answers it, so in practice it is always empty and
+devices are identified by their port instead. A unit whose firmware does
+implement the frame would still report a real serial here.
 
 ### `status`
 
@@ -284,7 +289,7 @@ With `"level": n` (1–20), samples only at that brightness and returns a single
 ## 8. Typical session
 
 ```
-identify                                  → densitometer, serial 25-006
+identify                                  → densitometer, serial "" (port-identified)
 set_thermostat {enabled, target_c: 37}    → ok
 status  (poll until temperature settles)
 measure_blank                             → job j-01 … poll get_job → slope stored

@@ -105,7 +105,8 @@ Served **entirely from translator state** — the firmware has no state-query co
 ```
 state, job (with progress = active_elapsed / estimated_duration, clock-driven,
 frozen while paused), direction, speed, dispensed_ml = progress × target volume,
-calibration from translator DB.
+calibration formatted from the connection-cached EEPROM values (`ml_per_step`,
+`cal_set_at`) — there is no separate translator-side calibration store.
 ```
 
 **Gap (major):** the front-panel buttons (start/stop/reverse/speed±) act directly on the firmware and are invisible to the translator, so `status` reflects only remotely-commanded activity. Operating rule: panel use during remote control voids state tracking; the translator can partially detect trouble only when end-of-job verification fails.

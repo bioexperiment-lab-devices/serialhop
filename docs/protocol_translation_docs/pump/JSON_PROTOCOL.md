@@ -111,8 +111,11 @@ Unbounded operation (continuous rotation) is modeled as a **state**, not a job.
 Devices are identified by their port. Calibration lives in the pump's own
 EEPROM, is re-read on every connection, and is trusted — there is no
 `calibration_unverified` flag and no host-side calibration store.
-`set_at_uptime_ms` is session-scoped: it reports when calibration was set
-during the current connection, and is absent otherwise.
+`set_at_uptime_ms` is session-scoped and always present (no `omitempty`): it
+reports the connection-relative time when calibration was set during the
+current connection, and reads `0` when the calibration predates this
+connection (e.g. it was set on a previous connection and just re-read from
+EEPROM at attach).
 
 ### `status`
 
