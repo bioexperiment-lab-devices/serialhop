@@ -146,7 +146,7 @@ Over **Bluetooth** the command must be received **three times in a row** before 
 ## 6. Typical host session
 
 ```
-→ 1 2 3 0 0            # discover                ← 10 c1 c2 c3
+→ 1 2 3 4 181          # discover                ← 10 c1 c2 c3
 → 10 1 2 30 0          # set speed: DelTime = 30×2×100 = 6000 µs, no gradient
 → 15 0 0 19 136        # pump 5000 steps forward (0x00001388)
 → 18 0 0 39 16         # calibration: 10000 steps  ← 4 bytes elapsed µs
@@ -155,7 +155,8 @@ Over **Bluetooth** the command must be received **three times in a row** before 
 
 The opcode-`11` ping/serial-number step is intentionally omitted here: no
 pump tested answers it (§4's field-reality note). Liveness is instead proven
-with the identify frame `1 2 3 0 0` shown above.
+with the identify frame `1 2 3 4 181` shown above — strict firmware is
+silent to `1 2 3 0 0` (§3's field-reality note).
 
 ## 7. EEPROM map & standalone operation
 

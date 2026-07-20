@@ -140,6 +140,28 @@ func TestSetCalibrationMirrorMismatch(t *testing.T) {
 	}
 }
 
+// TestSetCalibrationMirrorMismatchDoesNotCommit proves persistCalibration
+// only commits the new value to memory once the EEPROM mirror write is
+// verified: regression for a bug where the in-memory ml_per_step was set
+// BEFORE the opcode-13 write and identify read-back verification, so a
+// rejected write (device echoes back different bytes — e.g. a worn or
+// write-protected EEPROM) still left the driver reporting, and dispensing
+// at, a calibration the device never confirmed. The device is the single
+// source of truth; a failed set_calibration must leave the previously
+// active value untouched.
+func TestSetCalibrationMirrorMismatchDoesNotCommit(t *testing.T) {
+	f := newCalibratedFixture(t) // starts trusted at 0.0005 ml/step (mirror 0x00C350)
+	f.port.Feed([]byte{10, 9, 9, 9})
+	resp := f.exec("set_calibration", `{"ml_per_step":0.0007}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("mirror mismatch: %+v", resp)
+	}
+	m := f.resultMap(f.exec("get_calibration", ""))
+	if m["ml_per_step"] != 0.0005 {
+		t.Fatalf("rejected calibration must not commit; get_calibration = %v", m)
+	}
+}
+
 func TestSetCalibrationValidation(t *testing.T) {
 	f := newFixture(t)
 	for _, params := range []string{

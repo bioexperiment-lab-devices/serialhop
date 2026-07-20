@@ -404,9 +404,6 @@ func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) 
 // in-memory state and pushes the device's EEPROM mirror, which is the sole
 // place calibration now lives.
 func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
-	now := d.s.Now()
-	d.mlPerStep, d.calSetAt = mlPerStep, now
-
 	// EEPROM mirror (human-paced only — EEPROM wear rules). Round, don't
 	// truncate: variant-A divisions rarely land on integers in float64 (e.g. 10.0/13 steps × 1e8 has a fractional part that truncation would drop).
 	v := uint32(math.Round(mlPerStep * 1e8))
@@ -425,6 +422,12 @@ func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
 	if reply[0] != TypeCode || got != v {
 		return device.ErrHardware("calibration mirror verify: device echoed different bytes")
 	}
+	// Commit only after the device has confirmed the write — the EEPROM is
+	// the single source of truth, so memory must never hold a value the
+	// device rejected. Derive from the verified integer v (not the caller's
+	// mlPerStep) so memory matches EEPROM's rounded value exactly, instead
+	// of drifting from it until the next reattach re-derives it the same way.
+	d.mlPerStep, d.calSetAt = float64(v)/1e8, d.s.Now()
 	d.s.SetInfo(d.info()) // capabilities changed (speed limits now reportable)
 	return nil
 }

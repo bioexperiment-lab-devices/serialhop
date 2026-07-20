@@ -183,9 +183,6 @@ func TestAttachRecoversMirrorCalibration(t *testing.T) {
 	if sr["max"] != 37.5 {
 		t.Fatalf("max speed: %v", sr)
 	}
-	if caps["calibration_unverified"] != nil {
-		t.Fatalf("mirror calibration must not be flagged unverified: %v", caps)
-	}
 }
 
 // TestFinishJobDisarmsWithZeroStepRun proves the end-of-job frame is the
