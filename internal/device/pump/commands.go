@@ -33,7 +33,6 @@ func (d *Driver) ping() (any, *device.CmdError) {
 type calibrationInfo struct {
 	MlPerStep     float64 `json:"ml_per_step"`
 	SetAtUptimeMs int64   `json:"set_at_uptime_ms"`
-	Unverified    bool    `json:"unverified,omitempty"`
 }
 
 func (d *Driver) calibrationBlock() *calibrationInfo {
@@ -46,7 +45,7 @@ func (d *Driver) calibrationBlock() *calibrationInfo {
 			upMs = ms // clamped ≥ 0: persisted calibration may predate this connection
 		}
 	}
-	return &calibrationInfo{MlPerStep: d.mlPerStep, SetAtUptimeMs: upMs, Unverified: d.unverified}
+	return &calibrationInfo{MlPerStep: d.mlPerStep, SetAtUptimeMs: upMs}
 }
 
 func (d *Driver) getCalibration() (any, *device.CmdError) {
@@ -235,7 +234,7 @@ func (d *Driver) rotateRaw(params json.RawMessage) (any, *device.CmdError) {
 	}
 	d.rotSpeedPct = p.SpeedPct
 	d.rotSpeedML = 0
-	if d.mlPerStep > 0 && !d.unverified {
+	if d.mlPerStep > 0 {
 		d.rotSpeedML = actualSpeedMlMin(d.mlPerStep, actualUs)
 	}
 	return rotateRawResult{State: "rotating", SpeedPct: p.SpeedPct}, nil
@@ -342,9 +341,10 @@ func (d *Driver) stop() (any, *device.CmdError) {
 
 // setCalibration (TRANSLATION §4): variant A computes ml_per_step from a
 // succeeded calibration job; variant B restores a known value directly.
-// Either way the value is persisted serial-keyed, mirrored to the device's
-// 3 EEPROM calibration bytes (cmd 13 — survives translator-database loss),
-// and the mirror is read back for verification via the identify frame.
+// Either way the value is written to the device's 3 EEPROM calibration
+// bytes (cmd 13 — the device is the only store; there is no serial number
+// and no on-disk file), and the mirror is read back for verification via
+// the identify frame.
 func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) {
 	var p struct {
 		JobID            string  `json:"job_id"`
@@ -398,16 +398,12 @@ func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) 
 	return map[string]any{"ml_per_step": mlPerStep}, nil
 }
 
+// persistCalibration is named for the on-disk store it historically wrote;
+// that write is gone (the store/serial Driver fields it depended on were
+// deleted — see Attach's doc comment in pump.go). Today it only updates
+// in-memory state and pushes the device's EEPROM mirror, which is the sole
+// place calibration now lives.
 func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
-	now := d.s.Now()
-	err := d.store.Save(persistState{
-		SchemaVersion: schemaV, MlPerStep: mlPerStep, SetAt: now, Serial: d.serial,
-	})
-	if err != nil {
-		return device.ErrInternal("persist calibration: " + err.Error())
-	}
-	d.mlPerStep, d.calSetAt, d.unverified = mlPerStep, now, false
-
 	// EEPROM mirror (human-paced only — EEPROM wear rules). Round, don't
 	// truncate: variant-A divisions rarely land on integers in float64 (e.g. 10.0/13 steps × 1e8 has a fractional part that truncation would drop).
 	v := uint32(math.Round(mlPerStep * 1e8))
@@ -426,6 +422,12 @@ func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
 	if reply[0] != TypeCode || got != v {
 		return device.ErrHardware("calibration mirror verify: device echoed different bytes")
 	}
-	d.s.SetInfo(d.info()) // capabilities changed (speed limits, unverified flag)
+	// Commit only after the device has confirmed the write — the EEPROM is
+	// the single source of truth, so memory must never hold a value the
+	// device rejected. Derive from the verified integer v (not the caller's
+	// mlPerStep) so memory matches EEPROM's rounded value exactly, instead
+	// of drifting from it until the next reattach re-derives it the same way.
+	d.mlPerStep, d.calSetAt = float64(v)/1e8, d.s.Now()
+	d.s.SetInfo(d.info()) // capabilities changed (speed limits now reportable)
 	return nil
 }

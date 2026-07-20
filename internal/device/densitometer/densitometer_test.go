@@ -49,6 +49,64 @@ func feedAttach(port *serial.FakePort, thermReadback byte) {
 	port.Feed([]byte{5, 5, 0, 0})             // 76 2     → disable-verify readback
 }
 
+// feedNoSerialReply mirrors feedAttach but never answers the serial-number
+// frame (71 0 0 5 0), matching real firmware exactly. The remaining replies
+// must not be fed until Transact's two silent read attempts for that frame
+// have genuinely both timed out — feeding any earlier would let the fake
+// port's single FIFO hand the wavelength reply's bytes to the serial-number
+// read instead of letting it time out, passing the test for the wrong reason
+// (see TestAttachToleratesSilentSerialFrame).
+//
+// Rather than inferring "both attempts timed out" from a byte count plus a
+// sleep margin (racy under scheduler/GC pressure — the sleep is not a real
+// barrier), wait for a byte count that is ITSELF proof of the fact: Attach
+// runs transact(serialNumFrame) to completion (write+timeout, write+timeout,
+// 2x5=10 bytes) before it ever calls transact(channel1Frame), whose first
+// action is also a write (+5=15 bytes). transactOnce's Drain-then-Write
+// ordering means that write cannot happen until the prior Transact call has
+// fully returned, so observing 15 written bytes is a happens-before fact,
+// not a timing guess — attempt 2 is provably already done. WaitWritten
+// blocks on that exact count instead of polling Written() and sleeping, so
+// there is no window left to race regardless of machine load.
+func feedNoSerialReply(port *serial.FakePort, thermReadback byte) {
+	go func() {
+		port.WaitWritten(15)                      // 2x5 failed serialNumFrame attempts + channel1Frame's first write
+		port.Feed([]byte{1, 2, 6, 0})             // 71 0 0 1 → wavelength 600
+		port.Feed([]byte{5, 5, thermReadback, 0}) // 76 2     → device set-point
+		port.Feed([]byte{5, 5, 0, 0})             // 76 2     → disable-verify readback
+	}()
+}
+
+// newFixtureNoSerialReply is newFixture's twin for real hardware that never
+// answers the serial-number frame. It waits for the first attach attempt to
+// settle (success or failure) rather than for Connected() to go true, since
+// a pre-fix Attach never reaches connected — see WaitFirstAttach.
+func newFixtureNoSerialReply(t *testing.T) *fixture {
+	t.Helper()
+	shrinkTimeouts(t)
+	clock := device.NewFakeClock(time.Unix(1000, 0))
+	port := serial.NewFakePort("COM8")
+	opener := serial.NewFakeOpener()
+	opener.Add(port)
+	conn, err := opener.Open("COM8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := device.SessionConfig{
+		ID: "densitometer_1", Type: "densitometer", TypeCode: densitometer.TypeCode,
+		PortName: "COM8", Conn: conn, Opener: opener, Clock: clock, StateDir: t.TempDir(),
+		Factory:    densitometer.New,
+		ProbeReply: []byte{70, 0, 0, 2},
+		Reprobe:    func(p serial.Port) ([]byte, error) { return []byte{70, 0, 0, 2}, nil },
+	}
+	feedNoSerialReply(port, 10)
+	s := device.NewSession(cfg)
+	s.Start(context.Background())
+	t.Cleanup(s.Close)
+	s.WaitFirstAttach(context.Background())
+	return &fixture{t: t, s: s, clock: clock, port: port, dir: cfg.StateDir}
+}
+
 func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	t.Helper()
 	shrinkTimeouts(t)
@@ -232,6 +290,28 @@ func TestAttachPersistsFirstContactMirror(t *testing.T) {
 		t.Fatalf("first-contact state: %+v", ps)
 	}
 	_ = f
+}
+
+// TestAttachToleratesSilentSerialFrame proves attach completes against real
+// firmware, which never answers the serial-number frame. State then keys by
+// port, exactly as the valve does.
+//
+// Note: the brief's snippet used f.s.Info(), which does not exist on
+// *device.Session (only CachedInfo() (Info, bool) does — same gap already
+// hit and documented in pump_test.go's TestAttachNeedsNoIdentityRead).
+// Fixed here per the real API rather than weakening the assertion.
+func TestAttachToleratesSilentSerialFrame(t *testing.T) {
+	f := newFixtureNoSerialReply(t)
+	if !f.s.Connected() {
+		t.Fatal("device did not attach when the serial frame stayed silent")
+	}
+	info, ok := f.s.CachedInfo()
+	if !ok {
+		t.Fatal("CachedInfo: no info cached after attach")
+	}
+	if info.Serial != "" {
+		t.Errorf("Serial = %q, want empty", info.Serial)
+	}
 }
 
 func TestUnknownCommand(t *testing.T) {

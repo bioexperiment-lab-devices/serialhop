@@ -26,7 +26,13 @@ const (
 	ProbeInterByteSlack = 250 * time.Millisecond
 )
 
-var probeBytes = []byte{1, 2, 3, 4, 0}
+// probeBytes is the universal identification frame. The trailing 181 is
+// required: one pump firmware generation in the field (Arduino 2341:0043 and
+// CH340 1A86:7523 boards) validates all four parameter bytes and answers only
+// this exact sequence, while the older generation accepts any 01 02 03 xx yy.
+// Verified on real hardware against pump (0A), valve (1E) and densitometer
+// (46) — see docs/superpowers/specs/2026-07-20-real-device-support-design.md.
+var probeBytes = []byte{1, 2, 3, 4, 181}
 
 // ProbeBytes returns a copy of the probe sequence written to every port.
 // Exposed so callers (e.g. discovery logging) can report what was sent.

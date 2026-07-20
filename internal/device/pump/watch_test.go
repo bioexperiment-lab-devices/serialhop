@@ -167,7 +167,7 @@ func TestStopAfterWatchdogFiredDoesNotPanic(t *testing.T) {
 	go func() {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
-			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 4, 181) {
 				f.port.Feed([]byte{10, 0, 0, 0})
 				return
 			}

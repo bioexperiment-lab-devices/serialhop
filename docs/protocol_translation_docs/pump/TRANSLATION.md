@@ -4,18 +4,17 @@ How the translator layer implements each command of `JSON_PROTOCOL.md` on top of
 
 **Design principles:**
 
-1. The firmware knows only *steps* and *step periods*. All unit conversion (ml, ml/min), volume calibration storage, job/progress tracking, and pause-state accounting lives in the translator. The device's 3 calibration bytes are used only as a backup mirror.
+1. The firmware knows only *steps* and *step periods*. All unit conversion (ml, ml/min), job/progress tracking, and pause-state accounting live in the translator, for the current connection only — nothing here is persisted to disk. Volume calibration is the exception: the device's 3 EEPROM calibration bytes are the single source of truth, re-read and trusted on every attach; the translator holds no separate calibration store.
 2. The firmware sends **no acknowledgment and no completion signal** for motion commands — with one exception: the "calibration run" command `18` replies with elapsed microseconds when the run finishes. The translator exploits this: **every plain forward dispense is issued as command `18` instead of `15`**, turning the reply into a genuine hardware completion event with a measured duration. Reverse runs, suckback runs, and gradient runs cannot use this trick and fall back to clock-based simulation.
 3. Only the hardware serial port is used; the Bluetooth path is ignored.
 
 ## 1. Translator state
 
-Persistent (keyed by device serial):
+Sourced from the device on every attach, not persisted by the translator (§3 step 3):
 
 | Field | Meaning |
 |---|---|
-| `ml_per_step` | float or null; `set_at` timestamp. Source of truth for all unit conversion |
-| `serial_number` | cached from probe |
+| `ml_per_step` | float or 0 (uncalibrated); read from `cal_mirror` in the identify reply and trusted immediately — no separate store, no serial number to key one by |
 
 Volatile:
 
@@ -27,6 +26,7 @@ Volatile:
 | `pause_assumed` | translator's belief about the firmware's pause toggle (see §4 `pause`) |
 | `last_config_sent` | the last `[10,…]` parameter frame, to avoid redundant sends |
 | `connected_since` | basis for reported `uptime_ms` |
+| `cal_set_at` | wall-clock time of the last `set_calibration` this connection; used to compute `set_at_uptime_ms` relative to `connected_since`. The field is always present and reads `0` when the calibration predates this connection (e.g. set on a previous connection and just re-read from EEPROM at attach) |
 
 ## 2. Serial primitives and conversions
 
@@ -68,17 +68,16 @@ reject steps < 1 or steps > 2_000_000_000 → invalid_params
 ## 3. Device probe / connection setup
 
 ```
-1. TRANSACTION([1,2,3,0,0], reply 4 bytes [10, c1, c2, c3])
-   → device_type confirmed; cal_mirror = (c1<<16)+(c2<<8)+c3
-2. TRANSACTION([11,2,3,4,5], reply 4 bytes [10, sn1, sn2, 1]) → serial = "<sn1>-<sn2>"
-   (side effect: this ping is stored as the device's "last command" — harmless, it replays as
-    a ping if the operator presses START; see the panel-disarm trick in §4 dispense)
-3. calibration recovery: if translator DB has no ml_per_step and cal_mirror > 0,
-   propose ml_per_step = cal_mirror / 1e8 — but mark it "unverified": devices calibrated
-   under the legacy host may hold bytes with different semantics. Require the operator
-   (or a calibration run) to confirm before metered dispensing.  // GAP: mirror encoding
-                                                                  // is a translator convention,
-                                                                  // not enforceable on device
+1. Discovery already ran the universal probe (PROTOCOL.md §3: [1,2,3,4,181],
+   reply [10, c1, c2, c3]) before the translator's attach step even starts;
+   attach reuses that reply directly — cal_mirror = (c1<<16)+(c2<<8)+c3.
+2. No device serial number: no TRANSACTION is sent for one. No pump firmware
+   in the field answers opcode 11 (PROTOCOL.md §4), so serial stays empty,
+   same as the valve — attach performs zero serial transactions of its own.
+3. Read `ml_per_step = cal_mirror / 1e8` from the identify reply and trust it.
+   The device's EEPROM is the single source of truth: it is re-read on every
+   attach, and `set_calibration` writes it back via cmd 13 and verifies the
+   write by reading identify again.
 4. connected_since = now; state = idle; pause_assumed = "running-allowed"
 ```
 
@@ -87,9 +86,9 @@ reject steps < 1 or steps > 2_000_000_000 → invalid_params
 ### `ping`
 
 ```
-TRANSACTION([1,2,3,0,0], reply 4 bytes)     // identify frame — chosen because it writes
-                                             // NOTHING to EEPROM (the 11-ping does), so it is
-                                             // safe for frequent liveness polling
+TRANSACTION([1,2,3,4,181], reply 4 bytes)   // identify frame — chosen because it writes
+                                             // NOTHING to EEPROM, so it is safe for
+                                             // frequent liveness polling
 return { uptime_ms: now − connected_since }  // GAP: true device uptime unknowable
 ```
 
@@ -106,7 +105,8 @@ Served **entirely from translator state** — the firmware has no state-query co
 ```
 state, job (with progress = active_elapsed / estimated_duration, clock-driven,
 frozen while paused), direction, speed, dispensed_ml = progress × target volume,
-calibration from translator DB.
+calibration formatted from the connection-cached EEPROM values (`ml_per_step`,
+`cal_set_at`) — there is no separate translator-side calibration store.
 ```
 
 **Gap (major):** the front-panel buttons (start/stop/reverse/speed±) act directly on the firmware and are invisible to the translator, so `status` reflects only remotely-commanded activity. Operating rule: panel use during remote control voids state tracking; the translator can partially detect trouble only when end-of-job verification fails.
@@ -193,12 +193,13 @@ then P = max(1, round(del_time_us / 100)) and factorize into N3, N4
                  on reply → job succeeded, duration_s = reply / 1e6 (measured, not estimated)
       others:    clock-based; when active_elapsed ≥ estimate → grace wait 0.5 s → job succeeded
 10. end-of-job verification & panel disarm (always):
-      TRANSACTION([11,2,3,4,5], reply [10,sn1,sn2,1])
+      TRANSACTION([18,0,0,0,0], reply 4 bytes elapsed µs)
       — (a) confirms the device is alive and responsive after the run;
-        (b) overwrites the EEPROM "last command" (which now holds this dispense) with the
-            ping frame, so a later press of the physical START button replays a harmless
-            ping instead of RE-RUNNING THE LAST DISPENSE. This defuses the firmware's
-            most dangerous standalone behavior.
+        (b) overwrites the EEPROM "last command" (which now holds this dispense) with a
+            zero-step opcode-18 run, so a later press of the physical START button replays
+            a harmless no-op instead of RE-RUNNING THE LAST DISPENSE. This defuses the
+            firmware's most dangerous standalone behavior. (Opcode 11 is not used here —
+            no pump firmware in the field implements it; see PROTOCOL.md §4.)
 11. job result: {dispensed_ml: volume_ml, duration_s, mean_speed_ml_min, suckback_ml: actual}
 ```
 
@@ -234,7 +235,7 @@ resume:
    the firmware only replies if the run finishes on its own)
 3. cancel active_job / leave rotating state;
    dispensed_ml = (active_elapsed / estimated_duration) × volume_ml   // estimate
-4. verification: TRANSACTION([1,2,3,0,0]) must answer → else hardware_error
+4. verification: TRANSACTION([1,2,3,4,181]) must answer → else hardware_error
 5. return {state: idle, cancelled_job_id, dispensed_ml}
 ```
 
@@ -247,7 +248,7 @@ resume:
 4. TRANSACTION([10, 0, N3, N4, 0]) then TRANSACTION([18, s3, s2, s1, s0])
 5. job (kind=calibrating); wait for the 4-byte reply as in dispense step 9
 6. job result: {steps, duration_s: measured from reply}
-7. panel-disarm ping as in dispense step 10
+7. panel-disarm run as in dispense step 10
 ```
 
 ### `set_calibration`
@@ -259,12 +260,14 @@ variant A (from a calibration job):
 variant B (direct): ml_per_step given
 then:
   3. sanity: 1e-6 ≤ ml_per_step ≤ 0.1 → else invalid_params
-  4. persist in translator DB with timestamp
+  4. update in-memory ml_per_step and cal_set_at = now; no on-disk store — the
+     device's EEPROM (step 5) is the only persistence layer
   5. mirror to device: v = round(ml_per_step × 1e8), clamp to 24 bits
      TRANSACTION([13, 0, v>>16, (v>>8)&255, v&255], no reply)
-     // survives translator-database loss; read back at next probe
-  6. verify mirror: TRANSACTION([1,2,3,0,0]) → returned cal bytes must equal v
+     // the write step 6 verifies
+  6. verify mirror: TRANSACTION([1,2,3,4,181]) → returned cal bytes must equal v
      (identify conveniently returns exactly these bytes); mismatch → hardware_error
+  7. refresh published capabilities (speed_ml_min limits now derivable)
 ```
 
 ### `get_calibration` / `get_job`
@@ -276,7 +279,7 @@ Pure translator-state reads, no serial traffic.
 * One serial transaction at a time; one job at a time.
 * While a motion job runs, permitted traffic: `stop`, `pause`, `resume` frames (all reply-less) and the awaited command-18 reply only. `status`/`get_job` are answered from memory, and `ping` too — sending the identify frame mid-run could interleave its 4-byte reply with a command-18 completion reply arriving at the same moment.
 * Transaction failing twice: mark unreachable, fail active job, re-probe with backoff. After a successful re-probe assume a possible device reboot: state = idle, `pause_assumed` = running-allowed (the firmware boots that way), warn if a job was in flight (its outcome is unknown — GAP: a watchdog reset mid-dispense silently loses the remaining volume).
-* EEPROM wear: every motion command writes ~10 EEPROM bytes on the device (~100k-cycle endurance). The translator must not use motion or `11`-ping frames for polling; liveness polling uses the `[1,2,3,0,0]` identify frame exclusively.
+* EEPROM wear: every motion command writes ~10 EEPROM bytes on the device (~100k-cycle endurance). The translator must not use motion frames for polling; liveness polling uses the `[1,2,3,4,181]` identify frame exclusively (opcode `11` is unimplemented in the field regardless — PROTOCOL.md §4).
 
 ## 6. Gap summary (JSON promises the legacy firmware cannot keep)
 

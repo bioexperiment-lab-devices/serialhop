@@ -57,6 +57,12 @@ Detector intensities are `uint16` sent as `a = low byte`, `b = high byte`:
 
 This is the discovery command: the host scans COM ports, sends `1 2 3 4 0`, and identifies the device by the first reply byte.
 
+> **Field reality (verified 2026-07-20).** The serial-number frame
+> `47 00 00 05 00` draws no reply from any tested densitometer. SerialHop
+> treats it as optional and keys persistent state by COM port. The ping frame
+> `47 02 03 04 00` is **not** an identity source — bytes 2–3 are a live sensor
+> reading that changes between consecutive calls.
+
 ## 4. Command reference
 
 Commands are grouped by the first byte `N1` (70–79). Unless stated otherwise **N5 = 0** is required.
@@ -159,7 +165,7 @@ Loaded at boot (`GetBase()`), written by `78 3` (baseline) and `75 3` (tube corr
 
 ## 8. Quirks and gotchas
 
-* **Two different "serial numbers"**: `71 0 0 0 0` returns variables `SerNum1/SerNum2 = 4/0`, while `71 0 0 5 0` returns the compile-time constants `Sn1/Sn2 = 25/6`. The latter is the real per-device serial.
+* **Two different "serial numbers"**: `71 0 0 0 0` returns variables `SerNum1/SerNum2 = 4/0`, while `71 0 0 5 0` returns the compile-time constants `Sn1/Sn2 = 25/6`. The latter is the real per-device serial — as reverse-engineered from firmware source; see §3's field-reality note for what real hardware actually does with it.
 * No checksum or length field anywhere — a lost byte desynchronizes the stream until the N1-range filter happens to resynchronize it.
 * Replies interleave `delay(10–20)` between bytes, so a 4-byte reply takes ~40–60 ms.
 * During a 20-point sweep the port is **not** read (only the watchdog is serviced); commands sent mid-sweep sit in the 64-byte RX buffer.

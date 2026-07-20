@@ -191,7 +191,7 @@ func TestRun_DebugLogsSentAndReplyPerPort(t *testing.T) {
 		byPort[l.Port] = l
 	}
 
-	wantSent := []any{1.0, 2.0, 3.0, 4.0, 0.0}
+	wantSent := []any{1.0, 2.0, 3.0, 4.0, 181.0}
 	for _, port := range []string{"COM3", "COM4", "COM5"} {
 		l, ok := byPort[port]
 		if !ok {

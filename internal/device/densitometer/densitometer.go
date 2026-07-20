@@ -143,11 +143,18 @@ func (d *Driver) Attach(ctx context.Context, probeReply []byte) (device.Info, er
 		return device.Info{}, fmt.Errorf("densitometer: unexpected probe reply %v", probeReply)
 	}
 
-	snReply, err := d.s.Transact(serialNumFrame, 4, replyTimeout)
-	if err != nil {
-		return device.Info{}, fmt.Errorf("densitometer: serial read: %w", err)
+	// Real firmware does not implement the serial-number frame (verified on
+	// all three lab densitometers). Absence of an optional feature is not an
+	// error: fall back to port-keyed state, exactly as the valve does.
+	storeKey := d.s.PortName()
+	if snReply, err := d.s.Transact(serialNumFrame, 4, replyTimeout); err == nil {
+		d.serial = formatSerial(snReply[2], snReply[3])
+		storeKey = d.serial
+	} else {
+		d.serial = ""
+		slog.Info("densitometer: no serial-number support, keying state by port",
+			"port", d.s.PortName())
 	}
-	d.serial = formatSerial(snReply[2], snReply[3])
 
 	wlReply, err := d.s.Transact(channel1Frame, 4, replyTimeout)
 	if err != nil {
@@ -162,13 +169,13 @@ func (d *Driver) Attach(ctx context.Context, probeReply []byte) (device.Info, er
 	}
 
 	// Recover persistent state before the thermostat sync (which needs the mirror).
-	d.store = d.s.Store(d.serial)
+	d.store = d.s.Store(storeKey)
 	d.blank, d.tubeCorrection, d.thermo = nil, 1.0, thermostatMirror{}
 	var ps persistState
 	found, lerr := d.store.Load(&ps)
 	if lerr != nil {
 		slog.Warn("densitometer: state file unreadable, treating as absent",
-			"device", d.serial, "err", lerr)
+			"port", d.s.PortName(), "err", lerr)
 		found = false
 	}
 	if found && ps.SchemaVersion == schemaV {
@@ -260,7 +267,7 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 func (d *Driver) Detach() {
 	if d.store != nil {
 		if err := d.persist(); err != nil {
-			slog.Warn("densitometer: detach persist failed", "device", d.serial, "err", err)
+			slog.Warn("densitometer: detach persist failed", "port", d.s.PortName(), "err", err)
 		}
 	}
 }

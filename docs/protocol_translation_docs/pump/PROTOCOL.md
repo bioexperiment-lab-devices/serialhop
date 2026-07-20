@@ -33,6 +33,13 @@ Every command is exactly **5 raw binary bytes**, no header/checksum/terminator:
 | Serial | `1 2 3 x x` | `10, cal_1, cal_2, cal_3` |
 | Bluetooth | `1 2 3 4 181` (N4 = DevNumber2, N5 = DevNumber3) | `10, cal_1, cal_2, cal_3` |
 
+> **Field reality (verified 2026-07-20 on three pumps).** Two firmware
+> generations exist. The older one accepts any `1 2 3 x x`; the newer one
+> (Arduino 2341:0043, CH340 1A86:7523 boards) validates **all four** parameter
+> bytes and answers only `1 2 3 4 181` — the "Bluetooth" form above, enforced
+> on the serial link too. SerialHop therefore always probes with
+> `01 02 03 04 B5`, which both generations accept.
+
 * First byte `10` identifies the device as a peristaltic pump.
 * `cal_1..cal_3` are the **calibration bytes** from EEPROM; the calibrated volume is
   `V = (cal_1 << 16) + (cal_2 << 8) + cal_3` (units defined by the host's calibration procedure; the firmware uses `V/10` for its speed display).
@@ -74,6 +81,12 @@ Stop with `19` (pause toggle), `10`, or the physical STOP button.
 | `11 2 3 10 5` | none — shows the serial number on the 7-segment display; blocks the device for ~4 s |
 
 The ping form does **not** start the motor (N1 is cleared internally). Note it is still written to EEPROM as the "last command" (firmware quirk — see §8).
+
+> **Not implemented in the field.** No pump tested answers opcode `11` in any
+> parameter combination, including the older permissive firmware. SerialHop
+> does not use it: there is no device serial number, and the end-of-job panel
+> disarm uses a zero-step `18` run instead (which §7 also stores as the "last
+> command", so a START press replays a harmless no-op).
 
 ### `15` / `16` — Pump a metered volume (counted steps)
 
@@ -133,13 +146,17 @@ Over **Bluetooth** the command must be received **three times in a row** before 
 ## 6. Typical host session
 
 ```
-→ 1 2 3 0 0            # discover                ← 10 c1 c2 c3
-→ 11 2 3 4 5           # ping / serial number    ← 10 26 25 1
+→ 1 2 3 4 181          # discover                ← 10 c1 c2 c3
 → 10 1 2 30 0          # set speed: DelTime = 30×2×100 = 6000 µs, no gradient
 → 15 0 0 19 136        # pump 5000 steps forward (0x00001388)
 → 18 0 0 39 16         # calibration: 10000 steps  ← 4 bytes elapsed µs
 → 13 0 c1 c2 c3        # store computed calibration
 ```
+
+The opcode-`11` ping/serial-number step is intentionally omitted here: no
+pump tested answers it (§4's field-reality note). Liveness is instead proven
+with the identify frame `1 2 3 4 181` shown above — strict firmware is
+silent to `1 2 3 0 0` (§3's field-reality note).
 
 ## 7. EEPROM map & standalone operation
 
@@ -157,6 +174,6 @@ Every value is stored twice; on read the copies must match or defaults are used.
 
 * No checksum/terminator; a dropped byte desynchronizes parsing until the `N1` range filter recovers.
 * The serial port **is** polled between motor steps (once per half-step-period loop pass), so commands — including a stop via `10` or pause via `19` — take effect mid-run. However, receiving a command stalls the motor for ~100 ms (5 × 20 ms inter-byte delays), so avoid chatter during precision dispensing.
-* The ping (`11 2 3 4 5`) is written to EEPROM as the last command before it is recognized as a ping; a subsequent START-button press may therefore replay it (harmless — it's a no-op for the motor, but it overwrites the previously stored job).
+* The ping (`11 2 3 4 5`) is written to EEPROM as the last command before it is recognized as a ping; a subsequent START-button press may therefore replay it (harmless — it's a no-op for the motor, but it overwrites the previously stored job). This is firmware-source behavior only — no pump tested actually answers the ping (§4's field-reality note), so it cannot be confirmed against real hardware and SerialHop never sends it.
 * `11`/`12` with `N4 ≤ 1` gives `DelTime = 100` µs — near the maximum step rate; always set an explicit speed.
 * Replies have 10–20 ms gaps between bytes; a 4-byte reply takes ~50 ms.

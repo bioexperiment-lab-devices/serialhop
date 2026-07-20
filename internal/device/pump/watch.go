@@ -82,7 +82,7 @@ func (d *Driver) watchEvent(h *watchHandle, gen int, reply []byte, err error) {
 		d.clearJob()
 		// Panel disarm + liveness check still run; a failure here flips the
 		// session unreachable via the standard Transact path.
-		_, _ = d.s.Transact(serialFrame, 4, replyTimeout)
+		_, _ = d.s.Transact(disarmFrame, 4, replyTimeout)
 	case err != nil:
 		// Port died mid-wait (reattach/shutdown closed it). The unreachable
 		// machinery owns recovery; if the job somehow still shows active

@@ -61,7 +61,7 @@ func TestSetCalibrationFromJob(t *testing.T) {
 	}
 	fr := f.frames()
 	n := len(fr)
-	if !frameEq(fr[n-2], 13, 0, 0, 195, 80) || !frameEq(fr[n-1], 1, 2, 3, 0, 0) {
+	if !frameEq(fr[n-2], 13, 0, 0, 195, 80) || !frameEq(fr[n-1], 1, 2, 3, 4, 181) {
 		t.Fatalf("mirror frames: %v", fr[n-2:])
 	}
 	// capabilities refreshed: identify now reports speed limits
@@ -75,9 +75,13 @@ func TestSetCalibrationFromJob(t *testing.T) {
 	}
 }
 
-func TestSetCalibrationPersistsAcrossSessions(t *testing.T) {
-	dir := t.TempDir()
-	f := newFixture(t, withStateDir(dir))
+// TestCalibrationSurvivesOnlyViaDeviceMirror proves persistence now lives
+// entirely on the device: a fresh session recovers calibration only when the
+// probe reply carries the mirror bytes a prior set_calibration wrote to
+// EEPROM. There is no local file store to fall back on anymore — Attach no
+// longer reads or writes one (see Attach's doc comment in pump.go).
+func TestCalibrationSurvivesOnlyViaDeviceMirror(t *testing.T) {
+	f := newFixture(t)
 	id := runCalibration(t, f)
 	f.port.Feed([]byte{10, 0, 195, 80})
 	if resp := f.exec("set_calibration", `{"job_id":"`+id+`","measured_volume_ml":10.0}`); resp.Status != "ok" {
@@ -85,11 +89,20 @@ func TestSetCalibrationPersistsAcrossSessions(t *testing.T) {
 	}
 	f.s.Close()
 
-	// fresh session, same state dir: calibration must be recovered VERIFIED
-	f2 := newFixture(t, withStateDir(dir))
+	// fresh session, device now echoes the mirror set_calibration wrote:
+	// calibration recovers straight from the probe reply.
+	f2 := newFixture(t, withProbeReply([]byte{10, 0, 195, 80}))
 	m := f2.resultMap(f2.exec("get_calibration", ""))
-	if m["ml_per_step"] != 0.0005 || m["unverified"] != nil {
+	if m["ml_per_step"] != 0.0005 {
 		t.Fatalf("recovered calibration: %v", m)
+	}
+
+	// fresh session, device reports no mirror (e.g. a different device on
+	// this port): nothing carries over from the earlier session.
+	f3 := newFixture(t)
+	resp := f3.exec("get_calibration", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
+		t.Fatalf("uncalibrated get_calibration must not recover from a prior session: %+v", resp)
 	}
 }
 
@@ -102,15 +115,19 @@ func TestSetCalibrationDirect(t *testing.T) {
 	}
 }
 
-func TestSetCalibrationConfirmsUnverifiedMirror(t *testing.T) {
-	f := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // unverified 0.0005
+// TestSetCalibrationOverridesRecoveredMirror proves set_calibration still
+// works normally on a pump that already recovered calibration from the
+// EEPROM mirror at attach — re-writing the same value is a no-op from the
+// device's perspective but must still round-trip through the driver.
+func TestSetCalibrationOverridesRecoveredMirror(t *testing.T) {
+	f := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // 0.0005, trusted at attach
 	f.port.Feed([]byte{10, 0, 195, 80})
 	if resp := f.exec("set_calibration", `{"ml_per_step":0.0005}`); resp.Status != "ok" {
-		t.Fatalf("confirming set_calibration: %+v", resp)
+		t.Fatalf("set_calibration: %+v", resp)
 	}
 	caps := f.resultMap(f.exec("identify", ""))["capabilities"].(map[string]any)
-	if caps["calibration_unverified"] != nil || caps["speed_ml_min"] == nil {
-		t.Fatalf("must be verified now: %v", caps)
+	if caps["speed_ml_min"] == nil {
+		t.Fatalf("capabilities must report speed limits: %v", caps)
 	}
 }
 
@@ -120,6 +137,28 @@ func TestSetCalibrationMirrorMismatch(t *testing.T) {
 	resp := f.exec("set_calibration", `{"ml_per_step":0.0005}`)
 	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
 		t.Fatalf("mirror mismatch: %+v", resp)
+	}
+}
+
+// TestSetCalibrationMirrorMismatchDoesNotCommit proves persistCalibration
+// only commits the new value to memory once the EEPROM mirror write is
+// verified: regression for a bug where the in-memory ml_per_step was set
+// BEFORE the opcode-13 write and identify read-back verification, so a
+// rejected write (device echoes back different bytes — e.g. a worn or
+// write-protected EEPROM) still left the driver reporting, and dispensing
+// at, a calibration the device never confirmed. The device is the single
+// source of truth; a failed set_calibration must leave the previously
+// active value untouched.
+func TestSetCalibrationMirrorMismatchDoesNotCommit(t *testing.T) {
+	f := newCalibratedFixture(t) // starts trusted at 0.0005 ml/step (mirror 0x00C350)
+	f.port.Feed([]byte{10, 9, 9, 9})
+	resp := f.exec("set_calibration", `{"ml_per_step":0.0007}`)
+	if resp.Status != "error" || resp.Error.Code != device.CodeHardwareError {
+		t.Fatalf("mirror mismatch: %+v", resp)
+	}
+	m := f.resultMap(f.exec("get_calibration", ""))
+	if m["ml_per_step"] != 0.0005 {
+		t.Fatalf("rejected calibration must not commit; get_calibration = %v", m)
 	}
 }
 
@@ -161,6 +200,27 @@ func TestCalibrationCommandsBusyMidJob(t *testing.T) {
 		if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
 			t.Fatalf("%s mid-job: %+v", cmd, resp)
 		}
+	}
+}
+
+// TestEepromCalibrationDispensesWithoutConfirmation proves the mirror is
+// trusted: a pump reporting calibration at attach can dispense immediately,
+// with no set_calibration/start_calibration confirmation step in between.
+// (The brief's literal params, {"volume_ml":0.1}, omit "direction" and
+// "speed_ml_min", which planDispense/speedToBytes require regardless of
+// calibration state — added here so the assertion actually isolates the
+// calibration gate rather than failing on unrelated param validation.
+// direction "reverse" selects opcode 16 (timer-completed), not the
+// opcode-18/watcher path forward would take — this test never feeds a
+// completion reply, and an unfinished watcher goroutine outlives the test,
+// racing the next test's shrinkTimeouts mutation of the shared WatchPoll
+// var — same reason TestSetCalibrationFromJob's trailing dispense above
+// uses "reverse".)
+func TestEepromCalibrationDispensesWithoutConfirmation(t *testing.T) {
+	f := newFixture(t, withProbeReply([]byte{10, 0x00, 0xC3, 0x50})) // 0.0005 ml/step
+	resp := f.exec("dispense", `{"direction":"reverse","volume_ml":0.1,"speed_ml_min":3.0}`)
+	if resp.Error != nil {
+		t.Fatalf("dispense rejected on a mirror-calibrated pump: %v", resp.Error)
 	}
 }
 

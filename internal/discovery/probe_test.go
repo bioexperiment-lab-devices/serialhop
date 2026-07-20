@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestProbe_Pump(t *testing.T) {
 		t.Errorf("Probe returned reply=%v, want [10 99 88 77]", reply)
 	}
 	written := p.Written()
-	want := []byte{1, 2, 3, 4, 0}
+	want := []byte{1, 2, 3, 4, 181}
 	if string(written) != string(want) {
 		t.Errorf("probe sent %v, want %v", written, want)
 	}
@@ -192,12 +193,23 @@ func TestProbe_SlowInterByteArrival(t *testing.T) {
 
 func TestProbeBytes_ReturnsCopy(t *testing.T) {
 	a := ProbeBytes()
-	if string(a) != string([]byte{1, 2, 3, 4, 0}) {
-		t.Fatalf("ProbeBytes: got %v, want [1 2 3 4 0]", a)
+	if string(a) != string([]byte{1, 2, 3, 4, 181}) {
+		t.Fatalf("ProbeBytes: got %v, want [1 2 3 4 181]", a)
 	}
 	a[0] = 99
 	b := ProbeBytes()
 	if b[0] != 1 {
 		t.Errorf("ProbeBytes returned a slice that aliases internal state: %v", b)
+	}
+}
+
+// TestProbeBytesUsesStrictIdentifyFrame pins the frame that strict pump
+// firmware requires. COM6/COM7 answer only this exact sequence; valve and
+// densitometer were verified to answer it identically to the old frame.
+func TestProbeBytesUsesStrictIdentifyFrame(t *testing.T) {
+	got := ProbeBytes()
+	want := []byte{1, 2, 3, 4, 181}
+	if !bytes.Equal(got, want) {
+		t.Errorf("ProbeBytes() = %v, want %v", got, want)
 	}
 }

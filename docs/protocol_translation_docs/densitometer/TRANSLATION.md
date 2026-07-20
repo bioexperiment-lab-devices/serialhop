@@ -6,7 +6,8 @@ How the translator layer implements each command of `JSON_PROTOCOL.md` on top of
 
 ## 1. Translator state
 
-Persistent (keyed by device serial, survives translator restart):
+Persistent (survives translator restart; keyed by device serial when the
+firmware answers it, else by COM port name — see §3 step 2):
 
 | Field | Meaning |
 |---|---|
@@ -63,7 +64,10 @@ On first contact (and after any suspected reboot):
 
 ```
 1. send [1,2,3,4,0], expect 4 bytes → must be [70, _, _, channels]
-2. send [71,0,0,5,0], expect 4 bytes [5,7,sn1,sn2] → serial = "<sn1>-<sn2>"
+2. send [71,0,0,5,0], best-effort: no tested densitometer answers this frame.
+   On a 4-byte reply [5,7,sn1,sn2] → serial = "<sn1>-<sn2>", key persistent
+   state on it. On failure (no reply/timeout) → serial = "", key persistent
+   state on the COM port name instead.
 3. send [71,0,0,1,0], expect [1,2,wl_hi,wl_lo] → wavelength_nm = wl_hi×100 + wl_lo
 4. force device tube correction to 1.0: send [75,3,0,0,0] (no reply)
    — from now on ALL tube correction happens in the translator; this write is EEPROM-persistent,

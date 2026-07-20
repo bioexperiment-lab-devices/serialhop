@@ -17,7 +17,7 @@ func TestPingIdleUsesIdentifyFrameOnly(t *testing.T) {
 		t.Fatalf("ping: %+v", resp)
 	}
 	fr := f.frames()
-	if len(fr) != before+1 || !frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+	if len(fr) != before+1 || !frameEq(fr[len(fr)-1], 1, 2, 3, 4, 181) {
 		t.Fatalf("idle ping must send exactly one identify frame (EEPROM-safe): %v", fr[before:])
 	}
 	if _, ok := f.resultMap(resp)["uptime_ms"]; !ok {
@@ -128,20 +128,21 @@ func TestRotateRetargetsWhileRotating(t *testing.T) {
 	}
 }
 
-func TestRotateRequiresVerifiedCalibration(t *testing.T) {
+// TestRotateRequiresCalibration proves rotate rejects only true absence of
+// calibration (mlPerStep == 0). A calibration mirror recovered from the
+// probe reply is trusted immediately — there is no separate "unverified"
+// state to reject anymore (Attach always trusts the device mirror; see its
+// doc comment in pump.go).
+func TestRotateRequiresCalibration(t *testing.T) {
 	f := newFixture(t)
 	resp := f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
 	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
 		t.Fatalf("uncalibrated rotate: %+v", resp)
 	}
-	fu := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // unverified mirror
-	resp = fu.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
-	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
-		t.Fatalf("unverified rotate: %+v", resp)
-	}
-	m, _ := resp.Error.Details.(map[string]any)
-	if m["reason"] != "unverified_mirror" {
-		t.Fatalf("details: %#v", resp.Error.Details)
+	fm := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // mirror-recovered, 0.0005 ml/step
+	resp = fm.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	if resp.Status != "ok" {
+		t.Fatalf("mirror-calibrated rotate must succeed immediately: %+v", resp)
 	}
 }
 
@@ -304,7 +305,7 @@ func TestStopCancelsWatcherJob(t *testing.T) {
 	go func() {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
-			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 0, 0) {
+			if fr := f.frames(); len(fr) > preStop && frameEq(fr[len(fr)-1], 1, 2, 3, 4, 181) {
 				f.port.Feed([]byte{10, 0, 0, 0})
 				return
 			}
@@ -322,10 +323,10 @@ func TestStopCancelsWatcherJob(t *testing.T) {
 	if got := m["dispensed_ml"].(float64); got < 0.2 || got > 0.3 {
 		t.Fatalf("dispensed estimate: %v", got)
 	}
-	// frame order: ... [10 0 0 0 0] halt, then [1 2 3 0 0] verification
+	// frame order: ... [10 0 0 0 0] halt, then [1 2 3 4 181] verification
 	fr := f.frames()
 	n := len(fr)
-	if !frameEq(fr[n-2], 10, 0, 0, 0, 0) || !frameEq(fr[n-1], 1, 2, 3, 0, 0) {
+	if !frameEq(fr[n-2], 10, 0, 0, 0, 0) || !frameEq(fr[n-1], 1, 2, 3, 4, 181) {
 		t.Fatalf("stop frames: %v", fr[n-2:])
 	}
 	if js := jobState(t, f, id); js["state"] != "cancelled" {
