@@ -33,6 +33,13 @@ Every command is exactly **5 raw binary bytes**, no header/checksum/terminator:
 | Serial | `1 2 3 x x` | `10, cal_1, cal_2, cal_3` |
 | Bluetooth | `1 2 3 4 181` (N4 = DevNumber2, N5 = DevNumber3) | `10, cal_1, cal_2, cal_3` |
 
+> **Field reality (verified 2026-07-20 on three pumps).** Two firmware
+> generations exist. The older one accepts any `1 2 3 x x`; the newer one
+> (Arduino 2341:0043, CH340 1A86:7523 boards) validates **all four** parameter
+> bytes and answers only `1 2 3 4 181` — the "Bluetooth" form above, enforced
+> on the serial link too. SerialHop therefore always probes with
+> `01 02 03 04 B5`, which both generations accept.
+
 * First byte `10` identifies the device as a peristaltic pump.
 * `cal_1..cal_3` are the **calibration bytes** from EEPROM; the calibrated volume is
   `V = (cal_1 << 16) + (cal_2 << 8) + cal_3` (units defined by the host's calibration procedure; the firmware uses `V/10` for its speed display).
@@ -74,6 +81,12 @@ Stop with `19` (pause toggle), `10`, or the physical STOP button.
 | `11 2 3 10 5` | none — shows the serial number on the 7-segment display; blocks the device for ~4 s |
 
 The ping form does **not** start the motor (N1 is cleared internally). Note it is still written to EEPROM as the "last command" (firmware quirk — see §8).
+
+> **Not implemented in the field.** No pump tested answers opcode `11` in any
+> parameter combination, including the older permissive firmware. SerialHop
+> does not use it: there is no device serial number, and the end-of-job panel
+> disarm uses a zero-step `18` run instead (which §7 also stores as the "last
+> command", so a START press replays a harmless no-op).
 
 ### `15` / `16` — Pump a metered volume (counted steps)
 

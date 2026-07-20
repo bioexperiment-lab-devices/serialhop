@@ -95,7 +95,7 @@ Unbounded operation (continuous rotation) is modeled as a **state**, not a job.
 {
   "device_type": "pump",
   "model": "peristaltic-1ch",
-  "serial": "26-025",
+  "serial": "",
   "firmware_version": "2.0.0",
   "protocol_version": "1.0",
   "capabilities": {
@@ -106,6 +106,13 @@ Unbounded operation (continuous rotation) is modeled as a **state**, not a job.
   }
 }
 ```
+
+`serial` is always empty for pumps: the firmware has no serial-number command.
+Devices are identified by their port. Calibration lives in the pump's own
+EEPROM, is re-read on every connection, and is trusted — there is no
+`calibration_unverified` flag and no host-side calibration store.
+`set_at_uptime_ms` is session-scoped: it reports when calibration was set
+during the current connection, and is absent otherwise.
 
 ### `status`
 
@@ -254,7 +261,7 @@ Calibration-independent rotation for bring-up and priming: speed as a percentage
 **Calibration:**
 
 ```
-identify                          → pump, serial 26-025, no calibration
+identify                          → pump, serial "" (port-identified), no calibration
 start_calibration                 → job j-c1 … poll get_job → 48000 steps
 (weigh output: 20.35 ml)
 set_calibration {job_id, 20.35}   → ml_per_step stored
