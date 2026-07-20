@@ -3,6 +3,7 @@ package pump_test
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -25,10 +26,6 @@ func withProbeReply(r []byte) fixtureOpt {
 	return func(cfg *device.SessionConfig) { cfg.ProbeReply = r }
 }
 
-func withStateDir(dir string) fixtureOpt {
-	return func(cfg *device.SessionConfig) { cfg.StateDir = dir }
-}
-
 func shrinkTimeouts(t *testing.T) {
 	t.Helper()
 	oldPB, oldDW, oldWP := device.PerByteTimeout, device.DrainWindow, pump.WatchPoll
@@ -40,8 +37,8 @@ func shrinkTimeouts(t *testing.T) {
 }
 
 // newFixture boots a real Session hosting the pump driver. Attach consumes
-// one serial-number transaction, so its reply is pre-fed (DrainWindow is 0,
-// so pre-fed RX survives the transaction's drain step).
+// no transactions — it derives everything from the probe reply — so nothing
+// needs to be pre-fed to the port for attach to complete.
 func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	t.Helper()
 	shrinkTimeouts(t)
@@ -63,7 +60,6 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	port.Feed([]byte{10, 26, 25, 1}) // Attach's serial-number reply
 	s := device.NewSession(cfg)
 	s.Start(context.Background())
 	t.Cleanup(s.Close)
@@ -72,20 +68,21 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	return f
 }
 
-// newCalibratedFixture pre-writes a verified calibration (0.0005 ml/step:
-// 3 ml/min → [n3 n4] = [1 50], 1 ml → 2000 steps) into the state dir.
+// newCalibratedFixture attaches against a probe reply carrying the
+// calibration mirror (0.0005 ml/step: 3 ml/min → [n3 n4] = [1 50], 1 ml →
+// 2000 steps) — this is the new source of truth; there is no on-disk store
+// to pre-write anymore. 0.0005 ml/step × 1e8 = 50000 = 0x00C350.
 func newCalibratedFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	t.Helper()
-	dir := t.TempDir()
-	st := device.NewStore(dir, "pump-26-025")
-	err := st.Save(map[string]any{
-		"schema_version": 1, "ml_per_step": 0.0005,
-		"set_at": time.Unix(900, 0).UTC(), "serial": "26-025",
-	})
-	if err != nil {
-		t.Fatal(err)
+	mirrorOpts := []fixtureOpt{
+		withProbeReply([]byte{10, 0x00, 0xC3, 0x50}),
+		func(cfg *device.SessionConfig) {
+			cfg.Reprobe = func(p serial.Port) ([]byte, error) {
+				return []byte{10, 0x00, 0xC3, 0x50}, nil
+			}
+		},
 	}
-	return newFixture(t, append([]fixtureOpt{withStateDir(dir)}, opts...)...)
+	return newFixture(t, append(mirrorOpts, opts...)...)
 }
 
 func waitFor(t *testing.T, what string, cond func() bool) {
@@ -145,17 +142,19 @@ func (f *fixture) resultMap(resp device.Response) map[string]any {
 	return m
 }
 
-func TestAttachReadsSerialAndServesIdentify(t *testing.T) {
+func TestAttachServesIdentifyWithNoSerial(t *testing.T) {
 	f := newFixture(t)
-	if !frameEq(f.frames()[0], 11, 2, 3, 4, 5) {
-		t.Fatalf("first frame must be the serial-number read: %v", f.frames())
+	// Attach transacts nothing (no real firmware answers opcode 11): the
+	// port must be silent until the test itself talks to it.
+	if fr := f.frames(); len(fr) != 0 {
+		t.Fatalf("attach must send no frames: %v", fr)
 	}
 	resp := f.exec("identify", "")
 	if resp.Status != "ok" {
 		t.Fatalf("identify: %+v", resp)
 	}
 	m := f.resultMap(resp)
-	if m["serial"] != "26-025" || m["device_type"] != "pump" ||
+	if m["serial"] != nil || m["device_type"] != "pump" ||
 		m["model"] != "peristaltic-1ch" || m["firmware_version"] != "legacy" ||
 		m["protocol_version"] != "1.0" {
 		t.Fatalf("identify result: %v", m)
@@ -170,32 +169,22 @@ func TestAttachReadsSerialAndServesIdentify(t *testing.T) {
 	}
 }
 
-func TestAttachRecoversVerifiedCalibration(t *testing.T) {
+// TestAttachRecoversMirrorCalibration proves the EEPROM mirror in the probe
+// reply is trusted immediately (no store, no "unverified" gate — see
+// Attach's doc comment in pump.go).
+func TestAttachRecoversMirrorCalibration(t *testing.T) {
 	f := newCalibratedFixture(t)
 	caps := f.resultMap(f.exec("identify", ""))["capabilities"].(map[string]any)
 	sr, ok := caps["speed_ml_min"].(map[string]any)
 	if !ok {
-		t.Fatalf("calibrated pump must report speed limits: %v", caps)
+		t.Fatalf("mirror-calibrated pump must report speed limits: %v", caps)
 	}
 	// max = 30e6 × 0.0005 / 400 = 37.5; min = 30e6 × 0.0005 / 6502500
 	if sr["max"] != 37.5 {
 		t.Fatalf("max speed: %v", sr)
 	}
 	if caps["calibration_unverified"] != nil {
-		t.Fatalf("verified calibration must not be flagged: %v", caps)
-	}
-}
-
-func TestAttachProposesUnverifiedMirrorCalibration(t *testing.T) {
-	// mirror bytes encode 50000 → proposed ml_per_step = 50000/1e8 = 0.0005,
-	// but unverified: no speed limits, capabilities flagged.
-	f := newFixture(t, withProbeReply([]byte{10, 0, 195, 80}))
-	caps := f.resultMap(f.exec("identify", ""))["capabilities"].(map[string]any)
-	if caps["calibration_unverified"] != true {
-		t.Fatalf("mirror recovery must be flagged unverified: %v", caps)
-	}
-	if caps["speed_ml_min"] != nil {
-		t.Fatalf("unverified calibration must not report speed limits: %v", caps)
+		t.Fatalf("mirror calibration must not be flagged unverified: %v", caps)
 	}
 }
 
@@ -205,11 +194,10 @@ func TestAttachProposesUnverifiedMirrorCalibration(t *testing.T) {
 func TestFinishJobDisarmsWithZeroStepRun(t *testing.T) {
 	f := newCalibratedFixture(t)
 
-	// newCalibratedFixture's Attach already wrote its own opcode-11
-	// serial-number-read frame before this test does anything (Task 3's job
-	// to remove, not this one's) — snapshot the frame count so the ping
-	// check below looks only at what THIS dispense/completion writes, not
-	// at Attach's unrelated opcode-11 use.
+	// Attach sends no frames at all (it derives everything from the probe
+	// reply), so base is 0 today; kept as a snapshot rather than a bare 0 so
+	// this test stays correct if Attach or an earlier step in this test ever
+	// starts writing to the port.
 	base := len(f.frames())
 
 	// 1 ml at 0.0005 ml/step = 2000 steps. direction must be "forward" (opcode
@@ -242,6 +230,62 @@ func TestFinishJobDisarmsWithZeroStepRun(t *testing.T) {
 	}
 	if sawPing {
 		t.Error("opcode-11 ping still sent; real firmware never answers it")
+	}
+}
+
+// TestAttachNeedsNoIdentityRead proves attach completes against firmware that
+// answers ONLY the identify probe. No real pump implements opcode 11, so a
+// mandatory identity read left every pump at connected=false.
+func TestAttachNeedsNoIdentityRead(t *testing.T) {
+	shrinkTimeouts(t)
+	clock := device.NewFakeClock(time.Unix(1000, 0))
+	port := serial.NewFakePort("COM7")
+	opener := serial.NewFakeOpener()
+	opener.Add(port)
+	conn, err := opener.Open("COM7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Calibration mirror 92000 = 0x016760, exactly what COM7 reports.
+	s := device.NewSession(device.SessionConfig{
+		ID: "pump_1", Type: "pump", TypeCode: pump.TypeCode, PortName: "COM7",
+		Conn: conn, Opener: opener, Clock: clock, StateDir: t.TempDir(),
+		Factory:    pump.New,
+		ProbeReply: []byte{10, 0x01, 0x67, 0x60},
+		Reprobe: func(p serial.Port) ([]byte, error) {
+			return []byte{10, 0x01, 0x67, 0x60}, nil
+		},
+	})
+	s.Start(context.Background())
+	t.Cleanup(s.Close)
+
+	// Nothing is fed to the port: any transaction during attach would hang.
+	waitFor(t, "attach", s.Connected)
+
+	// The brief's test used s.Info(), which does not exist on *device.Session
+	// (only CachedInfo() (Info, bool) does) — fixed here per this package's
+	// real API rather than weakening the assertion.
+	info, ok := s.CachedInfo()
+	if !ok {
+		t.Fatal("CachedInfo: no info cached after attach")
+	}
+	if info.Serial != "" {
+		t.Errorf("Serial = %q, want empty (no firmware serial exists)", info.Serial)
+	}
+}
+
+// TestAttachTrustsEepromCalibration proves ml_per_step is taken from the
+// device mirror on every attach and is immediately usable.
+func TestAttachTrustsEepromCalibration(t *testing.T) {
+	f := newFixture(t, withProbeReply([]byte{10, 0x01, 0x67, 0x60}))
+	resp := f.exec("get_calibration", "")
+	if resp.Error != nil {
+		t.Fatalf("get_calibration: %v", resp.Error)
+	}
+	// 92000 / 1e8 = 0.00092 ml/step
+	got := f.resultMap(resp)["ml_per_step"].(float64)
+	if math.Abs(got-0.00092) > 1e-12 {
+		t.Errorf("ml_per_step = %v, want 0.00092", got)
 	}
 }
 

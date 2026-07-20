@@ -128,20 +128,21 @@ func TestRotateRetargetsWhileRotating(t *testing.T) {
 	}
 }
 
-func TestRotateRequiresVerifiedCalibration(t *testing.T) {
+// TestRotateRequiresCalibration proves rotate rejects only true absence of
+// calibration (mlPerStep == 0). A calibration mirror recovered from the
+// probe reply is trusted immediately — there is no separate "unverified"
+// state to reject anymore (Attach always trusts the device mirror; see its
+// doc comment in pump.go).
+func TestRotateRequiresCalibration(t *testing.T) {
 	f := newFixture(t)
 	resp := f.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
 	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
 		t.Fatalf("uncalibrated rotate: %+v", resp)
 	}
-	fu := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // unverified mirror
-	resp = fu.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
-	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
-		t.Fatalf("unverified rotate: %+v", resp)
-	}
-	m, _ := resp.Error.Details.(map[string]any)
-	if m["reason"] != "unverified_mirror" {
-		t.Fatalf("details: %#v", resp.Error.Details)
+	fm := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // mirror-recovered, 0.0005 ml/step
+	resp = fm.exec("rotate", `{"direction":"forward","speed_ml_min":3.0}`)
+	if resp.Status != "ok" {
+		t.Fatalf("mirror-calibrated rotate must succeed immediately: %+v", resp)
 	}
 }
 

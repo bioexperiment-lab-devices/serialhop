@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/device"
@@ -18,7 +17,6 @@ const (
 	model        = "peristaltic-1ch"
 	firmwareVer  = "legacy"
 	protocolVer  = "1.0"
-	schemaV      = 1
 	replyTimeout = 2 * time.Second // 4-byte replies arrive within ~50 ms
 )
 
@@ -54,14 +52,6 @@ const (
 	stateCalibrating pumpState = "calibrating"
 	statePaused      pumpState = "paused"
 )
-
-// persistState is the serial-keyed on-disk schema (spec §5).
-type persistState struct {
-	SchemaVersion int       `json:"schema_version"`
-	MlPerStep     float64   `json:"ml_per_step"`
-	SetAt         time.Time `json:"set_at"`
-	Serial        string    `json:"serial"`
-}
 
 // motionJob carries the driver-side details of the active job (the Jobs
 // engine owns lifecycle/progress; this holds what the pump needs to build
@@ -100,11 +90,8 @@ type watchHandle struct {
 type Driver struct {
 	s *device.Session
 
-	serial     string
-	store      *device.Store
-	mlPerStep  float64 // 0 = not calibrated
-	calSetAt   time.Time
-	unverified bool // recovered from the device's EEPROM mirror, unconfirmed
+	mlPerStep float64 // 0 = not calibrated
+	calSetAt  time.Time
 
 	connectedSince time.Time
 	state          pumpState
@@ -129,42 +116,20 @@ type Driver struct {
 	watch        *watchHandle
 }
 
-// Attach implements TRANSLATION §3: read the serial number, recover
-// persistent calibration (store first, EEPROM mirror as unverified
-// fallback), reset volatile state.
+// Attach derives everything it needs from the identify probe reply. No real
+// pump firmware implements the opcode-11 serial read, so there is no device
+// serial number: Serial reports empty, exactly as the valve does. The
+// calibration mirror in the probe reply is the single source of truth for
+// ml_per_step and is re-read on every attach (spec: device-as-source-of-truth).
 func (d *Driver) Attach(ctx context.Context, probeReply []byte) (device.Info, error) {
 	if len(probeReply) != 4 || probeReply[0] != TypeCode {
 		return device.Info{}, fmt.Errorf("pump: unexpected probe reply %v", probeReply)
 	}
 	calMirror := uint32(probeReply[1])<<16 | uint32(probeReply[2])<<8 | uint32(probeReply[3])
 
-	// Opcode 11 (unimplemented by real firmware — see the frame block above).
-	// Still used here for the serial-number read; removing it is Task 3's job.
-	reply, err := d.s.Transact([]byte{11, 2, 3, 4, 5}, 4, replyTimeout)
-	if err != nil {
-		return device.Info{}, fmt.Errorf("pump: serial number read: %w", err)
-	}
-	if reply[0] != TypeCode {
-		return device.Info{}, fmt.Errorf("pump: unexpected serial reply %v", reply)
-	}
-	d.serial = fmt.Sprintf("%d-%03d", reply[1], reply[2])
-
-	d.store = d.s.Store(d.serial)
-	d.mlPerStep, d.calSetAt, d.unverified = 0, time.Time{}, false
-	var ps persistState
-	found, err := d.store.Load(&ps)
-	if err != nil {
-		slog.Warn("pump: state file unreadable, treating as absent", "device", d.serial, "err", err)
-		found = false
-	}
-	switch {
-	case found && ps.SchemaVersion == schemaV && ps.MlPerStep > 0:
-		d.mlPerStep, d.calSetAt = ps.MlPerStep, ps.SetAt
-	case calMirror > 0:
-		// TRANSLATION §3 step 3: propose the EEPROM mirror, but devices
-		// calibrated under the legacy host may hold bytes with different
-		// semantics — require confirmation before metered dispensing.
-		d.mlPerStep, d.unverified = float64(calMirror)/1e8, true
+	d.mlPerStep, d.calSetAt = 0, time.Time{}
+	if calMirror > 0 {
+		d.mlPerStep = float64(calMirror) / 1e8
 	}
 
 	// Volatile reset — also the reboot-recovery path (TRANSLATION §5):
@@ -187,24 +152,28 @@ type capabilities struct {
 	SpeedMlMin           *speedRange `json:"speed_ml_min"`
 	SupportsGradient     bool        `json:"supports_gradient"`
 	SupportsDropSuckback bool        `json:"supports_drop_suckback"`
-	// CalibrationUnverified flags an ml_per_step recovered from the device
-	// mirror that has not been confirmed (TRANSLATION §3 step 3).
+	// CalibrationUnverified always reports false now that Attach trusts the
+	// EEPROM mirror unconditionally (no driver state can set it true; see
+	// Attach's doc comment above). Kept as a struct/JSON field only because
+	// removing the unverified concept end-to-end belongs to Task 4.
 	CalibrationUnverified bool `json:"calibration_unverified,omitempty"`
 }
 
 func (d *Driver) info() device.Info {
 	caps := capabilities{
 		Channels: 1, SupportsGradient: true, SupportsDropSuckback: true,
-		CalibrationUnverified: d.unverified,
 	}
-	if d.mlPerStep > 0 && !d.unverified {
+	if d.mlPerStep > 0 {
 		caps.SpeedMlMin = &speedRange{
 			Min: actualSpeedMlMin(d.mlPerStep, maxDelTimeUs),
 			Max: actualSpeedMlMin(d.mlPerStep, MinDelTimeUs),
 		}
 	}
 	return device.Info{
-		DeviceType: deviceType, Model: model, Serial: d.serial,
+		// Serial stays empty: no real pump firmware implements the opcode-11
+		// serial read, so there is no device serial number (same precedent
+		// as the valve driver).
+		DeviceType: deviceType, Model: model, Serial: "",
 		FirmwareVersion: firmwareVer, ProtocolVersion: protocolVer,
 		Capabilities: caps,
 	}
@@ -214,14 +183,6 @@ func (d *Driver) info() device.Info {
 func (d *Driver) requireCalibration() *device.CmdError {
 	if d.mlPerStep <= 0 {
 		return device.ErrNotCalibrated("no volume calibration stored")
-	}
-	if d.unverified {
-		e := device.ErrNotCalibrated(
-			"device calibration mirror is unverified — confirm with set_calibration or run start_calibration")
-		e.Details = map[string]any{
-			"reason": "unverified_mirror", "proposed_ml_per_step": d.mlPerStep,
-		}
-		return e
 	}
 	return nil
 }

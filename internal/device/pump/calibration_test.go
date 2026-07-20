@@ -75,9 +75,13 @@ func TestSetCalibrationFromJob(t *testing.T) {
 	}
 }
 
-func TestSetCalibrationPersistsAcrossSessions(t *testing.T) {
-	dir := t.TempDir()
-	f := newFixture(t, withStateDir(dir))
+// TestCalibrationSurvivesOnlyViaDeviceMirror proves persistence now lives
+// entirely on the device: a fresh session recovers calibration only when the
+// probe reply carries the mirror bytes a prior set_calibration wrote to
+// EEPROM. There is no local file store to fall back on anymore — Attach no
+// longer reads or writes one (see Attach's doc comment in pump.go).
+func TestCalibrationSurvivesOnlyViaDeviceMirror(t *testing.T) {
+	f := newFixture(t)
 	id := runCalibration(t, f)
 	f.port.Feed([]byte{10, 0, 195, 80})
 	if resp := f.exec("set_calibration", `{"job_id":"`+id+`","measured_volume_ml":10.0}`); resp.Status != "ok" {
@@ -85,11 +89,20 @@ func TestSetCalibrationPersistsAcrossSessions(t *testing.T) {
 	}
 	f.s.Close()
 
-	// fresh session, same state dir: calibration must be recovered VERIFIED
-	f2 := newFixture(t, withStateDir(dir))
+	// fresh session, device now echoes the mirror set_calibration wrote:
+	// calibration recovers straight from the probe reply.
+	f2 := newFixture(t, withProbeReply([]byte{10, 0, 195, 80}))
 	m := f2.resultMap(f2.exec("get_calibration", ""))
-	if m["ml_per_step"] != 0.0005 || m["unverified"] != nil {
+	if m["ml_per_step"] != 0.0005 {
 		t.Fatalf("recovered calibration: %v", m)
+	}
+
+	// fresh session, device reports no mirror (e.g. a different device on
+	// this port): nothing carries over from the earlier session.
+	f3 := newFixture(t)
+	resp := f3.exec("get_calibration", "")
+	if resp.Status != "error" || resp.Error.Code != device.CodeNotCalibrated {
+		t.Fatalf("uncalibrated get_calibration must not recover from a prior session: %+v", resp)
 	}
 }
 

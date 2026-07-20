@@ -46,7 +46,9 @@ func (d *Driver) calibrationBlock() *calibrationInfo {
 			upMs = ms // clamped ≥ 0: persisted calibration may predate this connection
 		}
 	}
-	return &calibrationInfo{MlPerStep: d.mlPerStep, SetAtUptimeMs: upMs, Unverified: d.unverified}
+	// Unverified always reports false now that Attach trusts the EEPROM
+	// mirror unconditionally; dropping the field is Task 4's job.
+	return &calibrationInfo{MlPerStep: d.mlPerStep, SetAtUptimeMs: upMs, Unverified: false}
 }
 
 func (d *Driver) getCalibration() (any, *device.CmdError) {
@@ -235,7 +237,7 @@ func (d *Driver) rotateRaw(params json.RawMessage) (any, *device.CmdError) {
 	}
 	d.rotSpeedPct = p.SpeedPct
 	d.rotSpeedML = 0
-	if d.mlPerStep > 0 && !d.unverified {
+	if d.mlPerStep > 0 {
 		d.rotSpeedML = actualSpeedMlMin(d.mlPerStep, actualUs)
 	}
 	return rotateRawResult{State: "rotating", SpeedPct: p.SpeedPct}, nil
@@ -398,15 +400,14 @@ func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) 
 	return map[string]any{"ml_per_step": mlPerStep}, nil
 }
 
+// persistCalibration is named for the on-disk store it historically wrote;
+// that write is gone (the store/serial Driver fields it depended on were
+// deleted — see Attach's doc comment in pump.go), so today it only pushes
+// the EEPROM mirror and updates in-memory state. Renaming/further cleanup
+// is Task 4's job.
 func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
 	now := d.s.Now()
-	err := d.store.Save(persistState{
-		SchemaVersion: schemaV, MlPerStep: mlPerStep, SetAt: now, Serial: d.serial,
-	})
-	if err != nil {
-		return device.ErrInternal("persist calibration: " + err.Error())
-	}
-	d.mlPerStep, d.calSetAt, d.unverified = mlPerStep, now, false
+	d.mlPerStep, d.calSetAt = mlPerStep, now
 
 	// EEPROM mirror (human-paced only — EEPROM wear rules). Round, don't
 	// truncate: variant-A divisions rarely land on integers in float64 (e.g. 10.0/13 steps × 1e8 has a fractional part that truncation would drop).
@@ -426,6 +427,6 @@ func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
 	if reply[0] != TypeCode || got != v {
 		return device.ErrHardware("calibration mirror verify: device echoed different bytes")
 	}
-	d.s.SetInfo(d.info()) // capabilities changed (speed limits, unverified flag)
+	d.s.SetInfo(d.info()) // capabilities changed (speed limits now reportable)
 	return nil
 }
