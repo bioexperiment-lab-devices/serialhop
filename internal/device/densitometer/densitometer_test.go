@@ -49,6 +49,58 @@ func feedAttach(port *serial.FakePort, thermReadback byte) {
 	port.Feed([]byte{5, 5, 0, 0})             // 76 2     → disable-verify readback
 }
 
+// feedNoSerialReply mirrors feedAttach but never answers the serial-number
+// frame (71 0 0 5 0), matching real firmware exactly. The remaining replies
+// are fed only after Transact's two silent read attempts for that frame have
+// genuinely both timed out: transact() writes the 5-byte frame once per
+// attempt before it ever reads, so seeing it written twice (10 bytes) proves
+// attempt 1 already failed and attempt 2 has started; the extra margin sleep
+// past PerByteTimeout then covers attempt 2's own read window. Feeding any
+// earlier would let the fake port's single FIFO hand the wavelength reply's
+// bytes to the serial-number read instead of letting it time out, passing
+// the test for the wrong reason (see TestAttachToleratesSilentSerialFrame).
+func feedNoSerialReply(port *serial.FakePort, thermReadback byte) {
+	go func() {
+		for len(port.Written()) < 10 { // 2 attempts x 5-byte serialNumFrame
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(20 * time.Millisecond)         // let attempt 2's own read timeout elapse too
+		port.Feed([]byte{1, 2, 6, 0})             // 71 0 0 1 → wavelength 600
+		port.Feed([]byte{5, 5, thermReadback, 0}) // 76 2     → device set-point
+		port.Feed([]byte{5, 5, 0, 0})             // 76 2     → disable-verify readback
+	}()
+}
+
+// newFixtureNoSerialReply is newFixture's twin for real hardware that never
+// answers the serial-number frame. It waits for the first attach attempt to
+// settle (success or failure) rather than for Connected() to go true, since
+// a pre-fix Attach never reaches connected — see WaitFirstAttach.
+func newFixtureNoSerialReply(t *testing.T) *fixture {
+	t.Helper()
+	shrinkTimeouts(t)
+	clock := device.NewFakeClock(time.Unix(1000, 0))
+	port := serial.NewFakePort("COM8")
+	opener := serial.NewFakeOpener()
+	opener.Add(port)
+	conn, err := opener.Open("COM8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := device.SessionConfig{
+		ID: "densitometer_1", Type: "densitometer", TypeCode: densitometer.TypeCode,
+		PortName: "COM8", Conn: conn, Opener: opener, Clock: clock, StateDir: t.TempDir(),
+		Factory:    densitometer.New,
+		ProbeReply: []byte{70, 0, 0, 2},
+		Reprobe:    func(p serial.Port) ([]byte, error) { return []byte{70, 0, 0, 2}, nil },
+	}
+	feedNoSerialReply(port, 10)
+	s := device.NewSession(cfg)
+	s.Start(context.Background())
+	t.Cleanup(s.Close)
+	s.WaitFirstAttach(context.Background())
+	return &fixture{t: t, s: s, clock: clock, port: port, dir: cfg.StateDir}
+}
+
 func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 	t.Helper()
 	shrinkTimeouts(t)
@@ -232,6 +284,28 @@ func TestAttachPersistsFirstContactMirror(t *testing.T) {
 		t.Fatalf("first-contact state: %+v", ps)
 	}
 	_ = f
+}
+
+// TestAttachToleratesSilentSerialFrame proves attach completes against real
+// firmware, which never answers the serial-number frame. State then keys by
+// port, exactly as the valve does.
+//
+// Note: the brief's snippet used f.s.Info(), which does not exist on
+// *device.Session (only CachedInfo() (Info, bool) does — same gap already
+// hit and documented in pump_test.go's TestAttachNeedsNoIdentityRead).
+// Fixed here per the real API rather than weakening the assertion.
+func TestAttachToleratesSilentSerialFrame(t *testing.T) {
+	f := newFixtureNoSerialReply(t)
+	if !f.s.Connected() {
+		t.Fatal("device did not attach when the serial frame stayed silent")
+	}
+	info, ok := f.s.CachedInfo()
+	if !ok {
+		t.Fatal("CachedInfo: no info cached after attach")
+	}
+	if info.Serial != "" {
+		t.Errorf("Serial = %q, want empty", info.Serial)
+	}
 }
 
 func TestUnknownCommand(t *testing.T) {
