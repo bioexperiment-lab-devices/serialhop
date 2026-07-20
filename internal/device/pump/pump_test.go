@@ -275,7 +275,20 @@ func TestAttachNeedsNoIdentityRead(t *testing.T) {
 }
 
 // TestAttachTrustsEepromCalibration proves ml_per_step is taken from the
-// device mirror on every attach and is immediately usable.
+// device mirror on every attach and is immediately usable — for both a
+// value read-back (get_calibration) and an actual metered command
+// (dispense) with no confirmation step in between. The get_calibration
+// check alone would pass even against the old store-first/mirror-as-
+// unverified-fallback design, since d.mlPerStep is populated either way and
+// get_calibration never consulted the (now-removed) unverified gate; only
+// requireCalibration did, and only a command that reaches it (like
+// dispense) can prove the gate is actually gone.
+//
+// direction "reverse" selects opcode 16 (timer-completed) rather than the
+// opcode-18/background-watcher path "forward" would take; this test never
+// feeds a completion reply, and a watcher goroutine left running past the
+// test would race the next test's shrinkTimeouts mutation of the shared
+// WatchPoll var.
 func TestAttachTrustsEepromCalibration(t *testing.T) {
 	f := newFixture(t, withProbeReply([]byte{10, 0x01, 0x67, 0x60}))
 	resp := f.exec("get_calibration", "")
@@ -286,6 +299,9 @@ func TestAttachTrustsEepromCalibration(t *testing.T) {
 	got := f.resultMap(resp)["ml_per_step"].(float64)
 	if math.Abs(got-0.00092) > 1e-12 {
 		t.Errorf("ml_per_step = %v, want 0.00092", got)
+	}
+	if resp := f.exec("dispense", `{"direction":"reverse","volume_ml":0.1,"speed_ml_min":3.0}`); resp.Error != nil {
+		t.Fatalf("dispense rejected on a mirror-calibrated pump: %v", resp.Error)
 	}
 }
 

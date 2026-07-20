@@ -152,11 +152,6 @@ type capabilities struct {
 	SpeedMlMin           *speedRange `json:"speed_ml_min"`
 	SupportsGradient     bool        `json:"supports_gradient"`
 	SupportsDropSuckback bool        `json:"supports_drop_suckback"`
-	// CalibrationUnverified always reports false now that Attach trusts the
-	// EEPROM mirror unconditionally (no driver state can set it true; see
-	// Attach's doc comment above). Kept as a struct/JSON field only because
-	// removing the unverified concept end-to-end belongs to Task 4.
-	CalibrationUnverified bool `json:"calibration_unverified,omitempty"`
 }
 
 func (d *Driver) info() device.Info {

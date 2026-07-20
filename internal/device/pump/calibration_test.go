@@ -115,15 +115,19 @@ func TestSetCalibrationDirect(t *testing.T) {
 	}
 }
 
-func TestSetCalibrationConfirmsUnverifiedMirror(t *testing.T) {
-	f := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // unverified 0.0005
+// TestSetCalibrationOverridesRecoveredMirror proves set_calibration still
+// works normally on a pump that already recovered calibration from the
+// EEPROM mirror at attach — re-writing the same value is a no-op from the
+// device's perspective but must still round-trip through the driver.
+func TestSetCalibrationOverridesRecoveredMirror(t *testing.T) {
+	f := newFixture(t, withProbeReply([]byte{10, 0, 195, 80})) // 0.0005, trusted at attach
 	f.port.Feed([]byte{10, 0, 195, 80})
 	if resp := f.exec("set_calibration", `{"ml_per_step":0.0005}`); resp.Status != "ok" {
-		t.Fatalf("confirming set_calibration: %+v", resp)
+		t.Fatalf("set_calibration: %+v", resp)
 	}
 	caps := f.resultMap(f.exec("identify", ""))["capabilities"].(map[string]any)
-	if caps["calibration_unverified"] != nil || caps["speed_ml_min"] == nil {
-		t.Fatalf("must be verified now: %v", caps)
+	if caps["speed_ml_min"] == nil {
+		t.Fatalf("capabilities must report speed limits: %v", caps)
 	}
 }
 
@@ -174,6 +178,27 @@ func TestCalibrationCommandsBusyMidJob(t *testing.T) {
 		if resp.Status != "error" || resp.Error.Code != device.CodeBusy {
 			t.Fatalf("%s mid-job: %+v", cmd, resp)
 		}
+	}
+}
+
+// TestEepromCalibrationDispensesWithoutConfirmation proves the mirror is
+// trusted: a pump reporting calibration at attach can dispense immediately,
+// with no set_calibration/start_calibration confirmation step in between.
+// (The brief's literal params, {"volume_ml":0.1}, omit "direction" and
+// "speed_ml_min", which planDispense/speedToBytes require regardless of
+// calibration state — added here so the assertion actually isolates the
+// calibration gate rather than failing on unrelated param validation.
+// direction "reverse" selects opcode 16 (timer-completed), not the
+// opcode-18/watcher path forward would take — this test never feeds a
+// completion reply, and an unfinished watcher goroutine outlives the test,
+// racing the next test's shrinkTimeouts mutation of the shared WatchPoll
+// var — same reason TestSetCalibrationFromJob's trailing dispense above
+// uses "reverse".)
+func TestEepromCalibrationDispensesWithoutConfirmation(t *testing.T) {
+	f := newFixture(t, withProbeReply([]byte{10, 0x00, 0xC3, 0x50})) // 0.0005 ml/step
+	resp := f.exec("dispense", `{"direction":"reverse","volume_ml":0.1,"speed_ml_min":3.0}`)
+	if resp.Error != nil {
+		t.Fatalf("dispense rejected on a mirror-calibrated pump: %v", resp.Error)
 	}
 }
 

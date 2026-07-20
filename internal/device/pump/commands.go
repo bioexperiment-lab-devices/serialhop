@@ -33,7 +33,6 @@ func (d *Driver) ping() (any, *device.CmdError) {
 type calibrationInfo struct {
 	MlPerStep     float64 `json:"ml_per_step"`
 	SetAtUptimeMs int64   `json:"set_at_uptime_ms"`
-	Unverified    bool    `json:"unverified,omitempty"`
 }
 
 func (d *Driver) calibrationBlock() *calibrationInfo {
@@ -46,9 +45,7 @@ func (d *Driver) calibrationBlock() *calibrationInfo {
 			upMs = ms // clamped ≥ 0: persisted calibration may predate this connection
 		}
 	}
-	// Unverified always reports false now that Attach trusts the EEPROM
-	// mirror unconditionally; dropping the field is Task 4's job.
-	return &calibrationInfo{MlPerStep: d.mlPerStep, SetAtUptimeMs: upMs, Unverified: false}
+	return &calibrationInfo{MlPerStep: d.mlPerStep, SetAtUptimeMs: upMs}
 }
 
 func (d *Driver) getCalibration() (any, *device.CmdError) {
@@ -344,9 +341,10 @@ func (d *Driver) stop() (any, *device.CmdError) {
 
 // setCalibration (TRANSLATION §4): variant A computes ml_per_step from a
 // succeeded calibration job; variant B restores a known value directly.
-// Either way the value is persisted serial-keyed, mirrored to the device's
-// 3 EEPROM calibration bytes (cmd 13 — survives translator-database loss),
-// and the mirror is read back for verification via the identify frame.
+// Either way the value is written to the device's 3 EEPROM calibration
+// bytes (cmd 13 — the device is the only store; there is no serial number
+// and no on-disk file), and the mirror is read back for verification via
+// the identify frame.
 func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) {
 	var p struct {
 		JobID            string  `json:"job_id"`
@@ -402,9 +400,9 @@ func (d *Driver) setCalibration(params json.RawMessage) (any, *device.CmdError) 
 
 // persistCalibration is named for the on-disk store it historically wrote;
 // that write is gone (the store/serial Driver fields it depended on were
-// deleted — see Attach's doc comment in pump.go), so today it only pushes
-// the EEPROM mirror and updates in-memory state. Renaming/further cleanup
-// is Task 4's job.
+// deleted — see Attach's doc comment in pump.go). Today it only updates
+// in-memory state and pushes the device's EEPROM mirror, which is the sole
+// place calibration now lives.
 func (d *Driver) persistCalibration(mlPerStep float64) *device.CmdError {
 	now := d.s.Now()
 	d.mlPerStep, d.calSetAt = mlPerStep, now
