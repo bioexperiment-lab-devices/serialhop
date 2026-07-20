@@ -103,26 +103,36 @@ Add to `internal/device/pump/pump_test.go`:
 // answers opcode 11, so using it failed every dispense at completion.
 func TestFinishJobDisarmsWithZeroStepRun(t *testing.T) {
 	f := newCalibratedFixture(t)
-	f.port.Reset()
 
-	// 1 ml at 0.0005 ml/step = 2000 steps; opcode 15 draws no reply.
-	f.exec(t, "dispense", `{"volume_ml":1.0}`)
-	// Completion reply for the run, then the disarm frame's elapsed-us reply.
-	f.port.Feed([]byte{0, 0, 0, 10})
-	f.port.Feed([]byte{0, 0, 0, 10})
+	// 1 ml at 0.0005 ml/step = 2000 steps.
+	if resp := f.exec("dispense", `{"volume_ml":1.0}`); resp.Error != nil {
+		t.Fatalf("dispense: %v", resp.Error)
+	}
+	f.port.Feed([]byte{0, 0, 0, 10}) // run completion (elapsed us)
+	f.port.Feed([]byte{0, 0, 0, 10}) // disarm frame's elapsed-us reply
 	waitFor(t, "job done", func() bool { return f.s.Jobs().Active() == nil })
 
-	sent := f.port.Written()
-	if !bytes.Contains(sent, []byte{18, 0, 0, 0, 0}) {
-		t.Errorf("no zero-step disarm frame in %v", sent)
+	var sawDisarm, sawPing bool
+	for _, fr := range f.frames() {
+		if frameEq(fr, 18, 0, 0, 0, 0) {
+			sawDisarm = true
+		}
+		if frameEq(fr, 11, 2, 3, 4, 5) {
+			sawPing = true
+		}
 	}
-	if bytes.Contains(sent, []byte{11, 2, 3, 4, 5}) {
+	if !sawDisarm {
+		t.Errorf("no zero-step disarm frame in %v", f.frames())
+	}
+	if sawPing {
 		t.Error("opcode-11 ping still sent; real firmware never answers it")
 	}
 }
 ```
 
-If `fixture` lacks `exec` or `port.Written()`/`port.Reset()` helpers, use whatever the neighbouring tests in this file already use to submit a command and read written bytes — mirror the closest existing dispense test rather than inventing helpers.
+Helper contracts in this package, verified: `f.exec(cmd, params string) device.Response`, `f.frames() [][]byte` (splits written bytes into 5-byte frames), `frameEq(a []byte, b ...byte) bool`, `f.resultMap(resp) map[string]any`, `f.port.Feed([]byte)`. There is no `port.Reset()`.
+
+**Mirror `TestDispenseVerificationFailureFailsJob` (`job_test.go:233`)** for the exact feed/wait choreography — it exercises the same post-job verification path this task changes, and it is the test most likely to need updating.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -246,15 +256,19 @@ func TestAttachNeedsNoIdentityRead(t *testing.T) {
 // device mirror on every attach and is immediately usable.
 func TestAttachTrustsEepromCalibration(t *testing.T) {
 	f := newFixture(t, withProbeReply([]byte{10, 0x01, 0x67, 0x60}))
-	res := f.exec(t, "get_calibration", `{}`)
+	resp := f.exec("get_calibration", "")
+	if resp.Error != nil {
+		t.Fatalf("get_calibration: %v", resp.Error)
+	}
 	// 92000 / 1e8 = 0.00092 ml/step
-	if got := res["ml_per_step"].(float64); math.Abs(got-0.00092) > 1e-12 {
+	got := f.resultMap(resp)["ml_per_step"].(float64)
+	if math.Abs(got-0.00092) > 1e-12 {
 		t.Errorf("ml_per_step = %v, want 0.00092", got)
 	}
 }
 ```
 
-Add `"math"` to imports. Use the file's existing helper for reading a command result if `exec` returns something other than `map[string]any` — mirror the nearest existing `get_calibration` test.
+Add `"math"` to imports. `f.exec` returns `device.Response`; `f.resultMap` round-trips its `Result` through JSON.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -340,13 +354,13 @@ Add to `internal/device/pump/calibration_test.go`:
 // trusted: a pump reporting calibration at attach can dispense immediately.
 func TestEepromCalibrationDispensesWithoutConfirmation(t *testing.T) {
 	f := newFixture(t, withProbeReply([]byte{10, 0x00, 0xC3, 0x50})) // 0.0005 ml/step
-	if _, cerr := f.execErr(t, "dispense", `{"volume_ml":0.1}`); cerr != nil {
-		t.Fatalf("dispense rejected on a mirror-calibrated pump: %v", cerr)
+	if resp := f.exec("dispense", `{"volume_ml":0.1}`); resp.Error != nil {
+		t.Fatalf("dispense rejected on a mirror-calibrated pump: %v", resp.Error)
 	}
 }
 ```
 
-Use whichever helper the file already has for a command that may return a `*device.CmdError`; mirror the nearest existing rejection test rather than inventing `execErr`.
+`TestDispenseUncalibrated` (`job_test.go:222`) is the neighbouring rejection test; it must keep passing, since a pump reporting a zero mirror is still uncalibrated.
 
 - [ ] **Step 2: Run test to verify it fails**
 
