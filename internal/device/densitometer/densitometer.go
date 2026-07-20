@@ -175,7 +175,7 @@ func (d *Driver) Attach(ctx context.Context, probeReply []byte) (device.Info, er
 	found, lerr := d.store.Load(&ps)
 	if lerr != nil {
 		slog.Warn("densitometer: state file unreadable, treating as absent",
-			"device", d.serial, "err", lerr)
+			"port", d.s.PortName(), "err", lerr)
 		found = false
 	}
 	if found && ps.SchemaVersion == schemaV {
@@ -267,7 +267,7 @@ func (d *Driver) Execute(ctx context.Context, cmd string, params json.RawMessage
 func (d *Driver) Detach() {
 	if d.store != nil {
 		if err := d.persist(); err != nil {
-			slog.Warn("densitometer: detach persist failed", "device", d.serial, "err", err)
+			slog.Warn("densitometer: detach persist failed", "port", d.s.PortName(), "err", err)
 		}
 	}
 }

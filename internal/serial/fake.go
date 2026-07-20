@@ -19,6 +19,7 @@ type FakePort struct {
 	readTimeout time.Duration
 	closed      bool
 	rxSignal    chan struct{} // signaled whenever rx grows
+	txCond      *sync.Cond    // broadcast whenever tx grows
 	dtrSeq      []bool
 	baudSeq     []int
 	rtsSeq      []bool
@@ -27,7 +28,9 @@ type FakePort struct {
 }
 
 func NewFakePort(name string) *FakePort {
-	return &FakePort{name: name, rxSignal: make(chan struct{}, 1), readTimeout: time.Second}
+	f := &FakePort{name: name, rxSignal: make(chan struct{}, 1), readTimeout: time.Second}
+	f.txCond = sync.NewCond(&f.mu)
+	return f
 }
 
 func (f *FakePort) Name() string { return f.name }
@@ -45,6 +48,25 @@ func (f *FakePort) Feed(b []byte) {
 func (f *FakePort) Written() []byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	out := make([]byte, len(f.tx))
+	copy(out, f.tx)
+	return out
+}
+
+// WaitWritten blocks until at least n bytes have been written to the port
+// (returning immediately if that is already true), then returns a snapshot
+// of everything written so far. Unlike polling Written() plus a fixed sleep,
+// this is a true happens-before barrier: it wakes the instant Write appends
+// the nth byte, under the same mutex Write uses, so callers can't observe a
+// stale byte count and race whatever the port does next. It never times out
+// on its own — callers should only wait on byte counts the code under test
+// is guaranteed to reach regardless of what the caller feeds back.
+func (f *FakePort) WaitWritten(n int) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for len(f.tx) < n {
+		f.txCond.Wait()
+	}
 	out := make([]byte, len(f.tx))
 	copy(out, f.tx)
 	return out
@@ -99,6 +121,7 @@ func (f *FakePort) Write(p []byte) (int, error) {
 		return 0, ErrClosed
 	}
 	f.tx = append(f.tx, p...)
+	f.txCond.Broadcast()
 	return len(p), nil
 }
 

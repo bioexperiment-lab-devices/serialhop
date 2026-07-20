@@ -51,20 +51,26 @@ func feedAttach(port *serial.FakePort, thermReadback byte) {
 
 // feedNoSerialReply mirrors feedAttach but never answers the serial-number
 // frame (71 0 0 5 0), matching real firmware exactly. The remaining replies
-// are fed only after Transact's two silent read attempts for that frame have
-// genuinely both timed out: transact() writes the 5-byte frame once per
-// attempt before it ever reads, so seeing it written twice (10 bytes) proves
-// attempt 1 already failed and attempt 2 has started; the extra margin sleep
-// past PerByteTimeout then covers attempt 2's own read window. Feeding any
-// earlier would let the fake port's single FIFO hand the wavelength reply's
-// bytes to the serial-number read instead of letting it time out, passing
-// the test for the wrong reason (see TestAttachToleratesSilentSerialFrame).
+// must not be fed until Transact's two silent read attempts for that frame
+// have genuinely both timed out — feeding any earlier would let the fake
+// port's single FIFO hand the wavelength reply's bytes to the serial-number
+// read instead of letting it time out, passing the test for the wrong reason
+// (see TestAttachToleratesSilentSerialFrame).
+//
+// Rather than inferring "both attempts timed out" from a byte count plus a
+// sleep margin (racy under scheduler/GC pressure — the sleep is not a real
+// barrier), wait for a byte count that is ITSELF proof of the fact: Attach
+// runs transact(serialNumFrame) to completion (write+timeout, write+timeout,
+// 2x5=10 bytes) before it ever calls transact(channel1Frame), whose first
+// action is also a write (+5=15 bytes). transactOnce's Drain-then-Write
+// ordering means that write cannot happen until the prior Transact call has
+// fully returned, so observing 15 written bytes is a happens-before fact,
+// not a timing guess — attempt 2 is provably already done. WaitWritten
+// blocks on that exact count instead of polling Written() and sleeping, so
+// there is no window left to race regardless of machine load.
 func feedNoSerialReply(port *serial.FakePort, thermReadback byte) {
 	go func() {
-		for len(port.Written()) < 10 { // 2 attempts x 5-byte serialNumFrame
-			time.Sleep(time.Millisecond)
-		}
-		time.Sleep(20 * time.Millisecond)         // let attempt 2's own read timeout elapse too
+		port.WaitWritten(15)                      // 2x5 failed serialNumFrame attempts + channel1Frame's first write
 		port.Feed([]byte{1, 2, 6, 0})             // 71 0 0 1 → wavelength 600
 		port.Feed([]byte{5, 5, thermReadback, 0}) // 76 2     → device set-point
 		port.Feed([]byte{5, 5, 0, 0})             // 76 2     → disable-verify readback
