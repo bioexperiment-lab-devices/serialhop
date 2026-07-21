@@ -86,3 +86,22 @@ type FlashResponse struct {
 	TestResult   *TestResultDTO      `json:"test_result,omitempty"`
 	RecoveryHint string              `json:"recovery_hint,omitempty"`
 }
+
+// UpdateRequest is the body of POST /agent/update. Empty => GitHub latest.
+type UpdateRequest struct {
+	Version string `json:"version,omitempty"`
+	URL     string `json:"url,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+}
+
+// UpdateAcceptedBody is returned 202 when a job starts.
+type UpdateAcceptedBody struct {
+	Accepted bool   `json:"accepted"`
+	To       string `json:"to"`
+}
+
+// UpdateNoopBody is returned 200 when the target equals the running version.
+type UpdateNoopBody struct {
+	Outcome string `json:"outcome"` // "noop"
+	Reason  string `json:"reason"`
+}

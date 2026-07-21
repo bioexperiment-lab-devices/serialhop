@@ -128,7 +128,7 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 	}
 	defer func() { _ = keepAwake.Close() }()
 	srv := api.New(reg, discoverFn, opener, fl, flashingEnabled, keepAwake,
-		cfg.RawSerial.Enabled, time.Duration(cfg.RawSerial.IdleTimeoutMs)*time.Millisecond)
+		cfg.RawSerial.Enabled, time.Duration(cfg.RawSerial.IdleTimeoutMs)*time.Millisecond, nil)
 
 	chiselDone := make(chan error, 1)
 	go func() {
