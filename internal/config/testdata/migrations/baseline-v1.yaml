@@ -1,0 +1,51 @@
+# SerialHop_config.yaml
+# Auto-generated scaffold. Site values are filled in via the panel's
+# first-run dialog (username + password). Other fields are optional —
+# edit only if you need to change defaults.
+
+schema_version: 1          # config schema version — managed automatically by
+                           # SerialHop's migration tooling. Do not edit by hand.
+
+lab_bridge:
+  host: "111.88.145.138"   # lab-bridge VPS host (chisel + public HTTPS API).
+                           # change only when pointing at a different deployment.
+  user: ""                 # REQUIRED — chisel auth user; also Bearer-token
+                           # identity for the public API. No default.
+  pass: ""                 # REQUIRED — chisel password; also Bearer token
+                           # for /api/public/clients/{user}. No default.
+
+rest:
+  port: 0                  # local REST port; 0 = OS picks a free one.
+
+discovery:
+  include: []              # optional: only probe these COM ports, e.g. ["COM3", "COM4"]
+  exclude: []              # optional: skip these COM ports, e.g. ["COM1"]
+  post_open_settle_ms: 2000  # wait after opening a port before probing. covers the
+                             # Arduino auto-reset bootloader window (~1-2 s). lower
+                             # if your boards don't reset on DTR; 0 to disable.
+
+log:
+  level: "info"            # debug | info | warn | error
+
+auto_update:
+  enabled: true            # check GitHub Releases for newer versions
+                           # and offer to install them from the panel.
+                           # set to false on air-gapped lab boxes.
+
+flashing:
+  enabled: false                  # allow POST /flash/{port}. a bad .hex bricks
+                                  # the board (ISP recovery required) — leave
+                                  # off unless you're actively flashing.
+  backup_dir: ""                  # absolute path for pre-flash backups.
+                                  # empty -> %ProgramData%\SerialHop\backups
+  keep_n: 10                      # retain this many backups per COM port;
+                                  # oldest pruned after each completed flash.
+                                  # 0 = keep all.
+
+raw_serial:
+  enabled: false                  # allow GET /serial/ports/{port}/attach (raw
+                                  # WebSocket byte + line-control stream). Only
+                                  # ports with no discovered device are eligible.
+                                  # off by default — turn on for bring-up / RE.
+  idle_timeout_ms: 900000         # close a raw session after this many ms with
+                                  # no traffic. 0 = never time out.
