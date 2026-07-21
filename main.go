@@ -34,11 +34,14 @@ func init() {
 }
 
 var (
-	flagAdminAction = flag.String("admin-action", "", "internal: install|uninstall|restart|update (used by the GUI)")
-	flagErrorFile   = flag.String("error-file", "", "internal: path the elevated child writes its error message to")
-	flagUpdateSrc   = flag.String("update-src", "", "internal: path to the staged update .exe (used by --admin-action=update)")
-	flagForeground  = flag.Bool("foreground", false, "run the device-client logic in the console (developer mode)")
-	flagVersion     = flag.Bool("version", false, "print version and exit")
+	flagAdminAction  = flag.String("admin-action", "", "internal: install|uninstall|restart|update (used by the GUI)")
+	flagErrorFile    = flag.String("error-file", "", "internal: path the elevated child writes its error message to")
+	flagUpdateSrc    = flag.String("update-src", "", "internal: path to the staged update .exe (used by --admin-action=update)")
+	flagUpdateResult = flag.String("update-result", "", "internal: path the update child writes its result JSON to")
+	flagUpdateFrom   = flag.String("update-from", "", "internal: version being replaced (for the result record)")
+	flagUpdateTo     = flag.String("update-to", "", "internal: version being installed (for the result record)")
+	flagForeground   = flag.Bool("foreground", false, "run the device-client logic in the console (developer mode)")
+	flagVersion      = flag.Bool("version", false, "print version and exit")
 )
 
 func main() {
@@ -67,7 +70,8 @@ func main() {
 			os.Exit(1)
 		}
 	case *flagAdminAction != "":
-		os.Exit(winsvc.RunAdminAction(*flagAdminAction, *flagErrorFile, *flagUpdateSrc))
+		os.Exit(winsvc.RunAdminAction(*flagAdminAction, *flagErrorFile, *flagUpdateSrc,
+			*flagUpdateResult, *flagUpdateFrom, *flagUpdateTo))
 	case *flagForeground:
 		attachParentConsole()
 		if err := runForeground(); err != nil {
