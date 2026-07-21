@@ -125,3 +125,22 @@ func TestLatestRelease_LogsErrorOnHTTPFailure(t *testing.T) {
 
 	rec.AssertRecord(t, slog.LevelError, "updater release fetch failed", map[string]any{"url": srv.URL})
 }
+
+func TestReleasesByTagURL(t *testing.T) {
+	got := ReleasesByTagURL("v2.3.0")
+	want := "https://api.github.com/repos/bioexperiment-lab-devices/serialhop/releases/tags/v2.3.0"
+	if got != want {
+		t.Errorf("ReleasesByTagURL = %q, want %q", got, want)
+	}
+}
+
+func TestLatestRelease_TagURL_404Errors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	_, err := LatestRelease(context.Background(), srv.Client(), srv.URL+"/tags/v9.9.9", "ua")
+	if err == nil {
+		t.Fatal("expected error for 404 tag lookup")
+	}
+}
