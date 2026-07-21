@@ -30,10 +30,10 @@ func fakeGitHub(t *testing.T, version, exeBody string) *httptest.Server {
 			{"name":"SHA256SUMS.txt","browser_download_url":%q,"size":%d}]}`,
 			version, asset, base+"/dl/"+asset, len(exeBody), base+"/dl/SHA256SUMS.txt", len(sums))
 	}
-	mux.HandleFunc("/latest", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, relJSON()) })
-	mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, relJSON()) })
-	mux.HandleFunc("/dl/"+asset, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, exeBody) })
-	mux.HandleFunc("/dl/SHA256SUMS.txt", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, sums) })
+	mux.HandleFunc("/latest", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, relJSON()) })
+	mux.HandleFunc("/tags/", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, relJSON()) })
+	mux.HandleFunc("/dl/"+asset, func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, exeBody) })
+	mux.HandleFunc("/dl/SHA256SUMS.txt", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, sums) })
 	// TLS so custom-URL mode (which requires https://) can be exercised against
 	// the fake; gh.Client() trusts the test server's cert.
 	srv := httptest.NewTLSServer(mux)
