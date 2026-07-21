@@ -34,6 +34,19 @@ A first install writes a scaffold file with inline comments describing every fie
 
 If the YAML fails validation on next service start, the service won't come up and the panel's Local-service lamp stays red. Open the Logs tab — the validation error is logged with the offending field.
 
+### `schema_version` and automatic migration
+
+The file's first setting is `schema_version:` — an integer SerialHop manages automatically. **Do not edit it by hand.**
+
+When you update SerialHop, the new version may add, rename, or retire settings. On the next service or panel start, SerialHop migrates your config to match:
+
+- **new settings** are added with their documented defaults and comments, so you can see and tune them;
+- **renamed settings** keep your value under the new name;
+- **retired settings** are commented out (not deleted), with a note saying which schema version removed them;
+- **your file is backed up first** to `SerialHop_config.v<old>.bak.yaml` in the same folder.
+
+Migration never deletes a value you set, and it never leaves a half-written file — if anything goes wrong it leaves your config untouched and logs the error. To see exactly what changed, compare the file to its `.bak.yaml` backup, or check the Logs tab: the migration is logged with the count of changes and the backup path.
+
 ## Common tasks
 
 ### Point SerialHop at a different lab-bridge server

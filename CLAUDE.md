@@ -40,6 +40,24 @@ Generated artifacts (gitignored — **never commit**):
 
 `tools/render-manifest` and `tools/buildcmd` exist because Task's embedded shell (`mvdan.cc/sh`) mangles single-quoted args on Windows — `sed`/`awk` pipelines that work on macOS silently break on the Windows release runner. **If a build step needs more than one command or any quoting, write it as a Go program under `tools/`, not as shell in `Taskfile.yaml`.**
 
+## Registering config changes
+
+Any PR that adds, renames, or removes a field on `config.Config` (`internal/config/config.go`), or changes a field's accepted values, **must register a migration** so an existing operator's `SerialHop_config.yaml` is upgraded on their next update. Without one, renamed keys silently lose the operator's value and new keys never appear in their file. The engine lives in `internal/config/migrate.go`; the registry you edit is `internal/config/migrations.go`. See `docs/superpowers/specs/2026-07-21-config-migration-design.md` for the design.
+
+To register a change:
+
+1. **Bump `config.CurrentSchemaVersion` by 1** (in `config.go`) and **append exactly one** `Migration{To: <new>, Desc, Ops}` to the `migrations` slice. The list is **append-only history — never edit or renumber an existing entry.**
+2. **Pick ops from the fixed vocabulary** (no bespoke node code):
+   - add a field → `Add(path, snippet)` — injects the key with its comment if absent; respects an existing value.
+   - rename a field → `Rename(from, to)` — carries the operator's value (and comment) across.
+   - remove a field → `Remove(path)` — **comments the key out; never silently deletes a value.**
+   - change a value/enum → `MapValue(path, fn)`; anything structural → `MapNode(path, fn)`.
+3. **For `Add`, reuse the exact comment text from the first-run scaffold** in `config.go` and update that scaffold (and its `schema_version:` line) in the same PR. The `TestScaffoldMatchesMigratedBaseline` drift guard fails if the scaffold and the migrations disagree on the key set.
+4. **Add test coverage** for your migration in `internal/config/migrate_test.go` (a before/after case; fixtures live under `internal/config/testdata/migrations/`).
+5. One PR = one schema bump. Don't batch unrelated config changes.
+
+Migration runs automatically at service and panel startup (`config.EnsureMigrated`), backing the original up to `SerialHop_config.v<old>.bak.yaml` before rewriting. It never writes a partial file: any migration error leaves the file untouched.
+
 ## Releases — what NOT to touch
 
 The release flow is fully automated by `release-please.yml`. Don't:
