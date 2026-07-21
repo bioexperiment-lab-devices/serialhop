@@ -273,3 +273,33 @@ func TestDeviceStateDir_Empty(t *testing.T) {
 		t.Errorf("DeviceStateDir() = %q, want empty", got)
 	}
 }
+
+func TestServiceUpdatePaths_HonorDataDirOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SERIALHOP_DATA_DIR", dir)
+
+	if got := ServiceUpdateStagingDir(); got != filepath.Join(dir, "updates") {
+		t.Errorf("ServiceUpdateStagingDir = %q, want %q", got, filepath.Join(dir, "updates"))
+	}
+	if got := UpdateResultPath(); got != filepath.Join(dir, "update_result.json") {
+		t.Errorf("UpdateResultPath = %q, want %q", got, filepath.Join(dir, "update_result.json"))
+	}
+	staged, err := EnsureServiceUpdateStagingDir()
+	if err != nil {
+		t.Fatalf("EnsureServiceUpdateStagingDir: %v", err)
+	}
+	if _, err := os.Stat(staged); err != nil {
+		t.Errorf("staging dir not created: %v", err)
+	}
+}
+
+func TestServiceUpdatePaths_EmptyWhenNoBase(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", "")
+	t.Setenv("ProgramData", "")
+	if got := ServiceUpdateStagingDir(); got != "" {
+		t.Errorf("ServiceUpdateStagingDir = %q, want empty", got)
+	}
+	if got := UpdateResultPath(); got != "" {
+		t.Errorf("UpdateResultPath = %q, want empty", got)
+	}
+}
