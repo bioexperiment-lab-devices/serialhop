@@ -2,12 +2,45 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestDefaultStampsCurrentSchemaVersion(t *testing.T) {
+	if got := Default().SchemaVersion; got != CurrentSchemaVersion {
+		t.Fatalf("Default().SchemaVersion = %d, want %d", got, CurrentSchemaVersion)
+	}
+}
+
+func TestScaffoldContainsSchemaVersion(t *testing.T) {
+	var b strings.Builder
+	if err := WriteScaffold(&b); err != nil {
+		t.Fatalf("WriteScaffold: %v", err)
+	}
+	want := fmt.Sprintf("schema_version: %d", CurrentSchemaVersion)
+	if !strings.Contains(b.String(), want) {
+		t.Fatalf("scaffold missing %q:\n%s", want, b.String())
+	}
+}
+
+func TestScaffoldParsesAndIsCurrent(t *testing.T) {
+	var b strings.Builder
+	if err := WriteScaffold(&b); err != nil {
+		t.Fatalf("WriteScaffold: %v", err)
+	}
+	c := Default()
+	if err := yaml.Unmarshal([]byte(b.String()), &c); err != nil {
+		t.Fatalf("scaffold does not parse: %v", err)
+	}
+	if c.SchemaVersion != CurrentSchemaVersion {
+		t.Fatalf("scaffold SchemaVersion = %d, want %d", c.SchemaVersion, CurrentSchemaVersion)
+	}
+}
 
 func TestDefaultConfig(t *testing.T) {
 	c := Default()

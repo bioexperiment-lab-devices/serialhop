@@ -5,14 +5,20 @@ import (
 	"io"
 )
 
+// CurrentSchemaVersion is the config schema version the current binary
+// expects. Bumped by +1 in the same PR that appends a migration to
+// internal/config/migrations.go. Baseline is 1 (the shape at first ship).
+const CurrentSchemaVersion = 1
+
 type Config struct {
-	LabBridge  LabBridgeConfig  `yaml:"lab_bridge" json:"lab_bridge"`
-	Rest       RestConfig       `yaml:"rest" json:"rest"`
-	Discovery  DiscoveryConfig  `yaml:"discovery" json:"discovery"`
-	Log        LogConfig        `yaml:"log" json:"log"`
-	AutoUpdate AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
-	Flashing   FlashingConfig   `yaml:"flashing" json:"flashing"`
-	RawSerial  RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
+	SchemaVersion int              `yaml:"schema_version" json:"schema_version"`
+	LabBridge     LabBridgeConfig  `yaml:"lab_bridge" json:"lab_bridge"`
+	Rest          RestConfig       `yaml:"rest" json:"rest"`
+	Discovery     DiscoveryConfig  `yaml:"discovery" json:"discovery"`
+	Log           LogConfig        `yaml:"log" json:"log"`
+	AutoUpdate    AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
+	Flashing      FlashingConfig   `yaml:"flashing" json:"flashing"`
+	RawSerial     RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
 }
 
 type LabBridgeConfig struct {
@@ -52,6 +58,7 @@ type RawSerialConfig struct {
 
 func Default() Config {
 	return Config{
+		SchemaVersion: CurrentSchemaVersion,
 		LabBridge: LabBridgeConfig{
 			Host: "111.88.145.138",
 			User: "",
@@ -74,6 +81,9 @@ const scaffoldTemplate = `# SerialHop_config.yaml
 # Auto-generated scaffold. Site values are filled in via the panel's
 # first-run dialog (username + password). Other fields are optional —
 # edit only if you need to change defaults.
+
+schema_version: 1          # config schema version — managed automatically by
+                           # SerialHop's migration tooling. Do not edit by hand.
 
 lab_bridge:
   host: "111.88.145.138"   # lab-bridge VPS host (chisel + public HTTPS API).
