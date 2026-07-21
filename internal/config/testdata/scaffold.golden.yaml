@@ -3,6 +3,9 @@
 # first-run dialog (username + password). Other fields are optional —
 # edit only if you need to change defaults.
 
+schema_version: 1          # config schema version — managed automatically by
+                           # SerialHop's migration tooling. Do not edit by hand.
+
 lab_bridge:
   host: "111.88.145.138"   # lab-bridge VPS host (chisel + public HTTPS API).
                            # change only when pointing at a different deployment.
