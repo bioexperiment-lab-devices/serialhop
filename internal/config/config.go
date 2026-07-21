@@ -8,17 +8,18 @@ import (
 // CurrentSchemaVersion is the config schema version the current binary
 // expects. Bumped by +1 in the same PR that appends a migration to
 // internal/config/migrations.go. Baseline is 1 (the shape at first ship).
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 type Config struct {
-	SchemaVersion int              `yaml:"schema_version" json:"schema_version"`
-	LabBridge     LabBridgeConfig  `yaml:"lab_bridge" json:"lab_bridge"`
-	Rest          RestConfig       `yaml:"rest" json:"rest"`
-	Discovery     DiscoveryConfig  `yaml:"discovery" json:"discovery"`
-	Log           LogConfig        `yaml:"log" json:"log"`
-	AutoUpdate    AutoUpdateConfig `yaml:"auto_update" json:"auto_update"`
-	Flashing      FlashingConfig   `yaml:"flashing" json:"flashing"`
-	RawSerial     RawSerialConfig  `yaml:"raw_serial" json:"raw_serial"`
+	SchemaVersion int                `yaml:"schema_version" json:"schema_version"`
+	LabBridge     LabBridgeConfig    `yaml:"lab_bridge" json:"lab_bridge"`
+	Rest          RestConfig         `yaml:"rest" json:"rest"`
+	Discovery     DiscoveryConfig    `yaml:"discovery" json:"discovery"`
+	Log           LogConfig          `yaml:"log" json:"log"`
+	AutoUpdate    AutoUpdateConfig   `yaml:"auto_update" json:"auto_update"`
+	Flashing      FlashingConfig     `yaml:"flashing" json:"flashing"`
+	RawSerial     RawSerialConfig    `yaml:"raw_serial" json:"raw_serial"`
+	RemoteUpdate  RemoteUpdateConfig `yaml:"remote_update" json:"remote_update"`
 }
 
 type LabBridgeConfig struct {
@@ -56,6 +57,10 @@ type RawSerialConfig struct {
 	IdleTimeoutMs int  `yaml:"idle_timeout_ms" json:"idle_timeout_ms"`
 }
 
+type RemoteUpdateConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
 func Default() Config {
 	return Config{
 		SchemaVersion: CurrentSchemaVersion,
@@ -70,10 +75,11 @@ func Default() Config {
 			Exclude:          []string{},
 			PostOpenSettleMs: 2000,
 		},
-		Log:        LogConfig{Level: "info"},
-		AutoUpdate: AutoUpdateConfig{Enabled: true},
-		Flashing:   FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
-		RawSerial:  RawSerialConfig{Enabled: false, IdleTimeoutMs: 900000},
+		Log:          LogConfig{Level: "info"},
+		AutoUpdate:   AutoUpdateConfig{Enabled: true},
+		Flashing:     FlashingConfig{Enabled: false, BackupDir: "", KeepN: 10},
+		RawSerial:    RawSerialConfig{Enabled: false, IdleTimeoutMs: 900000},
+		RemoteUpdate: RemoteUpdateConfig{Enabled: false},
 	}
 }
 
@@ -82,7 +88,7 @@ const scaffoldTemplate = `# SerialHop_config.yaml
 # first-run dialog (username + password). Other fields are optional —
 # edit only if you need to change defaults.
 
-schema_version: 1          # config schema version — managed automatically by
+schema_version: 2          # config schema version — managed automatically by
                            # SerialHop's migration tooling. Do not edit by hand.
 
 lab_bridge:
@@ -128,6 +134,12 @@ raw_serial:
                                   # off by default — turn on for bring-up / RE.
   idle_timeout_ms: 900000         # close a raw session after this many ms with
                                   # no traffic. 0 = never time out.
+
+remote_update:
+  enabled: false          # allow lab-bridge admins to push updates via
+                          # POST /agent/update (admin-gated server-side, like
+                          # /flash). the update installs with no operator
+                          # action. off by default.
 `
 
 func WriteScaffold(w io.Writer) error {
