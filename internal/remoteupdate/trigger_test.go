@@ -260,3 +260,27 @@ func assertHasArg(t *testing.T, args []string, want string) {
 	}
 	t.Errorf("missing arg %q in %v", want, args)
 }
+
+func TestSanitizeSemver(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"2.3.0", "2.3.0", true},
+		{"v2.3.0", "2.3.0", true},
+		{"10.0.100", "10.0.100", true},
+		{"2.3", "", false},
+		{"2.3.0.1", "", false},
+		{"2.3.x", "", false},
+		{"2.3.0/../etc", "", false},
+		{"", "", false},
+		{"v-1.0.0", "", false},
+	}
+	for _, c := range cases {
+		got, ok := sanitizeSemver(c.in)
+		if ok != c.wantOK || got != c.want {
+			t.Errorf("sanitizeSemver(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.wantOK)
+		}
+	}
+}

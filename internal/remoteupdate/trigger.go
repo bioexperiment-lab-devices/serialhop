@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,10 +44,31 @@ func (e *UpstreamError) Unwrap() error { return e.Err }
 
 const jobTimeout = 5 * time.Minute
 
-var (
-	semverRe    = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-	assetNameRe = regexp.MustCompile(`^SerialHop-v(\d+\.\d+\.\d+)\.exe$`)
-)
+var assetNameRe = regexp.MustCompile(`^SerialHop-v(\d+\.\d+\.\d+)\.exe$`)
+
+// sanitizeSemver validates s as X.Y.Z (optional leading "v") and returns the
+// version REBUILT from the parsed integers. Rebuilding from ints — rather than
+// slicing the original string — means no request-/network-tainted data flows
+// into the staged filename or the path we later open. That is both a genuine
+// guarantee (the result provably contains only digits and dots, so no path
+// separators or "..") and a static-analysis taint barrier. ok=false when s is
+// not three non-negative integers.
+func sanitizeSemver(s string) (string, bool) {
+	v := strings.TrimPrefix(s, "v")
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return "", false
+	}
+	n := make([]int, 3)
+	for i, p := range parts {
+		x, err := strconv.Atoi(p)
+		if err != nil || x < 0 {
+			return "", false
+		}
+		n[i] = x
+	}
+	return fmt.Sprintf("%d.%d.%d", n[0], n[1], n[2]), true
+}
 
 // plan is the fully-resolved work handed to the background job.
 type plan struct {
@@ -127,8 +149,8 @@ func (m *Manager) resolveGitHub(ctx context.Context, req Request) (plan, Accepte
 	if err != nil {
 		return plan{}, Accepted{}, &UpstreamError{Err: err}
 	}
-	ver := strings.TrimPrefix(rel.TagName, "v")
-	if !semverRe.MatchString(ver) {
+	ver, ok := sanitizeSemver(rel.TagName)
+	if !ok {
 		return plan{}, Accepted{}, &UpstreamError{Err: fmt.Errorf("release tag %q not X.Y.Z", rel.TagName)}
 	}
 	if cmp, err := updater.Compare(ver, m.cfg.CurVersion); err == nil && cmp == 0 {
@@ -245,17 +267,18 @@ func customVersion(req Request) (string, error) {
 	}
 	base := path.Base(req.URL)
 	if mm := assetNameRe.FindStringSubmatch(base); mm != nil {
-		return mm[1], nil
+		if v, ok := sanitizeSemver(mm[1]); ok {
+			return v, nil
+		}
 	}
 	return "", &BadRequestError{Msg: "custom url needs a version: set \"version\" or name the file SerialHop-vX.Y.Z.exe"}
 }
 
 func normalizeVersion(s string) (string, error) {
-	v := strings.TrimPrefix(s, "v")
-	if !semverRe.MatchString(v) {
-		return "", &BadRequestError{Msg: fmt.Sprintf("version %q must be X.Y.Z", s)}
+	if v, ok := sanitizeSemver(s); ok {
+		return v, nil
 	}
-	return v, nil
+	return "", &BadRequestError{Msg: fmt.Sprintf("version %q must be X.Y.Z", s)}
 }
 
 func isHex(s string) bool {
