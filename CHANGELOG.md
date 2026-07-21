@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.3.0...v2.4.0) (2026-07-21)
+
+
+### Features
+
+* remote admin-pushed updates ([#205](https://github.com/bioexperiment-lab-devices/serialhop/issues/205)) ([4c49dbc](https://github.com/bioexperiment-lab-devices/serialhop/commit/4c49dbcfd3941a0bf77e791940281943d586e73a))
+
 ## [2.3.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.2.0...v2.3.0) (2026-07-21)
 
 
