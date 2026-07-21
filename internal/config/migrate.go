@@ -328,6 +328,7 @@ func ensureMigrated(path string, migs []Migration, current int) (Report, error) 
 		return Report{}, fmt.Errorf("marshal migrated config: %w", err)
 	}
 	backup := backupPath(path, from)
+	//nolint:gosec // backup is derived from path (paths.ConfigPath()), not user-controlled
 	if err := os.WriteFile(backup, data, 0o600); err != nil {
 		return Report{}, fmt.Errorf("write backup %s: %w", backup, err)
 	}
