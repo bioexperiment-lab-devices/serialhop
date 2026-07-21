@@ -133,6 +133,14 @@ Every field in `SerialHop_config.yaml`. Defaults are what a fresh install writes
 | `backup_dir` | string | `""` | absolute path when `enabled: true`; ignored otherwise | Where pre-flash backups are written. Empty falls back to `%ProgramData%\SerialHop\backups`. |
 | `keep_n` | integer | `10` | `>= 0` | How many backups per port to retain. `0` keeps all. |
 
+### `remote_update`
+
+| Field | Type | Default | Validation | Effect |
+| --- | --- | --- | --- | --- |
+| `enabled` | bool | `false` | — | When `true`, unlocks `POST /agent/update` and `GET /agent/update/status`, letting a lab-bridge **admin** push an update with no operator action or UAC. The LocalSystem service downloads + SHA-256-verifies the binary, then a detached child performs the stop → swap → start with auto-rollback. Admin-gating is enforced **server-side** (lab-bridge Authelia, like `/flash`); SerialHop itself does not authenticate the caller. When `false`, both endpoints return `404`. Leave off unless your lab-bridge deployment manages updates centrally. |
+
+`POST /agent/update` installs the latest GitHub release for an empty body, a specific tag for `{"version":"v2.3.0"}`, or a custom mirror for `{"url":"…","sha256":"…"}`. Downgrade/reinstall is allowed. See the README's REST API section for the full contract and the status-state list.
+
 ## When something looks wrong
 
 Start in the panel's **Logs** tab. It tails the same structured logs the service writes, newest first, with a level + free-text filter and an inline detail view for structured fields. If the service failed to come up after a config change, the validation error is right there with the offending field name.

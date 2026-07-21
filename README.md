@@ -73,11 +73,39 @@ The REST API is bound to `127.0.0.1` on the lab machine; it is reachable from ou
 | `GET`  | `/serial/ports/{port}/attach` | Raw serial byte + line-control stream (WebSocket), for ports with no discovered device | `raw_serial.enabled` |
 | `POST` | `/flash/{port}` | Pre-backup → flash → byte-verify → optional test → auto-rollback | `flashing.enabled` |
 | `GET`  | `/agent/info` | Agent self-description for server-pulled state | — |
+| `POST` | `/agent/update` | Admin-pushed update: download → SHA-256 verify → install (no operator action) | `remote_update.enabled` |
+| `GET`  | `/agent/update/status` | Last push outcome (survives the service restart) | `remote_update.enabled` |
 | `GET`  | `/power/keep-awake` | Report keep-awake state | — |
 | `POST` | `/power/keep-awake/enable` | Activate keep-awake (idempotent) | — |
 | `POST` | `/power/keep-awake/disable` | Clear keep-awake (idempotent) | — |
 
 Device types: `pump` (type code `10`), `valve` (`30`), `densitometer` (`70`). Device IDs are ordinal per type in `(type code, port)` order: `pump_1`, `valve_1`, … Note the valve's hub type name is `valve` while its `identify.device_type` is `distribution_valve`.
+
+<details>
+<summary><b>Remote updates (admin push)</b> — <code>POST /agent/update</code>, <code>GET /agent/update/status</code></summary>
+
+A lab-bridge **admin** can push a SerialHop update to a lab PC with no operator action and no UAC prompt. Off by default; enable with `remote_update.enabled: true`. Access is restricted to admins **server-side** (lab-bridge Authelia, the same way `/flash` is) — SerialHop itself does not authenticate the caller, so when the flag is off both endpoints return `404`.
+
+`POST /agent/update` selects the source by body:
+
+| Body | Source |
+| --- | --- |
+| `{}` (or empty) | latest GitHub release |
+| `{"version":"v2.3.0"}` | that GitHub release tag |
+| `{"url":"https://…/SerialHop-v2.3.0.exe","sha256":"<hex>"}` | a custom mirror (https only; `sha256` required) |
+
+Downgrade and same-version reinstall are allowed (the admin is authoritative); a GitHub-mode request whose target equals the running version returns `200 {"outcome":"noop"}`. Otherwise the call returns `202 {"accepted":true,"to":"2.3.0"}` immediately and the work happens in the background: the LocalSystem service downloads + SHA-256-verifies the binary, then a **detached** child (inheriting LocalSystem) performs the stop → swap → start with automatic rollback.
+
+Because the install restarts the very service handling the request, the outcome is reported through `GET /agent/update/status`, which survives the restart:
+
+```json
+{ "state": "succeeded", "from": "2.2.0", "to": "2.3.0",
+  "started_at": "…", "finished_at": "…" }
+```
+
+`state` is one of `none | downloading | verifying | installing | succeeded | rolled_back | failed`; `failed`/`rolled_back` carry an `error`. For custom-mirror mode the caller-supplied `sha256` guards transfer integrity only, not provenance — its trust anchor is the admin-only server gate plus the operator's opt-in.
+
+</details>
 
 <details>
 <summary><b>Devices &amp; commands</b> — <code>POST /api/v1/discover</code>, <code>GET /api/v1/devices</code>, <code>POST /api/v1/devices/{id}/command</code></summary>
