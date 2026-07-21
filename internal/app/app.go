@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -21,7 +23,9 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/paths"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/remoteupdate"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/version"
 )
 
 func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) error {
@@ -127,8 +131,12 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 		return fmt.Errorf("power.New: %w", err)
 	}
 	defer func() { _ = keepAwake.Close() }()
+	rum := buildRemoteUpdateManager(cfg)
+	if rum != nil {
+		rum.Reconcile()
+	}
 	srv := api.New(reg, discoverFn, opener, fl, flashingEnabled, keepAwake,
-		cfg.RawSerial.Enabled, time.Duration(cfg.RawSerial.IdleTimeoutMs)*time.Millisecond, nil)
+		cfg.RawSerial.Enabled, time.Duration(cfg.RawSerial.IdleTimeoutMs)*time.Millisecond, rum)
 
 	chiselDone := make(chan error, 1)
 	go func() {
@@ -173,6 +181,36 @@ func Run(ctx context.Context, cfg config.Config, resolved bootstrap.Resolved) er
 	reg.CloseAll()
 	slog.Info("shutdown complete")
 	return runErr
+}
+
+// buildRemoteUpdateManager returns a configured Manager when remote update is
+// enabled in config, else nil (the api handlers 404 on a nil manager). Best
+// effort: if the staging dir or exe path can't be resolved, it logs and
+// returns nil so a failure here never blocks the service from starting.
+func buildRemoteUpdateManager(cfg config.Config) *remoteupdate.Manager {
+	if !cfg.RemoteUpdate.Enabled {
+		return nil
+	}
+	staging, err := paths.EnsureServiceUpdateStagingDir()
+	if err != nil {
+		slog.Warn("remote_update disabled: staging dir", "err", err)
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		slog.Warn("remote_update disabled: executable path", "err", err)
+		return nil
+	}
+	return remoteupdate.New(remoteupdate.Config{
+		Enabled:    true,
+		HTTPClient: &http.Client{},
+		StagingDir: staging,
+		ResultPath: paths.UpdateResultPath(),
+		CurVersion: version.Base(),
+		UserAgent:  "SerialHop/" + version.Version + " (remote-update)",
+		ExePath:    exe,
+		Spawn:      remoteupdate.SpawnDetached,
+	})
 }
 
 // writeActualRestPort updates the bootstrap cache with the port the local
