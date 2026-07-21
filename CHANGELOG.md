@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.1.1...v2.2.0) (2026-07-20)
+
+
+### Bug Fixes
+
+* support real pump and densitometer firmware ([#202](https://github.com/bioexperiment-lab-devices/serialhop/issues/202)) ([230d345](https://github.com/bioexperiment-lab-devices/serialhop/commit/230d3451d6a49fa7133cd85b46c1a7d45b867ee4))
+
+
+### CI
+
+* guard PRs against squash bodies release-please can't parse ([#197](https://github.com/bioexperiment-lab-devices/serialhop/issues/197)) ([e13561e](https://github.com/bioexperiment-lab-devices/serialhop/commit/e13561e80605d437c6ebbe99ca31c83dbab9f315))
+
 ## [2.1.1](https://github.com/bioexperiment-lab-devices/serialhop/compare/v2.1.0...v2.1.1) (2026-07-15)
 
 
