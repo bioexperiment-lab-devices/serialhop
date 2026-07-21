@@ -242,3 +242,39 @@ func EnsurePanelUpdateStagingDir() (string, error) {
 	}
 	return d, nil
 }
+
+// ServiceUpdateStagingDir is where the LocalSystem service stages a downloaded
+// remote-update binary (SerialHop-v*.exe) before spawning the elevated swap
+// child. It lives under %ProgramData% (not %LOCALAPPDATA%, whose LocalSystem
+// expansion is the awkward systemprofile path). Returns "" if DataDir is empty.
+func ServiceUpdateStagingDir() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "updates")
+}
+
+// EnsureServiceUpdateStagingDir creates ServiceUpdateStagingDir (0o750) and
+// returns it. Returns an error if DataDir() is empty or MkdirAll fails.
+func EnsureServiceUpdateStagingDir() (string, error) {
+	d := ServiceUpdateStagingDir()
+	if d == "" {
+		return "", errors.New("paths: data directory unavailable (%ProgramData% not set)")
+	}
+	if err := os.MkdirAll(d, 0o750); err != nil {
+		return "", fmt.Errorf("paths: create %s: %w", d, err)
+	}
+	return d, nil
+}
+
+// UpdateResultPath is the JSON file recording the last remote-update outcome,
+// read by GET /agent/update/status. Written by both the service (progress) and
+// the elevated child (terminal state). Returns "" if DataDir is empty.
+func UpdateResultPath() string {
+	d := DataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "update_result.json")
+}

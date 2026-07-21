@@ -3,7 +3,7 @@
 # first-run dialog (username + password). Other fields are optional —
 # edit only if you need to change defaults.
 
-schema_version: 1          # config schema version — managed automatically by
+schema_version: 2          # config schema version — managed automatically by
                            # SerialHop's migration tooling. Do not edit by hand.
 
 lab_bridge:
@@ -49,3 +49,9 @@ raw_serial:
                                   # off by default — turn on for bring-up / RE.
   idle_timeout_ms: 900000         # close a raw session after this many ms with
                                   # no traffic. 0 = never time out.
+
+remote_update:
+  enabled: false          # allow lab-bridge admins to push updates via
+                          # POST /agent/update (admin-gated server-side, like
+                          # /flash). the update installs with no operator
+                          # action. off by default.

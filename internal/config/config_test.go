@@ -128,3 +128,12 @@ func TestWriteScaffold_GoldenSnapshot(t *testing.T) {
 		t.Errorf("round-trip flashing.keep_n: got %d, want 10", parsed.Flashing.KeepN)
 	}
 }
+
+func TestDefault_RemoteUpdateDisabled(t *testing.T) {
+	if Default().RemoteUpdate.Enabled {
+		t.Error("RemoteUpdate.Enabled should default to false")
+	}
+	if CurrentSchemaVersion != 2 {
+		t.Errorf("CurrentSchemaVersion = %d, want 2", CurrentSchemaVersion)
+	}
+}

@@ -12,6 +12,13 @@ import (
 // DefaultReleasesURL is the GitHub API endpoint for the project's latest release.
 const DefaultReleasesURL = "https://api.github.com/repos/bioexperiment-lab-devices/serialhop/releases/latest"
 
+// ReleasesByTagURL is the GitHub API endpoint for a specific release tag,
+// e.g. ReleasesByTagURL("v2.3.0"). Pass the result to LatestRelease, which
+// decodes the same Release shape for a tag as for /releases/latest.
+func ReleasesByTagURL(tag string) string {
+	return "https://api.github.com/repos/bioexperiment-lab-devices/serialhop/releases/tags/" + tag
+}
+
 // Release is the subset of the GitHub Releases API payload we care about.
 type Release struct {
 	TagName string  `json:"tag_name"`

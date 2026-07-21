@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/updateresult"
 )
 
 const (
@@ -28,7 +30,7 @@ var errWaitTimeout = errors.New("wait deadline exceeded")
 // binary is launched with --admin-action=<name>. It connects to SCM, runs
 // the requested action, writes any error to errorFile (UTF-8), and returns
 // 0 on success or 1 on failure.
-func RunAdminAction(action, errorFile, updateSrc string) int {
+func RunAdminAction(action, errorFile, updateSrc, resultPath, fromVersion, toVersion string) int {
 	err := func() error {
 		scm, err := DialSCM()
 		if err != nil {
@@ -48,7 +50,7 @@ func RunAdminAction(action, errorFile, updateSrc string) int {
 		case "restart":
 			return restart(scm, productionStartTimeout, productionPollInterval)
 		case "update":
-			return runUpdate(scm, updateSrc)
+			return runUpdate(scm, updateSrc, resultPath, fromVersion, toVersion)
 		default:
 			return fmt.Errorf("unknown action %q", action)
 		}
@@ -61,15 +63,54 @@ func RunAdminAction(action, errorFile, updateSrc string) int {
 }
 
 // runUpdate validates updateSrc, derives the target install path from the
-// running exe, and dispatches to runUpdateWithDeps with production
-// timeouts and the real filesystem.
-func runUpdate(scm SCMConn, updateSrc string) error {
+// running exe, and dispatches to runUpdateWithResult with production
+// timeouts and the real filesystem. resultPath/fromVersion/toVersion are set
+// only by the remote-update flow (the service passes them); the panel-driven
+// UAC flow leaves resultPath empty and no result file is written.
+func runUpdate(scm SCMConn, updateSrc, resultPath, fromVersion, toVersion string) error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
 	}
-	return runUpdateWithDeps(scm, realFS{}, updateSrc, exePath,
+	return runUpdateWithResult(scm, realFS{}, updateSrc, exePath, resultPath, fromVersion, toVersion,
 		productionStartTimeout, productionPollInterval, 250*time.Millisecond)
+}
+
+// runUpdateWithResult wraps runUpdateWithDeps, writing the update-result file
+// when resultPath != "". Empty resultPath preserves the panel path exactly
+// (no file written). The result write is best-effort — it never changes the
+// update's own success/failure.
+func runUpdateWithResult(scm SCMConn, fs FS, updateSrc, exePath, resultPath, fromVersion, toVersion string,
+	opTimeout, pollInterval, renameBackoff time.Duration) error {
+
+	if resultPath != "" {
+		writeUpdateResult(resultPath, updateresult.StateInstalling, fromVersion, toVersion, "")
+	}
+	err := runUpdateWithDeps(scm, fs, updateSrc, exePath, opTimeout, pollInterval, renameBackoff)
+	if resultPath != "" {
+		if err != nil {
+			writeUpdateResult(resultPath, updateresult.StateRolledBack, fromVersion, toVersion, err.Error())
+		} else {
+			writeUpdateResult(resultPath, updateresult.StateSucceeded, fromVersion, toVersion, "")
+		}
+	}
+	return err
+}
+
+// writeUpdateResult reads-preserving started_at, sets terminal fields, writes.
+// Best-effort: a failed result write is swallowed (the update outcome is
+// already decided by the caller).
+func writeUpdateResult(path, state, from, to, errMsg string) {
+	r, _ := updateresult.Read(path)
+	r.State, r.From, r.To, r.Error = state, from, to, errMsg
+	now := time.Now().UTC().Format(time.RFC3339)
+	if r.StartedAt == "" {
+		r.StartedAt = now
+	}
+	if state != updateresult.StateInstalling {
+		r.FinishedAt = now
+	}
+	_ = updateresult.Write(path, r)
 }
 
 // runUpdateWithDeps is the testable form of runUpdate. The panel stages

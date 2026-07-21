@@ -455,3 +455,25 @@ func TestScaffoldMatchesMigratedBaseline(t *testing.T) {
 		t.Errorf("scaffold schema_version = %d, want %d", s.SchemaVersion, CurrentSchemaVersion)
 	}
 }
+
+func TestMigrateV1ToV2AddsRemoteUpdate(t *testing.T) {
+	src := "schema_version: 1\nlab_bridge:\n  user: \"\"\n"
+	out, changes := applyOps(t, src, 2, migrations[len(migrations)-1].Ops...)
+	if migrations[len(migrations)-1].To != 2 {
+		t.Fatalf("last migration To = %d, want 2", migrations[len(migrations)-1].To)
+	}
+	if !strings.Contains(out, "remote_update:") || !strings.Contains(out, "enabled: false") {
+		t.Errorf("migrated output missing remote_update section:\n%s", out)
+	}
+	if len(changes) == 0 {
+		t.Error("expected at least one change")
+	}
+}
+
+func TestMigrateV1ToV2PreservesOperatorValue(t *testing.T) {
+	src := "schema_version: 1\nremote_update:\n  enabled: true\n"
+	out, _ := applyOps(t, src, 2, migrations[len(migrations)-1].Ops...)
+	if !strings.Contains(out, "enabled: true") {
+		t.Errorf("operator's enabled: true must be preserved:\n%s", out)
+	}
+}

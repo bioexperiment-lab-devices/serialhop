@@ -29,7 +29,7 @@ func buildServer(t *testing.T, reg *registry.Registry, op *labserial.FakeOpener,
 	}
 	t.Cleanup(func() { _ = ka.Close() })
 	disc := func(_ context.Context) ([]*device.Session, error) { return nil, nil }
-	return New(reg, disc, op, nil, false, ka, enabled, idle)
+	return New(reg, disc, op, nil, false, ka, enabled, idle, nil)
 }
 
 func newAttachServer(t *testing.T, enabled bool, ports ...string) (*httptest.Server, *labserial.FakeOpener, *registry.Registry) {

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/bioexperiment-lab-devices/serialhop/internal/updateresult"
 )
 
 // --- Fake SCMConn --------------------------------------------------------
@@ -746,5 +748,72 @@ func TestRunUpdate_CopyFailureCleansUpInstallDirCopy(t *testing.T) {
 	// Service must not have been stopped — Copy fails before any SCM work.
 	if scm.services[ServiceName].state == StateStopped {
 		t.Error("service must not be stopped when Copy fails before swap")
+	}
+}
+
+// --- remote-update result-file writing ---------------------------------
+
+func TestRunUpdate_WritesSucceededResult(t *testing.T) {
+	dir := t.TempDir()
+	rp := filepath.Join(dir, "update_result.json")
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{
+		state:            StateRunning,
+		stateProgression: []ServiceState{StateRunning, StateStopped, StateStartPending, StateRunning},
+	}
+	src := filepath.Join(dir, "SerialHop-v2.3.0.exe")
+	target := filepath.Join(dir, "SerialHop.exe")
+	fs := newFakeFS(target, src)
+
+	err := runUpdateWithResult(scm, fs, src, target, rp, "2.2.0", "2.3.0",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("runUpdateWithResult: %v", err)
+	}
+	got, _ := updateresult.Read(rp)
+	if got.State != updateresult.StateSucceeded || got.To != "2.3.0" || got.From != "2.2.0" {
+		t.Errorf("result = %+v, want succeeded 2.2.0->2.3.0", got)
+	}
+	if got.FinishedAt == "" {
+		t.Error("FinishedAt should be set")
+	}
+}
+
+func TestRunUpdate_WritesRolledBackOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	rp := filepath.Join(dir, "update_result.json")
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{state: StateStopped}
+	src := filepath.Join(dir, "SerialHop-v2.3.0.exe")
+	target := filepath.Join(dir, "SerialHop.exe")
+	fs := newFakeFS(target, src)
+	fs.renameErr[[2]string{src, target}] = os.ErrPermission // src->target rename fails
+
+	_ = runUpdateWithResult(scm, fs, src, target, rp, "2.2.0", "2.3.0",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	got, _ := updateresult.Read(rp)
+	if got.State != updateresult.StateRolledBack {
+		t.Errorf("result State = %q, want rolled_back", got.State)
+	}
+	if got.Error == "" {
+		t.Error("rolled_back result must include error")
+	}
+}
+
+func TestRunUpdate_NoResultPathWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	scm := newFakeSCM()
+	scm.services[ServiceName] = &fakeService{state: StateStopped}
+	src := filepath.Join(dir, "SerialHop-v2.3.0.exe")
+	target := filepath.Join(dir, "SerialHop.exe")
+	fs := newFakeFS(target, src)
+	err := runUpdateWithResult(scm, fs, src, target, "", "2.2.0", "2.3.0",
+		100*time.Millisecond, time.Millisecond, time.Millisecond)
+	if err != nil {
+		t.Fatalf("runUpdateWithResult: %v", err)
+	}
+	// The panel path passes no result path; nothing should be written.
+	if _, statErr := os.Stat(filepath.Join(dir, "update_result.json")); !os.IsNotExist(statErr) {
+		t.Error("no result file should be written when resultPath is empty")
 	}
 }

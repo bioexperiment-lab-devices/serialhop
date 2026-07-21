@@ -11,6 +11,7 @@ import (
 	"github.com/bioexperiment-lab-devices/serialhop/internal/flasher"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/power"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/registry"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/remoteupdate"
 	labserial "github.com/bioexperiment-lab-devices/serialhop/internal/serial"
 )
 
@@ -27,6 +28,7 @@ type Server struct {
 	keepAwake        power.KeepAwake
 	rawSerialEnabled bool
 	rawIdleTimeout   time.Duration
+	remoteUpdate     *remoteupdate.Manager
 }
 
 func New(
@@ -38,11 +40,13 @@ func New(
 	keepAwake power.KeepAwake,
 	rawSerialEnabled bool,
 	rawIdleTimeout time.Duration,
+	remoteUpdate *remoteupdate.Manager,
 ) *Server {
 	return &Server{
 		reg: reg, discover: discover, opener: opener,
 		flasher: fl, flashingEnabled: flashingEnabled, keepAwake: keepAwake,
 		rawSerialEnabled: rawSerialEnabled, rawIdleTimeout: rawIdleTimeout,
+		remoteUpdate: remoteUpdate,
 	}
 }
 
@@ -58,6 +62,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /serial/ports/{port}/attach", s.handleSerialAttach)
 	mux.HandleFunc("POST /flash/{port}", s.handlePostFlashPort)
 	mux.HandleFunc("GET /agent/info", s.handleGetAgentInfo)
+	mux.HandleFunc("POST /agent/update", s.handlePostAgentUpdate)
+	mux.HandleFunc("GET /agent/update/status", s.handleGetAgentUpdateStatus)
 	mux.HandleFunc("GET /power/keep-awake", s.handleGetKeepAwake)
 	mux.HandleFunc("POST /power/keep-awake/enable", s.handlePostKeepAwakeEnable)
 	mux.HandleFunc("POST /power/keep-awake/disable", s.handlePostKeepAwakeDisable)

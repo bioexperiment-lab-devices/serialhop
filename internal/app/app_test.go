@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/bioexperiment-lab-devices/serialhop/internal/bootstrap"
+	"github.com/bioexperiment-lab-devices/serialhop/internal/config"
 	"github.com/bioexperiment-lab-devices/serialhop/internal/labbridge"
 )
 
@@ -41,5 +42,20 @@ func TestWriteActualRestPort_NoCacheIsNotAnError(t *testing.T) {
 	// we silently no-op. The next bootstrap.Resolve will rewrite the cache.
 	if err := writeActualRestPort(filepath.Join(t.TempDir(), "nope.json"), "alice", 49283); err != nil {
 		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+func TestBuildRemoteUpdateManager_DisabledIsNil(t *testing.T) {
+	if m := buildRemoteUpdateManager(config.Config{}); m != nil {
+		t.Error("disabled config should yield a nil manager")
+	}
+}
+
+func TestBuildRemoteUpdateManager_EnabledNonNil(t *testing.T) {
+	t.Setenv("SERIALHOP_DATA_DIR", t.TempDir())
+	cfg := config.Config{RemoteUpdate: config.RemoteUpdateConfig{Enabled: true}}
+	m := buildRemoteUpdateManager(cfg)
+	if m == nil || !m.Enabled() {
+		t.Error("enabled config should yield an enabled manager")
 	}
 }
