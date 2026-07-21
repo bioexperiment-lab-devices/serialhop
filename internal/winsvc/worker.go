@@ -52,6 +52,15 @@ func (h *handler) Execute(args []string, r <-chan svc.ChangeRequest, changes cha
 	changes <- svc.Status{State: svc.StartPending}
 
 	cfgPath := paths.ConfigPath()
+
+	if rep, mErr := config.EnsureMigrated(cfgPath); mErr != nil {
+		slog.Warn("config migration failed; loading existing file", "err", mErr)
+	} else if rep.Migrated {
+		slog.Info("config migrated",
+			"from", rep.From, "to", rep.To,
+			"changes", len(rep.Changes), "backup", rep.BackupPath)
+	}
+
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		slog.Error("config load failed", "path", cfgPath, "err", err)

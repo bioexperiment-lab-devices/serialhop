@@ -73,6 +73,13 @@ func newAppInternal() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if rep, err := config.EnsureMigrated(paths.ConfigPath()); err != nil {
+		slog.Warn("config migration failed; loading existing file", "err", err)
+	} else if rep.Migrated {
+		slog.Info("config migrated",
+			"from", rep.From, "to", rep.To,
+			"changes", len(rep.Changes), "backup", rep.BackupPath)
+	}
 	cfg, _ := config.LoadPartial(paths.ConfigPath())
 	a.svc = NewServiceCli(paths.ServerInfoCachePath())
 	if cfg.AutoUpdate.Enabled {

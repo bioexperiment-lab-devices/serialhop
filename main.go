@@ -133,11 +133,21 @@ func runForeground() error {
 		return errors.New("config scaffold generated; please edit and rerun")
 	}
 
+	migReport, migErr := config.EnsureMigrated(cfgPath)
+
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
 	}
 	configureStdoutLogger(cfg.Log.Level)
+
+	if migErr != nil {
+		slog.Warn("config migration failed; loaded existing file", "err", migErr)
+	} else if migReport.Migrated {
+		slog.Info("config migrated",
+			"from", migReport.From, "to", migReport.To,
+			"changes", len(migReport.Changes), "backup", migReport.BackupPath)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
